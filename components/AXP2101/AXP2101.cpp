@@ -1,5 +1,5 @@
 
-#include "power.h"
+#include "AXP2101.h"
 
 #include "board.h"
 #include "board_pins.h"
@@ -8,9 +8,9 @@
 #include "esp_log.h"
 #include "sdkconfig.h"
 
-namespace power {
+namespace AXP2101 {
 
-    static const char *TAG = "power";
+    static const char *TAG = "AXP2101";
 
     static i2c_master_dev_handle_t pmu_handle = nullptr;
 

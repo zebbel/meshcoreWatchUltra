@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-namespace power {
+namespace AXP2101{
 
     struct status_t {
         bool battery_present = false;
