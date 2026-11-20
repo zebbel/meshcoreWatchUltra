@@ -36,4 +36,23 @@ namespace XL9555 {
     esp_err_t read_state(state_t &state);
     esp_err_t log_state();
 
+
+    // Apply safe GPIO expander startup configuration
+    esp_err_t configure();
+
+    // Enable or disable the haptic driver
+    esp_err_t set_haptic_enabled(bool enabled);
+
+    // Control the display enable signal
+    esp_err_t set_display_enabled(bool enabled);
+
+    // Release touchscreen reset when true, assert reset when false
+    esp_err_t set_touch_reset(bool released);
+
+    // Select external USB RF path or built-in LoRa antenna
+    esp_err_t set_lora_antenna(bool external);
+
+    // Read SD card detection, active-low
+    esp_err_t is_sd_inserted(bool &inserted);
+
 }

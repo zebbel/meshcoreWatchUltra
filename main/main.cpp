@@ -46,6 +46,26 @@ extern "C" void app_main(void){
         return;
     }
 
+    // Configure XL9555 GPIO expander
+    err = XL9555::configure();
+
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "XL9555 configuration failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    // Test SD card detection
+    bool sd_inserted = false;
+    err = XL9555::is_sd_inserted(sd_inserted);
+
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "SD detection failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    ESP_LOGI(TAG, "SD card: %s", sd_inserted ? "Inserted" : "Not inserted");
+
+
     // Read current expander state for the first hardware test
     err = XL9555::log_state();
 

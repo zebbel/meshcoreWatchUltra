@@ -245,4 +245,98 @@ namespace XL9555 {
         return ESP_OK;
     }
 
+    // Enable or disable the haptic driver
+    esp_err_t set_haptic_enabled(bool enabled){
+        esp_err_t err = set_output(board::expander::HAPTIC_EN, enabled);
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "Haptic enable configuration failed: %s", esp_err_to_name(err));
+            return err;
+        }
+
+        ESP_LOGI(TAG, "Haptic driver: %s", enabled ? "Enabled" : "Disabled");
+        return ESP_OK;
+    }
+
+    // Control the display enable signal
+    esp_err_t set_display_enabled(bool enabled){
+        esp_err_t err = set_output(board::expander::DISPLAY_EN, enabled);
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "Display enable configuration failed: %s", esp_err_to_name(err));
+            return err;
+        }
+
+        ESP_LOGI(TAG, "Display enable: %s", enabled ? "On" : "Off");
+        return ESP_OK;
+    }
+
+    // Assert or release the touchscreen reset signal
+    esp_err_t set_touch_reset(bool released){
+        esp_err_t err = set_output(board::expander::TOUCH_RST, released);
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "Touch reset configuration failed: %s", esp_err_to_name(err));
+            return err;
+        }
+
+        ESP_LOGI(TAG, "Touch reset: %s", released ? "Released" : "Asserted");
+        return ESP_OK;
+    }
+
+    // Select the external USB RF path or the built-in antenna
+    esp_err_t set_lora_antenna(bool external){
+        // LOW selects USB RF, HIGH selects the built-in antenna
+        esp_err_t err = set_output(board::expander::LORA_RF_SW, !external);
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "LoRa antenna configuration failed: %s", esp_err_to_name(err));
+            return err;
+        }
+
+        ESP_LOGI(TAG, "LoRa antenna: %s", external ? "USB RF" : "Built-in");
+        return ESP_OK;
+    }
+
+    // Read the active-low SD card detection input
+    esp_err_t is_sd_inserted(bool &inserted){
+        state_t state;
+        esp_err_t err = read_state(state);
+        if(err != ESP_OK) return err;
+
+        uint8_t mask = pin_mask(board::expander::SD_DETECT);
+
+        if((state.direction1 & mask) == 0){
+            ESP_LOGE(TAG, "SD detect pin is not configured as input");
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        // Account for the input polarity inversion register
+        bool high = ((state.input1 ^ state.polarity1) & mask) != 0;
+        inserted = !high;
+
+        return ESP_OK;
+    }
+
+    // Configure the initial GPIO expander state
+    esp_err_t configure(){
+        if(io_handle == nullptr){
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        ESP_LOGI(TAG, "Configuring XL9555");
+
+        // Disable haptic driver at startup
+        esp_err_t err = set_haptic_enabled(false);
+        if(err != ESP_OK) return err;
+
+        // Configure SD card detection as an input
+        err = set_input(board::expander::SD_DETECT);
+        if(err != ESP_OK) return err;
+
+        ESP_LOGI(TAG, "SD card detection configured as input");
+        ESP_LOGI(TAG, "XL9555 configuration complete");
+        return ESP_OK;
+    }
+
 }
