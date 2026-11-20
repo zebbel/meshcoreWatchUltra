@@ -1,15 +1,18 @@
 
 set(MESHCORE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../third_party/MeshCore")
 
-if(NOT EXISTS "${MESHCORE_ROOT}/src/Packet.cpp")
+if(NOT EXISTS "${MESHCORE_ROOT}/src/Dispatcher.cpp")
     message(FATAL_ERROR "MeshCore submodule missing. Run git submodule update --init --recursive")
 endif()
 
 idf_component_register(
     SRCS
         "${MESHCORE_ROOT}/src/Packet.cpp"
+        "${MESHCORE_ROOT}/src/Dispatcher.cpp"
+        "${MESHCORE_ROOT}/src/helpers/StaticPoolPacketManager.cpp"
         "MeshCoreRadio.cpp"
         "MeshCorePlatform.cpp"
+        "WatchRouting.cpp"
     INCLUDE_DIRS
         "include"
         "compat"
@@ -22,8 +25,12 @@ idf_component_register(
         esp_system
 )
 
-# Upstream MeshCore Dispatcher.h has a constructor initializer
-# order warning. Keep upstream sources unmodified.
-target_compile_options(${COMPONENT_LIB} PRIVATE
-    -Wno-error=reorder
+# Current upstream initializes Dispatcher members in a different order
+# from their declarations. Do not modify the submodule for this warning.
+target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-error=reorder)
+
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    MESH_DEBUG=0
+    MESH_PACKET_LOGGING=0
+    BRIDGE_DEBUG=0
 )
