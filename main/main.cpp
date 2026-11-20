@@ -8,6 +8,7 @@
 #include "board_pins.h"
 #include "AXP2101.h"
 #include "XL9555.h"
+#include "CO5300.h"
 
 static const char *TAG = "MeshCoreWatch";
 

@@ -1,0 +1,23 @@
+
+menu "MeshcoreWatch CO5300 Display"
+
+    choice
+        prompt "Display QSPI clock"
+        default MCW_DISPLAY_SPI_40
+
+        config MCW_DISPLAY_SPI_20
+            bool "20 MHz"
+
+        config MCW_DISPLAY_SPI_40
+            bool "40 MHz"
+
+        config MCW_DISPLAY_SPI_80
+            bool "80 MHz"
+    endchoice
+
+    config MCW_DISPLAY_BRIGHTNESS
+        int "Initial AMOLED brightness (0-255)"
+        range 0 255
+        default 128
+
+endmenu

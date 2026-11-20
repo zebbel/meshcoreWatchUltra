@@ -16,9 +16,9 @@ namespace AXP2101{
         nfc = 7
     };
 
-    esp_err_t init();                                                       // Initialize the AXP2101 device on the shared I2C bus
-    esp_err_t configure();                                                  // Apply configured voltage, charging and startup settings
-    esp_err_t set_enabled(rail_t rail, bool enabled);                       // Control peripheral supply rails
-    esp_err_t enable(rail_t rail);                                          // Enable peripheral supply rails
-    esp_err_t disable(rail_t rail);                                         // Disable peripheral supply rails
+    esp_err_t init();                                                                                   // Initialize the AXP2101 device on the shared I2C bus
+    esp_err_t configure();                                                                              // Apply configured voltage, charging and startup settings
+    esp_err_t set_enabled(rail_t rail, bool enabled);                                                   // Control peripheral supply rails
+    esp_err_t enable(rail_t rail);                                                                      // Enable peripheral supply rails
+    esp_err_t disable(rail_t rail);                                                                     // Disable peripheral supply rails
 }
