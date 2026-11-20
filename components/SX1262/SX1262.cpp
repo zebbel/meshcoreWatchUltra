@@ -77,6 +77,11 @@ namespace sx1262 {
     static bool initialized = false;
     static bool configured = false;
     static bool receiving = false;
+    static bool tx_active = false;
+    static bool tx_finished = false;
+    static esp_err_t tx_result = ESP_OK;
+    static TickType_t tx_started = 0;
+    static TickType_t tx_timeout_ticks = 0;
     static config_t current_config;
 
     static void IRAM_ATTR dio1_isr(void *arg){
@@ -199,6 +204,7 @@ namespace sx1262 {
     }
 
     static esp_err_t start_rx_locked(){
+        receiving = false;
         uint8_t standby[2] = {CMD_SET_STANDBY, 0x01};
         esp_err_t err = command(standby, sizeof(standby));
         if(err != ESP_OK) return err;
@@ -214,27 +220,6 @@ namespace sx1262 {
         err = command(cmd, sizeof(cmd));
         if(err == ESP_OK) receiving = true;
         return err;
-    }
-
-    // After an IRQ, reading the latched IRQ flags also handles a missed DIO1 edge.
-    static esp_err_t wait_irq(uint16_t mask, uint32_t timeout_ms, uint16_t &flags){
-        TickType_t start = xTaskGetTickCount();
-        TickType_t max_ticks = pdMS_TO_TICKS(timeout_ms);
-
-        while(true){
-            esp_err_t err = get_irq(flags);
-            if(err != ESP_OK) return err;
-            if((flags & mask) != 0) return ESP_OK;
-
-            TickType_t elapsed = xTaskGetTickCount() - start;
-            if(elapsed >= max_ticks) return ESP_ERR_TIMEOUT;
-
-            TickType_t remaining = max_ticks - elapsed;
-            TickType_t delay_ticks = pdMS_TO_TICKS(50);
-            if(delay_ticks == 0) delay_ticks = 1;
-            if(delay_ticks > remaining) delay_ticks = remaining;
-            xSemaphoreTake(irq_semaphore, delay_ticks);
-        }
     }
 
     // Called while holding radio_mutex.
@@ -329,6 +314,11 @@ namespace sx1262 {
         initialized = false;
         configured = false;
         receiving = false;
+        tx_active = false;
+        tx_finished = false;
+        tx_result = ESP_OK;
+        tx_started = 0;
+        tx_timeout_ticks = 0;
     }
 
     esp_err_t init(){
@@ -477,7 +467,6 @@ namespace sx1262 {
         if(config.preamble_symbols < 6 || config.tx_power_dbm < -9 || config.tx_power_dbm > 22) return ESP_ERR_INVALID_ARG;
 
         uint8_t bw = 0;
-
         if(config.bandwidth_hz == 62500) bw = 0x03;
         else if(config.bandwidth_hz == 125000) bw = 0x04;
         else if(config.bandwidth_hz == 250000) bw = 0x05;
@@ -486,6 +475,10 @@ namespace sx1262 {
 
         esp_err_t err = lock_radio();
         if(err != ESP_OK) return err;
+        if(tx_active || tx_finished){
+            xSemaphoreGive(radio_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
         if(receiving){
             uint8_t standby[2] = {CMD_SET_STANDBY, 0x01};
             err = command(standby, sizeof(standby));
@@ -581,125 +574,282 @@ namespace sx1262 {
         if(!initialized || !configured) return ESP_ERR_INVALID_STATE;
         esp_err_t err = lock_radio();
         if(err != ESP_OK) return err;
-        err = start_rx_locked();
-        if(err == ESP_OK) ESP_LOGI(TAG, "LoRa continuous RX started");
-        xSemaphoreGive(radio_mutex);
-        return err;
-    }
 
-    esp_err_t receive(packet_t &packet, uint32_t timeout_ms){
-        if(!initialized || !configured) return ESP_ERR_INVALID_STATE;
-        esp_err_t err = lock_radio();
-        if(err != ESP_OK) return err;
-        if(!receiving){
+        if(tx_active || tx_finished){
             xSemaphoreGive(radio_mutex);
             return ESP_ERR_INVALID_STATE;
         }
 
-        packet = packet_t{};
+        // Calling this repeatedly must not discard a pending received frame.
+        if(!receiving) err = start_rx_locked();
+        xSemaphoreGive(radio_mutex);
+        return err;
+    }
+
+    bool is_in_receive_mode(){
+        if(!initialized) return false;
+        if(lock_radio() != ESP_OK) return false;
+        bool result = receiving;
+        xSemaphoreGive(radio_mutex);
+        return result;
+    }
+
+    // Caller holds radio_mutex. Read a complete received frame and metadata.
+    static esp_err_t read_packet_locked(packet_t &packet){
+        uint8_t tx_buffer_status[4] = {CMD_GET_RX_BUFFER, 0, 0, 0};
+        uint8_t rx_buffer_status[4] = {};
+        esp_err_t err = transfer(tx_buffer_status, rx_buffer_status, sizeof(tx_buffer_status));
+        if(err != ESP_OK) return err;
+
+        uint8_t length = rx_buffer_status[2];
+        uint8_t start = rx_buffer_status[3];
+        uint8_t tx_packet[MAX_TRANSACTION] = {CMD_READ_BUFFER, start, 0};
+        uint8_t rx_packet[MAX_TRANSACTION] = {};
+        err = transfer(tx_packet, rx_packet, static_cast<size_t>(length) + 3);
+        if(err != ESP_OK) return err;
+
+        uint8_t tx_status[5] = {CMD_GET_PACKET_STATUS, 0, 0, 0, 0};
+        uint8_t rx_status[5] = {};
+        err = transfer(tx_status, rx_status, sizeof(tx_status));
+        if(err != ESP_OK) return err;
+
+        memcpy(packet.data, &rx_packet[3], length);
+        packet.length = length;
+        packet.rssi_dbm = -static_cast<float>(rx_status[2]) / 2.0f;
+        packet.snr_db = static_cast<float>(static_cast<int8_t>(rx_status[3])) / 4.0f;
+        return ESP_OK;
+    }
+
+    // Nonblocking: available=false means no complete packet yet.
+    esp_err_t poll_receive(packet_t &packet, bool &available){
+        available = false;
+        if(!initialized || !configured) return ESP_ERR_INVALID_STATE;
+        esp_err_t err = lock_radio();
+        if(err != ESP_OK) return err;
+
+        if(!receiving || tx_active || tx_finished){
+            xSemaphoreGive(radio_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
+
         uint16_t irq = 0;
-        err = wait_irq(IRQ_RX_DONE | IRQ_CRC_ERR | IRQ_HEADER_ERR | IRQ_TIMEOUT, timeout_ms, irq);
+        err = get_irq(irq);
         if(err != ESP_OK){
             xSemaphoreGive(radio_mutex);
             return err;
         }
 
-        if((irq & (IRQ_CRC_ERR | IRQ_HEADER_ERR | IRQ_TIMEOUT)) != 0){
-            ESP_LOGD(TAG, "Discarding LoRa frame, IRQ=0x%04X", irq);
-
-            err = (irq & IRQ_TIMEOUT) ? ESP_ERR_TIMEOUT : (irq & IRQ_CRC_ERR) ? ESP_ERR_INVALID_CRC : ESP_ERR_INVALID_RESPONSE;
-
-        }else if((irq & IRQ_RX_DONE) != 0){
-            uint8_t tx_buffer_status[4] = {CMD_GET_RX_BUFFER, 0, 0, 0};
-            uint8_t rx_buffer_status[4] = {};
-            err = transfer(tx_buffer_status, rx_buffer_status, sizeof(tx_buffer_status));
-
-            if(err == ESP_OK){
-                uint8_t payload_length = rx_buffer_status[2];
-                uint8_t payload_start = rx_buffer_status[3];
-                uint8_t tx_packet[MAX_TRANSACTION] = {CMD_READ_BUFFER, payload_start, 0};
-                uint8_t rx_packet[MAX_TRANSACTION] = {};
-
-                err = transfer(tx_packet, rx_packet, static_cast<size_t>(payload_length) + 3);
-                if(err == ESP_OK){
-                    memcpy(packet.data, &rx_packet[3], payload_length);
-                    packet.length = payload_length;
-
-                    uint8_t tx_status[5] = {CMD_GET_PACKET_STATUS, 0, 0, 0, 0};
-                    uint8_t rx_status[5] = {};
-                    err = transfer(tx_status, rx_status, sizeof(tx_status));
-                    if(err == ESP_OK){
-                        packet.rssi_dbm = -static_cast<float>(rx_status[2]) / 2.0f;
-                        packet.snr_db = static_cast<float>(static_cast<int8_t>(rx_status[3])) / 4.0f;
-                    }
-                }
-            }
+        if((irq & (IRQ_RX_DONE | IRQ_CRC_ERR | IRQ_HEADER_ERR | IRQ_TIMEOUT)) == 0){
+            xSemaphoreGive(radio_mutex);
+            return ESP_OK;
         }
 
-        // Restart RX after consuming the packet or dropping an invalid one.
+        packet = packet_t{};
+        if(irq & (IRQ_CRC_ERR | IRQ_HEADER_ERR | IRQ_TIMEOUT)){
+            ESP_LOGD(TAG, "Discarding LoRa frame, IRQ=0x%04X", irq);
+            err = (irq & IRQ_TIMEOUT) ? ESP_ERR_TIMEOUT :
+                  (irq & IRQ_CRC_ERR) ? ESP_ERR_INVALID_CRC : ESP_ERR_INVALID_RESPONSE;
+        }else{
+            err = read_packet_locked(packet);
+            available = (err == ESP_OK && packet.length > 0);
+        }
+
+        // As in the verified Stage 2 driver, restart continuous RX after a frame.
         esp_err_t restart_err = start_rx_locked();
-        if(err == ESP_OK) err = restart_err;
-        if(err != ESP_OK) ESP_LOGW(TAG, "LoRa receive failed: %s", esp_err_to_name(err));
+        if(restart_err != ESP_OK){
+            available = false;
+            err = restart_err;
+        }
+
         xSemaphoreGive(radio_mutex);
         return err;
     }
 
-    esp_err_t transmit(const uint8_t *data, size_t length, uint32_t timeout_ms){
+    // Convenience API retained for regression testing; no radio mutex held while waiting.
+    esp_err_t receive(packet_t &packet, uint32_t timeout_ms){
+        TickType_t start = xTaskGetTickCount();
+        TickType_t limit = pdMS_TO_TICKS(timeout_ms);
+        while(true){
+            bool available = false;
+            esp_err_t err = poll_receive(packet, available);
+            if(err != ESP_OK) return err;
+            if(available) return ESP_OK;
+
+            TickType_t elapsed = xTaskGetTickCount() - start;
+            if(elapsed >= limit) return ESP_ERR_TIMEOUT;
+            TickType_t wait_ticks = pdMS_TO_TICKS(20);
+            if(wait_ticks == 0) wait_ticks = 1;
+            if(wait_ticks > limit - elapsed) wait_ticks = limit - elapsed;
+            xSemaphoreTake(irq_semaphore, wait_ticks);
+        }
+    }
+
+    // Starts RF transmission without waiting for TX_DONE.
+    esp_err_t start_transmit(const uint8_t *data, size_t length, uint32_t timeout_ms){
         if(!initialized || !configured) return ESP_ERR_INVALID_STATE;
         if(data == nullptr || length == 0 || length > 255 || timeout_ms == 0 || timeout_ms > 60000) return ESP_ERR_INVALID_ARG;
 
         esp_err_t err = lock_radio();
         if(err != ESP_OK) return err;
+        if(tx_active || tx_finished){
+            xSemaphoreGive(radio_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
 
         bool resume_rx = receiving;
         receiving = false;
         uint8_t standby[2] = {CMD_SET_STANDBY, 0x01};
         err = command(standby, sizeof(standby));
-        if(err != ESP_OK) goto restore;
+        if(err != ESP_OK) goto failed;
 
         err = clear_irq(0xFFFF);
-        if(err != ESP_OK) goto restore;
+        if(err != ESP_OK) goto failed;
         drain_irq();
 
         err = set_packet_length(static_cast<uint8_t>(length));
-        if(err != ESP_OK) goto restore;
+        if(err != ESP_OK) goto failed;
 
         {
             uint8_t buffer[MAX_TRANSACTION] = {CMD_WRITE_BUFFER, 0x00};
             memcpy(&buffer[2], data, length);
             err = command(buffer, length + 2);
-            if(err != ESP_OK) goto restore;
+            if(err != ESP_OK) goto failed;
         }
-
         {
-            uint32_t timeout_ticks = static_cast<uint32_t>(timeout_ms) * 64;
-            uint8_t tx[4] = {CMD_SET_TX, static_cast<uint8_t>(timeout_ticks >> 16), static_cast<uint8_t>(timeout_ticks >> 8), static_cast<uint8_t>(timeout_ticks)};
+            uint32_t radio_timeout = timeout_ms * 64; // 15.625 microsecond ticks
+            uint8_t tx[4] = {CMD_SET_TX, static_cast<uint8_t>(radio_timeout >> 16), static_cast<uint8_t>(radio_timeout >> 8), static_cast<uint8_t>(radio_timeout)};
             err = command(tx, sizeof(tx));
-            if(err != ESP_OK) goto restore;
+            if(err != ESP_OK) goto failed;
         }
 
-        {
-            uint16_t irq = 0;
-            err = wait_irq(IRQ_TX_DONE | IRQ_TIMEOUT, timeout_ms + 100, irq);
-            if(err == ESP_OK){
-                if((irq & IRQ_TIMEOUT) != 0) err = ESP_ERR_TIMEOUT;
-                else if((irq & IRQ_TX_DONE) == 0) err = ESP_ERR_INVALID_RESPONSE;
-                else err = clear_irq(0xFFFF);
-            }
-        }
+        tx_started = xTaskGetTickCount();
+        tx_timeout_ticks = pdMS_TO_TICKS(timeout_ms + 100);
+        tx_result = ESP_OK;
+        tx_active = true;
+        tx_finished = false;
+        xSemaphoreGive(radio_mutex);
+        return ESP_OK;
 
-    restore:
+    failed:
         if(resume_rx){
             esp_err_t resume_err = start_rx_locked();
             if(err == ESP_OK) err = resume_err;
+        }
+        xSemaphoreGive(radio_mutex);
+        return err;
+    }
+
+    // completed becomes true for TX_DONE or a TX timeout. Result contains success/failure.
+    esp_err_t poll_transmit(bool &completed){
+        completed = false;
+        if(!initialized || !configured) return ESP_ERR_INVALID_STATE;
+        esp_err_t err = lock_radio();
+        if(err != ESP_OK) return err;
+
+        if(tx_finished){
+            completed = true;
+            err = tx_result;
+        }else if(!tx_active){
+            err = ESP_ERR_INVALID_STATE;
         }else{
-            uint8_t standby_xosc[2] = {CMD_SET_STANDBY, 0x01};
-            esp_err_t standby_err = command(standby_xosc, sizeof(standby_xosc));
-            if(err == ESP_OK) err = standby_err;
+            uint16_t irq = 0;
+            err = get_irq(irq);
+            if(err == ESP_OK){
+                if(irq & IRQ_TIMEOUT){
+                    tx_result = ESP_ERR_TIMEOUT;
+                    tx_active = false;
+                    tx_finished = true;
+                }else if(irq & IRQ_TX_DONE){
+                    tx_result = ESP_OK;
+                    tx_active = false;
+                    tx_finished = true;
+                }else if(xTaskGetTickCount() - tx_started >= tx_timeout_ticks){
+                    tx_result = ESP_ERR_TIMEOUT;
+                    tx_active = false;
+                    tx_finished = true;
+                }
+                if(tx_finished){
+                    completed = true;
+                    err = tx_result;
+                }
+            }
+        }
+
+        xSemaphoreGive(radio_mutex);
+        return err;
+    }
+
+    // Must be called after a completed TX to release the radio for further operations.
+    esp_err_t finish_transmit(){
+        if(!initialized || !configured) return ESP_ERR_INVALID_STATE;
+        esp_err_t err = lock_radio();
+        if(err != ESP_OK) return err;
+        if(!tx_finished || tx_active){
+            xSemaphoreGive(radio_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        uint8_t standby[2] = {CMD_SET_STANDBY, 0x01};
+        err = command(standby, sizeof(standby));
+        if(err == ESP_OK) err = clear_irq(0xFFFF);
+        if(err == ESP_OK){
+            tx_finished = false;
+            tx_result = ESP_OK;
+        }
+        xSemaphoreGive(radio_mutex);
+        return err;
+    }
+
+    // Legacy blocking TX wrapper. The asynchronous API above is for MeshCore.
+    esp_err_t transmit(const uint8_t *data, size_t length, uint32_t timeout_ms){
+        bool resume_rx = is_in_receive_mode();
+        esp_err_t err = start_transmit(data, length, timeout_ms);
+        if(err != ESP_OK) return err;
+
+        bool completed = false;
+        while(!completed){
+            err = poll_transmit(completed);
+            if(err != ESP_OK && !completed) break;
+            if(!completed) xSemaphoreTake(irq_semaphore, pdMS_TO_TICKS(20));
+        }
+
+        if(completed){
+            esp_err_t finish_err = finish_transmit();
+            if(err == ESP_OK) err = finish_err;
+        }
+        if(resume_rx && completed){
+            esp_err_t rx_err = start_receive();
+            if(err == ESP_OK) err = rx_err;
         }
 
         if(err == ESP_OK) ESP_LOGI(TAG, "LoRa TX complete: %u bytes", static_cast<unsigned>(length));
         else ESP_LOGE(TAG, "LoRa TX failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    esp_err_t abort_transmit(){
+        if(!initialized || !configured) return ESP_ERR_INVALID_STATE;
+
+        esp_err_t err = lock_radio();
+        if(err != ESP_OK) return err;
+
+        if(!tx_active && !tx_finished){
+            xSemaphoreGive(radio_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        uint8_t standby[2] = {CMD_SET_STANDBY, 0x01};
+        err = command(standby, sizeof(standby));
+
+        if(err == ESP_OK) err = clear_irq(0xFFFF);
+
+        if(err == ESP_OK){
+            tx_active = false;
+            tx_finished = false;
+            tx_result = ESP_OK;
+            receiving = false;
+        }
+
         xSemaphoreGive(radio_mutex);
         return err;
     }
@@ -710,6 +860,8 @@ namespace sx1262 {
         if(err != ESP_OK) return err;
         receiving = false;
         configured = false;
+        tx_active = false;
+        tx_finished = false;
         uint8_t standby[2] = {CMD_SET_STANDBY, 0x00};
         err = command(standby, sizeof(standby));
         xSemaphoreGive(radio_mutex);
