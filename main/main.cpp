@@ -6,6 +6,7 @@
 
 #include "board.h"
 #include "board_pins.h"
+#include "power.h"
 
 static const char *TAG = "MeshCoreWatch";
 
@@ -49,4 +50,27 @@ extern "C" void app_main(void){
     test_i2c_device("RTC", board::addresses::RTC);
 
     ESP_LOGI(TAG, "Hardware test complete");
+
+
+    // Initialize power management
+    ESP_LOGI(TAG, "Starting power hardware test");
+
+    err = power::init();
+
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "Power initialization failed: %s",
+                 esp_err_to_name(err));
+        return;
+    }
+
+    // Read battery and regulator status
+    err = power::log_status();
+
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "Power hardware test failed");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Power hardware test complete");
+
 }

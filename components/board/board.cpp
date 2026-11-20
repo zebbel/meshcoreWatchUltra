@@ -32,8 +32,7 @@ namespace board {
         esp_err_t err = i2c_new_master_bus(&i2c_config, &i2c_handle);
 
         if(err != ESP_OK){
-            ESP_LOGE(TAG, "I2C initialization failed: %s",
-                    esp_err_to_name(err));
+            ESP_LOGE(TAG, "I2C initialization failed: %s", esp_err_to_name(err));
             return err;
         }
 
