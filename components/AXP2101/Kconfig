@@ -69,46 +69,4 @@ menu "MeshcoreWatch Power Management"
             default 4360
 
     endif
-
-    config MCW_POWER_APPLY_RAILS
-        bool "Apply peripheral power states at startup"
-        default n
-        help
-            When enabled, configure() switches peripheral supply
-            rails according to the settings below.
-            Keep disabled until power-off sequencing is tested.
-            This never switches off the ESP32-S3 DCDC1 rail.
-
-    if MCW_POWER_APPLY_RAILS
-
-        config MCW_POWER_START_SD
-            bool "Enable SD card power at startup"
-            default n
-
-        config MCW_POWER_START_DISPLAY
-            bool "Enable display power at startup"
-            default n
-
-        config MCW_POWER_START_RADIO
-            bool "Enable LoRa power at startup"
-            default n
-
-        config MCW_POWER_START_SENSOR
-            bool "Enable motion sensor power at startup"
-            default n
-
-        config MCW_POWER_START_GPS
-            bool "Enable GPS power at startup"
-            default n
-
-        config MCW_POWER_START_SPEAKER
-            bool "Enable speaker power at startup"
-            default n
-
-        config MCW_POWER_START_NFC
-            bool "Enable NFC power at startup"
-            default n
-
-    endif
-
 endmenu

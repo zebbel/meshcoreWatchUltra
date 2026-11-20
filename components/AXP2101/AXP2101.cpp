@@ -76,66 +76,6 @@ namespace AXP2101 {
         return ESP_OK;
     }
 
-    // Read one configuration register
-    static esp_err_t read_byte(uint8_t reg, uint8_t &value){
-        esp_err_t err = read_register(reg, &value, 1);
-
-        if(err != ESP_OK){
-            ESP_LOGE(TAG, "Register 0x%02X read failed: %s", reg, esp_err_to_name(err));
-        }
-
-        return err;
-    }
-
-    // Decode configured DCDC voltages in millivolts
-    static int decode_dc_voltage(uint8_t rail, uint8_t raw){
-        uint8_t code = raw & ((rail == 1 || rail == 5) ? 0x1F : 0x7F);
-
-        switch(rail){
-            case 1:
-                if(code <= 19) return 1500 + code * 100;
-                break;
-
-            case 2:
-                if(code <= 70) return 500 + code * 10;
-                if(code <= 87) return code * 20 - 200;
-                break;
-
-            case 3:
-                if(code <= 70) return 500 + code * 10;
-                if(code <= 87) return code * 20 - 200;
-                if(code <= 106) return code * 100 - 7200;
-                break;
-
-            case 4:
-                if(code <= 70) return 500 + code * 10;
-                if(code <= 102) return code * 20 - 200;
-                break;
-
-            case 5:
-                if(code == 0x19) return 1200;
-                if(code <= 23) return 1400 + code * 100;
-                break;
-        }
-
-        return -1;
-    }
-
-    // Decode the AXP2101 charging current setting
-    static int decode_charge_current(uint8_t code){
-        static constexpr int currents[] = {
-            0, -1, -1, -1, 100, 125, 150, 175, 200,
-            300, 400, 500, 600, 700, 800, 900, 1000
-        };
-
-        if(code >= sizeof(currents) / sizeof(currents[0])){
-            return -1;
-        }
-
-        return currents[code];
-    }
-
-
     // Write one AXP2101 register
     static esp_err_t write_axp_register(uint8_t reg, uint8_t value){
         if(pmu_handle == nullptr){
@@ -317,70 +257,6 @@ namespace AXP2101 {
         return ESP_OK;
     }
 
-    // Apply configured startup power states
-    static esp_err_t configure_startup_rails(){
-#if defined(CONFIG_MCW_POWER_APPLY_RAILS)
-
-        esp_err_t err = ESP_OK;
-
-#if defined(CONFIG_MCW_POWER_START_SD)
-        err = set_enabled(rail_t::sd, true);
-#else
-        err = set_enabled(rail_t::sd, false);
-#endif
-        if(err != ESP_OK) return err;
-
-#if defined(CONFIG_MCW_POWER_START_DISPLAY)
-        err = set_enabled(rail_t::display, true);
-#else
-        err = set_enabled(rail_t::display, false);
-#endif
-        if(err != ESP_OK) return err;
-
-#if defined(CONFIG_MCW_POWER_START_RADIO)
-        err = set_enabled(rail_t::radio, true);
-#else
-        err = set_enabled(rail_t::radio, false);
-#endif
-        if(err != ESP_OK) return err;
-
-#if defined(CONFIG_MCW_POWER_START_SENSOR)
-        err = set_enabled(rail_t::sensor, true);
-#else
-        err = set_enabled(rail_t::sensor, false);
-#endif
-        if(err != ESP_OK) return err;
-
-#if defined(CONFIG_MCW_POWER_START_GPS)
-        err = set_enabled(rail_t::gps, true);
-#else
-        err = set_enabled(rail_t::gps, false);
-#endif
-        if(err != ESP_OK) return err;
-
-#if defined(CONFIG_MCW_POWER_START_SPEAKER)
-        err = set_enabled(rail_t::speaker, true);
-#else
-        err = set_enabled(rail_t::speaker, false);
-#endif
-        if(err != ESP_OK) return err;
-
-#if defined(CONFIG_MCW_POWER_START_NFC)
-        err = set_enabled(rail_t::nfc, true);
-#else
-        err = set_enabled(rail_t::nfc, false);
-#endif
-        if(err != ESP_OK) return err;
-
-        ESP_LOGI(TAG, "Peripheral startup power states applied");
-
-#else
-        ESP_LOGI(TAG, "Existing peripheral power states preserved");
-#endif
-
-        return ESP_OK;
-    }
-
     // Initialize verified board power configuration
     esp_err_t configure(){
         if(pmu_handle == nullptr){
@@ -399,8 +275,21 @@ namespace AXP2101 {
         err = update_axp_register(0x30, 0x05, 0x05);
         if(err != ESP_OK) return err;
 
-        err = configure_startup_rails();
-        if(err != ESP_OK) return err;
+        // Disable all peripheral power rails
+        static constexpr rail_t rails[] = {
+            rail_t::sd,
+            rail_t::display,
+            rail_t::radio,
+            rail_t::sensor,
+            rail_t::gps,
+            rail_t::speaker,
+            rail_t::nfc
+        };
+
+        for(const auto &rail : rails){
+            err = disable(rail);
+            if(err != ESP_OK) return err;
+        }
 
         ESP_LOGI(TAG, "AXP2101 configuration complete");
         return ESP_OK;
