@@ -15,7 +15,4 @@ namespace board {
 
     // Get SPI host identifier
     spi_host_device_t spi_host();
-
-    // Test whether an I2C device responds
-    esp_err_t probe_i2c(uint8_t address);
 }

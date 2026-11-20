@@ -38,6 +38,31 @@ namespace board {
 
         ESP_LOGI(TAG, "I2C bus initialized");
 
+
+        // Deselect all shared SPI devices before initializing the bus
+        gpio_set_level(pins::LORA_CS, 1);
+        gpio_set_level(pins::SD_CS, 1);
+        gpio_set_level(pins::NFC_CS, 1);
+
+        gpio_config_t cs_config = {};
+        cs_config.pin_bit_mask = (1ULL << pins::LORA_CS) | (1ULL << pins::SD_CS) | (1ULL << pins::NFC_CS);
+        cs_config.mode = GPIO_MODE_OUTPUT;
+        cs_config.pull_up_en = GPIO_PULLUP_DISABLE;
+        cs_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        cs_config.intr_type = GPIO_INTR_DISABLE;
+
+        err = gpio_config(&cs_config);
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "SPI chip-select initialization failed: %s", esp_err_to_name(err));
+            i2c_del_master_bus(i2c_handle);
+            i2c_handle = nullptr;
+            return err;
+        }
+
+        ESP_LOGI(TAG, "Shared SPI devices deselected");
+
+
         // Initialize shared SPI bus
         spi_bus_config_t spi_config = {};
 
@@ -76,14 +101,6 @@ namespace board {
 
     spi_host_device_t spi_host(){
         return SPI_HOST;
-    }
-
-    esp_err_t probe_i2c(uint8_t address){
-        if(i2c_handle == nullptr){
-            return ESP_ERR_INVALID_STATE;
-        }
-
-        return i2c_master_probe(i2c_handle, address, 100);
     }
 
 }

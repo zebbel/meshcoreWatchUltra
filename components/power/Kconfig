@@ -1,0 +1,114 @@
+
+menu "MeshcoreWatch Power Management"
+
+    config MCW_POWER_APPLY_CHARGER
+        bool "Apply battery charging configuration at startup"
+        default n
+        help
+            Enable writing the selected charger settings to AXP2101.
+            Disabled by default for the first hardware test.
+
+    if MCW_POWER_APPLY_CHARGER
+
+        config MCW_POWER_CHARGING_ENABLED
+            bool "Enable battery charging"
+            default y
+
+        choice
+            prompt "Fast charging current"
+            default MCW_POWER_FAST_300
+
+            config MCW_POWER_FAST_200
+                bool "200 mA"
+
+            config MCW_POWER_FAST_300
+                bool "300 mA"
+
+            config MCW_POWER_FAST_400
+                bool "400 mA"
+        endchoice
+
+        config MCW_POWER_PRECHARGE_MA
+            int "Precharge current (mA, steps of 25)"
+            range 0 200
+            default 125
+
+        config MCW_POWER_TERMINATION_MA
+            int "Charge termination current (mA, steps of 25)"
+            range 0 200
+            default 125
+
+        choice
+            prompt "Charging target voltage"
+            default MCW_POWER_TARGET_4200
+
+            config MCW_POWER_TARGET_4100
+                bool "4100 mV"
+
+            config MCW_POWER_TARGET_4200
+                bool "4200 mV"
+        endchoice
+
+        choice
+            prompt "USB input current limit"
+            default MCW_POWER_USB_1500
+
+            config MCW_POWER_USB_500
+                bool "500 mA"
+
+            config MCW_POWER_USB_900
+                bool "900 mA"
+
+            config MCW_POWER_USB_1500
+                bool "1500 mA"
+        endchoice
+
+        config MCW_POWER_USB_VOLTAGE_MV
+            int "USB input voltage limit (mV, steps of 80)"
+            range 3880 5080
+            default 4360
+
+    endif
+
+    config MCW_POWER_APPLY_RAILS
+        bool "Apply peripheral power states at startup"
+        default n
+        help
+            When enabled, configure() switches peripheral supply
+            rails according to the settings below.
+            Keep disabled until power-off sequencing is tested.
+            This never switches off the ESP32-S3 DCDC1 rail.
+
+    if MCW_POWER_APPLY_RAILS
+
+        config MCW_POWER_START_SD
+            bool "Enable SD card power at startup"
+            default n
+
+        config MCW_POWER_START_DISPLAY
+            bool "Enable display power at startup"
+            default n
+
+        config MCW_POWER_START_RADIO
+            bool "Enable LoRa power at startup"
+            default n
+
+        config MCW_POWER_START_SENSOR
+            bool "Enable motion sensor power at startup"
+            default n
+
+        config MCW_POWER_START_GPS
+            bool "Enable GPS power at startup"
+            default n
+
+        config MCW_POWER_START_SPEAKER
+            bool "Enable speaker power at startup"
+            default n
+
+        config MCW_POWER_START_NFC
+            bool "Enable NFC power at startup"
+            default n
+
+    endif
+
+endmenu

@@ -27,13 +27,25 @@ namespace power {
         bool nfc_enabled = false;
     };
 
+    // Peripheral power rails controlled by AXP2101
+    enum class rail_t : uint8_t {
+        sd = 0,
+        display = 1,
+        radio = 2,
+        sensor = 3,
+        gps = 4,
+        speaker = 5,
+        nfc = 7
+    };
+
+    // Apply configured voltage, charging and startup settings
+    esp_err_t configure();
+
+    // Control peripheral supply rails
+    esp_err_t set_enabled(rail_t rail, bool enabled);
+    esp_err_t enable(rail_t rail);
+    esp_err_t disable(rail_t rail);
+
     // Initialize the AXP2101 device on the shared I2C bus
     esp_err_t init();
-
-    // Read battery, charging and regulator information
-    esp_err_t read_status(status_t &status);
-
-    // Print power diagnostics to the ESP-IDF console
-    esp_err_t log_status();
-
 }

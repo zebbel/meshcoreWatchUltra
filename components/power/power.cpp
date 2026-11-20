@@ -6,6 +6,7 @@
 
 #include "driver/i2c_master.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
 
 namespace power {
 
@@ -75,131 +76,333 @@ namespace power {
         return ESP_OK;
     }
 
-    esp_err_t read_status(status_t &status){
+    // Read one configuration register
+    static esp_err_t read_byte(uint8_t reg, uint8_t &value){
+        esp_err_t err = read_register(reg, &value, 1);
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "Register 0x%02X read failed: %s", reg, esp_err_to_name(err));
+        }
+
+        return err;
+    }
+
+    // Decode configured DCDC voltages in millivolts
+    static int decode_dc_voltage(uint8_t rail, uint8_t raw){
+        uint8_t code = raw & ((rail == 1 || rail == 5) ? 0x1F : 0x7F);
+
+        switch(rail){
+            case 1:
+                if(code <= 19) return 1500 + code * 100;
+                break;
+
+            case 2:
+                if(code <= 70) return 500 + code * 10;
+                if(code <= 87) return code * 20 - 200;
+                break;
+
+            case 3:
+                if(code <= 70) return 500 + code * 10;
+                if(code <= 87) return code * 20 - 200;
+                if(code <= 106) return code * 100 - 7200;
+                break;
+
+            case 4:
+                if(code <= 70) return 500 + code * 10;
+                if(code <= 102) return code * 20 - 200;
+                break;
+
+            case 5:
+                if(code == 0x19) return 1200;
+                if(code <= 23) return 1400 + code * 100;
+                break;
+        }
+
+        return -1;
+    }
+
+    // Decode the AXP2101 charging current setting
+    static int decode_charge_current(uint8_t code){
+        static constexpr int currents[] = {
+            0, -1, -1, -1, 100, 125, 150, 175, 200,
+            300, 400, 500, 600, 700, 800, 900, 1000
+        };
+
+        if(code >= sizeof(currents) / sizeof(currents[0])){
+            return -1;
+        }
+
+        return currents[code];
+    }
+
+
+    // Write one AXP2101 register
+    static esp_err_t write_axp_register(uint8_t reg, uint8_t value){
         if(pmu_handle == nullptr){
             return ESP_ERR_INVALID_STATE;
         }
 
-        status = status_t{};
+        uint8_t data[2] = {reg, value};
+        return i2c_master_transmit(pmu_handle, data, sizeof(data), 1000);
+    }
 
-        uint8_t status1 = 0;
-        uint8_t status2 = 0;
-        uint8_t adc_ctrl = 0;
-        uint8_t ldo_enable = 0;
+    // Update selected register bits and verify the result
+    static esp_err_t update_axp_register(uint8_t reg, uint8_t mask, uint8_t value){
+        uint8_t current = 0;
 
-        // Read PMU status registers
-        esp_err_t err = read_register(REG_STATUS1, &status1, 1);
+        esp_err_t err = read_register(reg, &current, 1);
         if(err != ESP_OK) return err;
 
-        err = read_register(REG_STATUS2, &status2, 1);
-        if(err != ESP_OK) return err;
+        uint8_t updated = (current & ~mask) | (value & mask);
 
-        err = read_register(REG_ADC_CTRL, &adc_ctrl, 1);
-        if(err != ESP_OK) return err;
-
-        err = read_register(REG_LDO_ENABLE, &ldo_enable, 1);
-        if(err != ESP_OK) return err;
-
-        status.battery_present = (status1 & (1 << 3)) != 0;
-        status.vbus_good = (status1 & (1 << 5)) != 0;
-
-        // Charge direction: 0 = standby, 1 = charge, 2 = discharge
-        uint8_t charge_mode = (status2 >> 5) & 0x03;
-
-        status.charging = charge_mode == 1;
-        status.discharging = charge_mode == 2;
-
-        // Read battery voltage if the ADC channel is enabled
-        if(status.battery_present && (adc_ctrl & (1 << 0))){
-            uint8_t data[2] = {};
-
-            err = read_register(REG_BATTERY_V, data, sizeof(data));
-            if(err != ESP_OK) return err;
-
-            status.battery_mv = ((data[0] & 0x1F) << 8) | data[1];
+        if(updated == current){
+            return ESP_OK;
         }
 
-        // Read battery percentage reported by the fuel gauge
-        if(status.battery_present){
-            uint8_t percent = 0;
+        err = write_axp_register(reg, updated);
+        if(err != ESP_OK) return err;
 
-            err = read_register(REG_BATTERY_PC, &percent, 1);
-            if(err != ESP_OK) return err;
+        uint8_t verify = 0;
+        err = read_register(reg, &verify, 1);
+        if(err != ESP_OK) return err;
 
-            if(percent <= 100){
-                status.battery_percent = percent;
-            }
+        if((verify & mask) != (updated & mask)){
+            ESP_LOGE(TAG, "AXP2101 register 0x%02X verification failed", reg);
+            return ESP_ERR_INVALID_RESPONSE;
         }
-
-        // Read USB voltage if VBUS is good and its ADC is enabled
-        if(status.vbus_good && (adc_ctrl & (1 << 2))){
-            uint8_t data[2] = {};
-
-            err = read_register(REG_VBUS_V, data, sizeof(data));
-            if(err != ESP_OK) return err;
-
-            status.vbus_mv = ((data[0] & 0x3F) << 8) | data[1];
-        }
-
-        // Read current regulator enable states
-        status.sd_enabled      = (ldo_enable & (1 << 0)) != 0;
-        status.display_enabled = (ldo_enable & (1 << 1)) != 0;
-        status.radio_enabled   = (ldo_enable & (1 << 2)) != 0;
-        status.sensor_enabled  = (ldo_enable & (1 << 3)) != 0;
-        status.gps_enabled     = (ldo_enable & (1 << 4)) != 0;
-        status.speaker_enabled = (ldo_enable & (1 << 5)) != 0;
-        status.nfc_enabled     = (ldo_enable & (1 << 7)) != 0;
 
         return ESP_OK;
     }
 
-    esp_err_t log_status(){
-        status_t status;
+    // Configure an LDO voltage without changing unrelated register bits
+    static esp_err_t set_voltage_reg(uint8_t reg, uint16_t millivolts){
+        if(millivolts < 500 || millivolts > 3500 || (millivolts - 500) % 100 != 0){
+            return ESP_ERR_INVALID_ARG;
+        }
 
-        esp_err_t err = read_status(status);
+        uint8_t code = (millivolts - 500) / 100;
+        return update_axp_register(reg, 0x1F, code);
+    }
+
+    // Switch one peripheral supply rail
+    esp_err_t set_enabled(rail_t rail, bool enabled){
+        uint8_t bit = static_cast<uint8_t>(rail);
+
+        if(bit > 7 || bit == 6){
+            return ESP_ERR_INVALID_ARG;
+        }
+
+        uint8_t mask = 1 << bit;
+
+        esp_err_t err = update_axp_register(0x90, mask, enabled ? mask : 0);
 
         if(err != ESP_OK){
-            ESP_LOGE(TAG, "Unable to read power status: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "Unable to change rail %u: %s", bit, esp_err_to_name(err));
             return err;
         }
 
-        ESP_LOGI(TAG, "Battery present: %s", status.battery_present ? "Yes" : "No");
+        ESP_LOGI(TAG, "Power rail %u: %s", bit, enabled ? "On" : "Off");
+        return ESP_OK;
+    }
 
-        ESP_LOGI(TAG, "USB VBUS good: %s", status.vbus_good ? "Yes" : "No");
+    esp_err_t enable(rail_t rail){
+        return set_enabled(rail, true);
+    }
 
-        ESP_LOGI(TAG, "Charge mode: %s", status.charging ? "Charging" : status.discharging ? "Discharging" : "Standby/other");
+    esp_err_t disable(rail_t rail){
+        return set_enabled(rail, false);
+    }
 
-        if(status.battery_mv >= 0){
-            ESP_LOGI(TAG, "Battery voltage: %d mV", status.battery_mv);
-        }else{
-            ESP_LOGW(TAG, "Battery voltage unavailable");
+    // Apply verified hardware voltage assignments
+    static esp_err_t configure_voltages(){
+        struct voltage_t {
+            uint8_t reg;
+            uint16_t millivolts;
+        };
+
+        static constexpr voltage_t voltages[] = {
+            {0x92, 3300}, // ALDO1 SD
+            {0x93, 3300}, // ALDO2 Display
+            {0x94, 3300}, // ALDO3 Radio
+            {0x95, 1800}, // ALDO4 Sensor
+            {0x96, 3300}, // BLDO1 GPS
+            {0x97, 3300}, // BLDO2 Speaker
+            {0x99, 3300}  // DLDO1 NFC
+        };
+
+        for(const auto &entry : voltages){
+            esp_err_t err = set_voltage_reg(entry.reg, entry.millivolts);
+
+            if(err != ESP_OK){
+                ESP_LOGE(TAG, "Voltage configuration failed at 0x%02X", entry.reg);
+                return err;
+            }
         }
 
-        if(status.battery_percent >= 0){
-            ESP_LOGI(TAG, "Battery percentage: %d%%", status.battery_percent);
+        ESP_LOGI(TAG, "Peripheral regulator voltages configured");
+        return ESP_OK;
+    }
+
+    // Apply selected charger settings
+    static esp_err_t configure_charger(){
+#if defined(CONFIG_MCW_POWER_APPLY_CHARGER)
+
+        // Validate the user-entered current and voltage steps
+        if(CONFIG_MCW_POWER_PRECHARGE_MA % 25 != 0 || CONFIG_MCW_POWER_TERMINATION_MA % 25 != 0){
+            ESP_LOGE(TAG, "Charging currents must use 25 mA steps");
+            return ESP_ERR_INVALID_ARG;
         }
 
-        if(status.vbus_mv >= 0){
-            ESP_LOGI(TAG, "USB voltage: %d mV", status.vbus_mv);
-        }else{
-            ESP_LOGI(TAG, "USB voltage unavailable");
+        if((CONFIG_MCW_POWER_USB_VOLTAGE_MV - 3880) % 80 != 0){
+            ESP_LOGE(TAG, "USB voltage limit must use 80 mV steps");
+            return ESP_ERR_INVALID_ARG;
         }
 
-        ESP_LOGI(TAG, "SD power: %s", status.sd_enabled ? "On" : "Off");
+        uint8_t fast_code = 9;
 
-        ESP_LOGI(TAG, "Display power: %s", status.display_enabled ? "On" : "Off");
+#if defined(CONFIG_MCW_POWER_FAST_200)
+        fast_code = 8;
+#elif defined(CONFIG_MCW_POWER_FAST_400)
+        fast_code = 10;
+#endif
 
-        ESP_LOGI(TAG, "LoRa power: %s", status.radio_enabled ? "On" : "Off");
+        uint8_t target_code = 3;
 
-        ESP_LOGI(TAG, "Sensor power: %s", status.sensor_enabled ? "On" : "Off");
+#if defined(CONFIG_MCW_POWER_TARGET_4100)
+        target_code = 2;
+#endif
 
-        ESP_LOGI(TAG, "GPS power: %s", status.gps_enabled ? "On" : "Off");
+        uint8_t usb_code = 4;
 
-        ESP_LOGI(TAG, "Speaker power: %s", status.speaker_enabled ? "On" : "Off");
+#if defined(CONFIG_MCW_POWER_USB_500)
+        usb_code = 1;
+#elif defined(CONFIG_MCW_POWER_USB_900)
+        usb_code = 2;
+#endif
 
-        ESP_LOGI(TAG, "NFC power: %s", status.nfc_enabled ? "On" : "Off");
+        // Configure charger limits, preserving unrelated bits
+        esp_err_t err = update_axp_register(0x61, 0x0F, CONFIG_MCW_POWER_PRECHARGE_MA / 25);
+        if(err != ESP_OK) return err;
+
+        err = update_axp_register(0x62, 0x1F, fast_code);
+        if(err != ESP_OK) return err;
+
+        err = update_axp_register(0x63, 0x1F, 0x10 | (CONFIG_MCW_POWER_TERMINATION_MA / 25));
+        if(err != ESP_OK) return err;
+
+        err = update_axp_register(0x64, 0x07, target_code);
+        if(err != ESP_OK) return err;
+
+        err = update_axp_register(0x16, 0x07, usb_code);
+        if(err != ESP_OK) return err;
+
+        err = update_axp_register(0x15, 0x0F, (CONFIG_MCW_POWER_USB_VOLTAGE_MV - 3880) / 80);
+        if(err != ESP_OK) return err;
+
+        // Configure charger enable after its limits are established
+#if defined(CONFIG_MCW_POWER_CHARGING_ENABLED)
+        err = update_axp_register(0x18, 0x02, 0x02);
+#else
+        err = update_axp_register(0x18, 0x02, 0x00);
+#endif
+
+        if(err != ESP_OK) return err;
+
+        ESP_LOGI(TAG, "Battery charging configuration applied");
+
+#else
+        ESP_LOGI(TAG, "Existing battery charging configuration preserved");
+#endif
 
         return ESP_OK;
     }
 
+    // Apply configured startup power states
+    static esp_err_t configure_startup_rails(){
+#if defined(CONFIG_MCW_POWER_APPLY_RAILS)
+
+        esp_err_t err = ESP_OK;
+
+#if defined(CONFIG_MCW_POWER_START_SD)
+        err = set_enabled(rail_t::sd, true);
+#else
+        err = set_enabled(rail_t::sd, false);
+#endif
+        if(err != ESP_OK) return err;
+
+#if defined(CONFIG_MCW_POWER_START_DISPLAY)
+        err = set_enabled(rail_t::display, true);
+#else
+        err = set_enabled(rail_t::display, false);
+#endif
+        if(err != ESP_OK) return err;
+
+#if defined(CONFIG_MCW_POWER_START_RADIO)
+        err = set_enabled(rail_t::radio, true);
+#else
+        err = set_enabled(rail_t::radio, false);
+#endif
+        if(err != ESP_OK) return err;
+
+#if defined(CONFIG_MCW_POWER_START_SENSOR)
+        err = set_enabled(rail_t::sensor, true);
+#else
+        err = set_enabled(rail_t::sensor, false);
+#endif
+        if(err != ESP_OK) return err;
+
+#if defined(CONFIG_MCW_POWER_START_GPS)
+        err = set_enabled(rail_t::gps, true);
+#else
+        err = set_enabled(rail_t::gps, false);
+#endif
+        if(err != ESP_OK) return err;
+
+#if defined(CONFIG_MCW_POWER_START_SPEAKER)
+        err = set_enabled(rail_t::speaker, true);
+#else
+        err = set_enabled(rail_t::speaker, false);
+#endif
+        if(err != ESP_OK) return err;
+
+#if defined(CONFIG_MCW_POWER_START_NFC)
+        err = set_enabled(rail_t::nfc, true);
+#else
+        err = set_enabled(rail_t::nfc, false);
+#endif
+        if(err != ESP_OK) return err;
+
+        ESP_LOGI(TAG, "Peripheral startup power states applied");
+
+#else
+        ESP_LOGI(TAG, "Existing peripheral power states preserved");
+#endif
+
+        return ESP_OK;
+    }
+
+    // Initialize verified board power configuration
+    esp_err_t configure(){
+        if(pmu_handle == nullptr){
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        ESP_LOGI(TAG, "Configuring AXP2101");
+
+        esp_err_t err = configure_voltages();
+        if(err != ESP_OK) return err;
+
+        err = configure_charger();
+        if(err != ESP_OK) return err;
+
+        // Enable battery and VBUS voltage ADC measurements
+        err = update_axp_register(0x30, 0x05, 0x05);
+        if(err != ESP_OK) return err;
+
+        err = configure_startup_rails();
+        if(err != ESP_OK) return err;
+
+        ESP_LOGI(TAG, "AXP2101 configuration complete");
+        return ESP_OK;
+    }
 }
