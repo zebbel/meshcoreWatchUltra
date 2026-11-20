@@ -1,8 +1,18 @@
 
 #pragma once
 
-// Upstream Identity.h and Utils.h declare methods using Arduino Stream&.
-// Packet and radio interfaces only need the type declaration.
-// This is NOT an implementation of Arduino Stream; it must be replaced
-// before compiling upstream Identity.cpp or Utils.cpp.
-class Stream;
+#include <stddef.h>
+#include <stdint.h>
+
+// Minimal interface needed by upstream Identity.cpp and Utils.cpp.
+// Not a complete Arduino Stream implementation.
+class Stream {
+public:
+    virtual ~Stream() = default;
+
+    virtual size_t readBytes(uint8_t *buffer, size_t length) = 0;
+    virtual size_t write(const uint8_t *buffer, size_t length) = 0;
+    virtual size_t print(const char *value) = 0;
+    virtual size_t print(char value) = 0;
+    virtual size_t println() = 0;
+};

@@ -47,6 +47,8 @@ namespace sx1262 {
     static constexpr uint8_t CMD_WRITE_BUFFER       = 0x0E;
     static constexpr uint8_t CMD_SET_RX             = 0x82;
     static constexpr uint8_t CMD_SET_TX             = 0x83;
+    static constexpr uint8_t CMD_SET_CAD_PARAMS = 0x88;
+    static constexpr uint8_t CMD_SET_CAD        = 0xC5;
 
     static constexpr uint16_t REG_VERSION = 0x0320;
     static constexpr uint16_t REG_SYNC_WORD = 0x0740;
@@ -57,6 +59,8 @@ namespace sx1262 {
     static constexpr uint16_t IRQ_HEADER_ERR = 0x0020;
     static constexpr uint16_t IRQ_CRC_ERR = 0x0040;
     static constexpr uint16_t IRQ_TIMEOUT = 0x0200;
+    static constexpr uint16_t IRQ_CAD_DONE     = 0x0080;
+    static constexpr uint16_t IRQ_CAD_DETECTED = 0x0100;
     static constexpr uint16_t IRQ_MASK = IRQ_TX_DONE | IRQ_RX_DONE | IRQ_HEADER_ERR | IRQ_CRC_ERR | IRQ_TIMEOUT;
 
     static constexpr uint32_t BUSY_TIMEOUT_MS = 200;
@@ -682,6 +686,219 @@ namespace sx1262 {
             if(wait_ticks > limit - elapsed) wait_ticks = limit - elapsed;
             xSemaphoreTake(irq_semaphore, wait_ticks);
         }
+    }
+
+    // Checks LoRa channel activity using SX1262 CAD.
+    //
+    // CAD temporarily interrupts continuous RX and restores it afterward.
+    //
+    // Fail-closed behavior:
+    // - Signal detected       -> busy = true
+    // - Pending RX frame       -> busy = true
+    // - CAD timeout           -> busy = true
+    // - Hardware error        -> busy = true
+    // - Channel available     -> busy = false
+    //
+    // Initial detection parameters are intended for the currently
+    // configured SF8 radio profile and need hardware validation.
+
+    esp_err_t channel_busy(bool &busy){
+        busy = true;
+
+        if(!initialized || !configured){
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        esp_err_t err = lock_radio();
+
+        if(err != ESP_OK){
+            return err;
+        }
+
+        // Never interrupt an active transmission.
+        if(tx_active || tx_finished || !receiving){
+            xSemaphoreGive(radio_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        // Check whether the receiver has already received a packet.
+        // A pending frame must be processed before CAD is attempted.
+        uint16_t pending_irq = 0;
+
+        err = get_irq(pending_irq);
+
+        if(err != ESP_OK){
+            xSemaphoreGive(radio_mutex);
+            return err;
+        }
+
+        if(pending_irq & (
+            IRQ_RX_DONE |
+            IRQ_CRC_ERR |
+            IRQ_HEADER_ERR |
+            IRQ_TIMEOUT
+        )){
+            xSemaphoreGive(radio_mutex);
+            return ESP_OK;
+        }
+
+        // Enter standby before configuring CAD.
+        receiving = false;
+
+        const uint8_t standby[] = {
+            CMD_SET_STANDBY,
+            0x01
+        };
+
+        // Enable CAD_DONE and CAD_DETECTED interrupts.
+        const uint16_t cad_irq_mask =
+            IRQ_CAD_DONE | IRQ_CAD_DETECTED;
+
+        const uint8_t cad_irq[] = {
+            CMD_SET_DIO_IRQ_PARAMS,
+
+            static_cast<uint8_t>(cad_irq_mask >> 8),
+            static_cast<uint8_t>(cad_irq_mask),
+
+            static_cast<uint8_t>(cad_irq_mask >> 8),
+            static_cast<uint8_t>(cad_irq_mask),
+
+            0x00,
+            0x00,
+            0x00,
+            0x00
+        };
+
+        // SX1262 SetCadParams:
+        // CAD symbol count = 4
+        // Detection peak    = 21
+        // Detection minimum = 10
+        // Exit mode         = CAD_ONLY
+        // Timeout           = 0
+        const uint8_t cad_params[] = {
+            CMD_SET_CAD_PARAMS,
+            0x02,
+            21,
+            10,
+            0x00,
+            0x00,
+            0x00,
+            0x00
+        };
+
+        const uint8_t run_cad[] = {
+            CMD_SET_CAD
+        };
+
+        do{
+            err = command(standby, sizeof(standby));
+
+            if(err != ESP_OK){
+                break;
+            }
+
+            err = command(cad_irq, sizeof(cad_irq));
+
+            if(err != ESP_OK){
+                break;
+            }
+
+            err = command(cad_params, sizeof(cad_params));
+
+            if(err != ESP_OK){
+                break;
+            }
+
+            err = clear_irq(0xFFFF);
+
+            if(err != ESP_OK){
+                break;
+            }
+
+            // Start Channel Activity Detection.
+            err = command(run_cad, sizeof(run_cad));
+
+            if(err != ESP_OK){
+                break;
+            }
+
+            TickType_t start_time = xTaskGetTickCount();
+
+            // Wait until CAD completes or the operation times out.
+            while(true){
+                uint16_t result_irq = 0;
+
+                err = get_irq(result_irq);
+
+                if(err != ESP_OK){
+                    break;
+                }
+
+                if(result_irq & IRQ_CAD_DONE){
+                    busy = (result_irq & IRQ_CAD_DETECTED) != 0;
+                    break;
+                }
+
+                if(xTaskGetTickCount() - start_time >= pdMS_TO_TICKS(200)){
+                    err = ESP_ERR_TIMEOUT;
+                    break;
+                }
+
+                vTaskDelay(1);
+            }
+
+        }while(false);
+
+        // Restore the original RX/TX interrupt configuration.
+        const uint8_t normal_irq[] = {
+            CMD_SET_DIO_IRQ_PARAMS,
+
+            static_cast<uint8_t>(IRQ_MASK >> 8),
+            static_cast<uint8_t>(IRQ_MASK),
+
+            static_cast<uint8_t>(IRQ_MASK >> 8),
+            static_cast<uint8_t>(IRQ_MASK),
+
+            0x00,
+            0x00,
+            0x00,
+            0x00
+        };
+
+        esp_err_t restore_err = command(
+            normal_irq,
+            sizeof(normal_irq)
+        );
+
+        // Resume continuous reception after CAD.
+        if(restore_err == ESP_OK){
+            restore_err = start_rx_locked();
+        }
+
+        if(restore_err != ESP_OK){
+            err = restore_err;
+            busy = true;
+
+            ESP_LOGE(
+                TAG,
+                "Failed to restore RX after CAD: %s",
+                esp_err_to_name(restore_err)
+            );
+        }
+
+        if(err != ESP_OK){
+            busy = true;
+
+            ESP_LOGW(
+                TAG,
+                "CAD failed: %s",
+                esp_err_to_name(err)
+            );
+        }
+
+        xSemaphoreGive(radio_mutex);
+
+        return err;
     }
 
     // Starts RF transmission without waiting for TX_DONE.

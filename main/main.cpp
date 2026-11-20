@@ -1,110 +1,149 @@
-
 #include "esp_log.h"
+#include "nvs_flash.h"
+#include "bootloader_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include "board.h"
 #include "AXP2101.h"
 #include "XL9555.h"
+#include "CO5300.h"
 #include "SX1262.h"
-#include "MeshCoreRadio.h"
+
 #include "MeshCorePlatform.h"
-#include "WatchRouting.h"
+#include "MeshCoreRadio.h"
+#include "WatchMesh.h"
+#include "WatchIdentityStore.h"
+#include "WatchBLE.h"
+#include "WatchDisplay.h"
+#include "WatchCompanion.h"
+#include "WatchContacts.h"
+#include "WatchSettings.h"
+#include "helpers/SimpleMeshTables.h"
+#include "helpers/StaticPoolPacketManager.h"
 
 static const char *TAG = "MeshCoreWatch";
 
-extern "C" void app_main(void){
-    ESP_LOGI(TAG, "LilyGO T-Watch Ultra started");
-
+static bool init_hardware(){
     esp_err_t err = board::init();
+    if(err == ESP_OK) err = AXP2101::init();
+    if(err == ESP_OK) err = AXP2101::configure();
+    if(err == ESP_OK) err = XL9555::init();
+    if(err == ESP_OK) err = XL9555::configure();
+    if(err == ESP_OK) err = sx1262::init();
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Board initialization failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Hardware init failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
+extern "C" void app_main(void){
+    ESP_LOGI(TAG, "T-Watch Ultra: BLE-only MeshCore companion preview");
+
+    // Keep existing NVS contents intact: never erase keys to repair an error.
+    esp_err_t err = nvs_flash_init();
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "NVS unavailable: %s", esp_err_to_name(err));
         return;
     }
 
-    err = AXP2101::init();
+    static watch::WatchRNG rng;
+    static mesh::LocalIdentity identity;
+
+    // Enable a true hardware entropy source before generating a private key.
+    // Must be disabled before initializing Bluetooth or other RF hardware.
+    bootloader_random_enable();
+    err = watch::load_or_create_identity(identity, rng);
+    bootloader_random_disable();
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "AXP2101 initialization failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Persistent identity unavailable: %s", esp_err_to_name(err));
         return;
     }
 
-    err = AXP2101::configure();
+    static watch::WatchSettingsStore settings;
+    err = settings.load();
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "AXP2101 configuration failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Stored settings invalid: %s", esp_err_to_name(err));
+        return;
+    }
+    static watch::WatchContacts contacts;
+    err = contacts.load();
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "Contacts unavailable: %s", esp_err_to_name(err));
         return;
     }
 
-    err = XL9555::init();
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "XL9555 initialization failed: %s", esp_err_to_name(err));
-        return;
-    }
+    if(!init_hardware()) return;
 
-    err = XL9555::configure();
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "XL9555 configuration failed: %s", esp_err_to_name(err));
-        return;
-    }
-
-    err = sx1262::init();
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "SX1262 initialization failed: %s", esp_err_to_name(err));
-        return;
-    }
-
-    // MeshCore EU/UK Narrow radio settings
-    sx1262::config_t config;
-    config.frequency_hz = 869618000;
-    config.bandwidth_hz = 62500;
-    config.spreading_factor = 8;
-    config.coding_rate = 8;
-    config.sync_word = 0x12;
-    config.preamble_symbols = 32;
-    config.crc_enabled = true;
-    config.tx_power_dbm = 22;
-
+    const sx1262::config_t config = settings.get().radio();
     err = sx1262::configure(config);
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "LoRa configuration failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Radio configure failed: %s", esp_err_to_name(err));
         return;
     }
 
-    // Static lifetime keeps the packet table out of the app_main task stack.
-    static watch::MeshCoreRadio physical_radio(config);
-    static watch::ReceiveOnlyRadio radio(physical_radio);
+    // PIN must be visible on the watch itself; do not print it over USB.
+    err = watch::pairing_display_init();
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "Cannot display secure BLE pairing code: %s", esp_err_to_name(err));
+        return;
+    }
+
     static watch::WatchClock clock;
-    static StaticPoolPacketManager manager(24);
-    static SimpleMeshTables seen;
-    static watch::WatchRouting routing(radio, clock, manager, seen);
+    static watch::WatchRTC rtc;
+    static watch::MeshCoreRadio radio(config);
+    static StaticPoolPacketManager packet_manager(24);
+    static SimpleMeshTables duplicate_table;
+    static watch::WatchMesh mesh(radio, clock, rng, rtc, packet_manager, duplicate_table);
+    mesh.self_id = identity;
+    mesh.set_contacts(&contacts);
+    mesh.set_tuning(settings.get().rx_delay_milli, settings.get().airtime_factor_milli);
+    mesh.set_path_hash_mode(settings.get().path_hash_mode);
+    mesh.set_scope_key(settings.get().default_scope_key);
 
-    routing.begin();
-
+    err = mesh.load_channels();
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "Failed loading channels: %s", esp_err_to_name(err));
+        return;
+    }
+    mesh.begin();
     if(!radio.isInRecvMode()){
-        ESP_LOGE(TAG, "MeshCore Dispatcher could not start radio RX");
+        ESP_LOGE(TAG, "MeshCore radio RX did not start");
         return;
     }
 
-    ESP_LOGI(TAG, "Upstream MeshCore Dispatcher running (RX-only, no forwarding)");
+    static watch::WatchBLE ble;
+    static watch::WatchCompanion companion(ble, mesh, radio, settings, contacts, rtc, clock);
+    ble.set_pairing_pin(settings.get().ble_pin);
+    err = ble.begin("MeshCore-Watch");
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "BLE start failed: %s", esp_err_to_name(err));
+        return;
+    }
 
-    uint32_t next_report = static_cast<uint32_t>(clock.getMillis()) + 30000;
+    ESP_LOGI(TAG, "MeshCore node running; BLE companion only, no USB or Wi-Fi data interface");
+    uint32_t next_log = static_cast<uint32_t>(clock.getMillis()) + 30000;
 
     while(true){
-        routing.loop();
-
-        uint32_t now = static_cast<uint32_t>(clock.getMillis());
-
-        if(static_cast<int32_t>(now - next_report) >= 0){
-            ESP_LOGI(TAG, "Dispatcher: unique=%lu duplicates=%lu flood=%lu direct=%lu pool_free=%d out=%d",
-                     static_cast<unsigned long>(routing.uniqueCount()),
-                     static_cast<unsigned long>(routing.duplicateCount()),
-                     static_cast<unsigned long>(routing.getNumRecvFlood()),
-                     static_cast<unsigned long>(routing.getNumRecvDirect()),
-                     manager.getFreeCount(),
-                     manager.getOutboundTotal());
-
-            next_report = now + 30000;
+        uint32_t pin = ble.take_pairing_pin();
+        if(ble.take_clear_pairing_display()){
+            watch::pairing_display_clear();
+        }else if(pin != 0){
+            watch::pairing_display_show(pin);
         }
 
+        mesh.loop();
+        companion.loop();
+
+        uint32_t now = static_cast<uint32_t>(clock.getMillis());
+        if(static_cast<int32_t>(now - next_log) >= 0){
+            ESP_LOGI(TAG, "BLE paired=%d RX=%lu adverts=%lu pool=%d queued=%d",
+                     ble.connected(), static_cast<unsigned long>(mesh.packetCount()),
+                     static_cast<unsigned long>(mesh.validAdvertCount()),
+                     packet_manager.getFreeCount(), packet_manager.getOutboundTotal());
+            next_log = now + 30000;
+        }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

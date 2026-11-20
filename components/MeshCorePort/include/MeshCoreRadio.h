@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <stdint.h>
@@ -6,13 +5,9 @@
 #include "SX1262.h"
 
 namespace watch {
-
-    // Bridges the upstream mesh::Radio API to the native SX1262 driver.
-    // Native hardware initialization and configure() must run before begin().
     class MeshCoreRadio final : public mesh::Radio {
     public:
         explicit MeshCoreRadio(const sx1262::config_t &config);
-
         void begin() override;
         int recvRaw(uint8_t *bytes, int size) override;
         uint32_t getEstAirtimeFor(int length) override;
@@ -25,11 +20,15 @@ namespace watch {
         float getLastRSSI() const override;
         float getLastSNR() const override;
 
+        // Reprogram hardware then restart RX. Revert to previous settings
+        // if either step fails. Call only from main MeshCore task.
+        bool applyConfig(const sx1262::config_t &config);
+        const sx1262::config_t &config() const { return config_; }
+
     private:
         sx1262::config_t config_;
         float last_rssi_ = 0;
         float last_snr_ = 0;
         bool tx_pending_ = false;
     };
-
 }
