@@ -2,6 +2,6 @@
 idf_component_register(
     SRCS "main.cpp"
     INCLUDE_DIRS "."
-    REQUIRES board AXP2101 XL9555 CO5300
+    REQUIRES board AXP2101 XL9555 CO5300 SX1262
     PRIV_REQUIRES esp_psram
 )

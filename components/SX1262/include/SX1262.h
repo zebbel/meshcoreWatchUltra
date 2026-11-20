@@ -1,0 +1,46 @@
+
+#pragma once
+
+#include <stddef.h>
+#include <stdint.h>
+#include "esp_err.h"
+
+// Lowercase namespace avoids a conflict with RadioLib's SX1262 class.
+namespace sx1262 {
+
+    struct config_t {
+        uint32_t frequency_hz = 0;
+        uint32_t bandwidth_hz = 250000;
+        uint8_t spreading_factor = 11;
+        uint8_t coding_rate = 5;
+        uint8_t sync_word = 0x12;
+        uint16_t preamble_symbols = 8;
+        int8_t tx_power_dbm = 10;
+        bool crc_enabled = true;
+    };
+
+    struct status_t {
+        uint8_t raw = 0;
+        uint8_t mode = 0;
+        uint8_t command_status = 0;
+        uint16_t device_errors = 0;
+        bool busy = false;
+        bool dio1 = false;
+    };
+
+    struct packet_t {
+        uint8_t data[255] = {};
+        uint8_t length = 0;
+        float rssi_dbm = 0;
+        float snr_db = 0;
+    };
+
+    esp_err_t init();                                                                                   // Enable the radio and verify SPI communication
+    esp_err_t configure(const config_t &config);
+    esp_err_t start_receive();
+    esp_err_t receive(packet_t &packet, uint32_t timeout_ms);
+    esp_err_t transmit(const uint8_t *data, size_t length, uint32_t timeout_ms = 10000);
+    esp_err_t read_status(status_t &status);                                                            // Read chip mode, error flags and input signals
+    esp_err_t shutdown();                                                                               // Reset radio, release SPI device and disable ALDO3
+
+}

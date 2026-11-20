@@ -1,0 +1,15 @@
+
+menu "MeshcoreWatch SX1262 Radio"
+
+    choice
+        prompt "SX1262 SPI clock"
+        default MCW_SX1262_SPI_4M
+
+        config MCW_SX1262_SPI_4M
+            bool "4 MHz"
+
+        config MCW_SX1262_SPI_8M
+            bool "8 MHz"
+    endchoice
+
+endmenu
