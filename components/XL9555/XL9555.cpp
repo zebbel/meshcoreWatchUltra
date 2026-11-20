@@ -218,33 +218,6 @@ namespace XL9555 {
         return ESP_OK;
     }
 
-    esp_err_t log_state(){
-        state_t state;
-        esp_err_t err = read_state(state);
-
-        if(err != ESP_OK){
-            ESP_LOGE(TAG, "Unable to read XL9555 state: %s", esp_err_to_name(err));
-            return err;
-        }
-
-        ESP_LOGI(TAG, "Port 0: IN=0x%02X OUT=0x%02X INV=0x%02X DIR=0x%02X", state.input0, state.output0, state.polarity0, state.direction0);
-        ESP_LOGI(TAG, "Port 1: IN=0x%02X OUT=0x%02X INV=0x%02X DIR=0x%02X", state.input1, state.output1, state.polarity1, state.direction1);
-
-        // SD detection is active-low; undo input inversion before interpreting the pin
-        uint8_t sd_bit = pin_mask(board::expander::SD_DETECT);
-        bool sd_high = ((state.input1 ^ state.polarity1) & sd_bit) != 0;
-        bool sd_input = (state.direction1 & sd_bit) != 0;
-
-        if(sd_input){
-            ESP_LOGI(TAG, "SD card: %s", sd_high ? "Not inserted" : "Inserted");
-        }else{
-            ESP_LOGW(TAG, "SD detect pin is configured as an output");
-        }
-
-        ESP_LOGI(TAG, "XL9555 state read complete");
-        return ESP_OK;
-    }
-
     // Enable or disable the haptic driver
     esp_err_t set_haptic_enabled(bool enabled){
         esp_err_t err = set_output(board::expander::HAPTIC_EN, enabled);

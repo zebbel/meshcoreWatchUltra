@@ -54,25 +54,5 @@ extern "C" void app_main(void){
         return;
     }
 
-    // Test SD card detection
-    bool sd_inserted = false;
-    err = XL9555::is_sd_inserted(sd_inserted);
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "SD detection failed: %s", esp_err_to_name(err));
-        return;
-    }
-
-    ESP_LOGI(TAG, "SD card: %s", sd_inserted ? "Inserted" : "Not inserted");
-
-
-    // Read current expander state for the first hardware test
-    err = XL9555::log_state();
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "XL9555 hardware test failed: %s", esp_err_to_name(err));
-        return;
-    }
-
     ESP_LOGI(TAG, "Hardware initialization complete");
 }

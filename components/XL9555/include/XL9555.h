@@ -34,8 +34,6 @@ namespace XL9555 {
 
     // Read all port registers without changing their configuration
     esp_err_t read_state(state_t &state);
-    esp_err_t log_state();
-
 
     // Apply safe GPIO expander startup configuration
     esp_err_t configure();
