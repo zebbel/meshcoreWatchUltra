@@ -12,17 +12,14 @@ static const char *TAG = "MeshCoreWatch";
 static void test_i2c_device(const char *name, uint8_t address){
     esp_err_t err = board::probe_i2c(address);
 
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "%s detected at 0x%02X",
-                 name, address);
+    if(err == ESP_OK){
+        ESP_LOGI(TAG, "%s detected at 0x%02X", name, address);
     }
-    else if (err == ESP_ERR_NOT_FOUND) {
-        ESP_LOGW(TAG, "%s not detected at 0x%02X",
-                 name, address);
+    else if(err == ESP_ERR_NOT_FOUND){
+        ESP_LOGW(TAG, "%s not detected at 0x%02X", name, address);
     }
     else {
-        ESP_LOGE(TAG, "%s probe failed: %s",
-                 name, esp_err_to_name(err));
+        ESP_LOGE(TAG, "%s probe failed: %s", name, esp_err_to_name(err));
     }
 }
 

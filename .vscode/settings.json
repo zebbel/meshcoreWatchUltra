@@ -31,5 +31,7 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=/home/zebbel/meshcore/meshcoreWatchUltra/build"
-  ]
+  ],
+  "idf.flashType": "UART",
+  "idf.port": "/dev/ttyACM0"
 }
