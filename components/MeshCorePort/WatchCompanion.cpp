@@ -1065,8 +1065,6 @@ namespace watch {
                 const size_t path_bytes = mesh::Packet::writePath(&response[6], path, path_len);
                 const size_t response_length = 6 + path_bytes;
 
-                ESP_LOGI(TAG, "Advert path found: %02X%02X%02X%02X, hops=%u", cmd[2], cmd[3], cmd[4], cmd[5], path_len & 63);
-
                 if(!ble_.send(response, response_length)) reply_error(ERR_BAD_STATE, cmd, len);
                 return;
             }

@@ -369,8 +369,6 @@ namespace watch {
         cache_advert_path(packet, identity);
 
         if(advert_callback_ != nullptr) advert_callback_(advert_context_, identity, timestamp, data, length);
-
-        ESP_LOGI(TAG, "Verified advert: %02X%02X%02X%02X", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
     }
 
     void WatchMesh::onAckRecv(mesh::Packet *, uint32_t ack){

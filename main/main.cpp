@@ -166,7 +166,6 @@ extern "C" void app_main(void){
 
     ESP_LOGI(TAG, "MeshCore node running; BLE companion and telemetry initialized");
 
-    uint32_t next_log = static_cast<uint32_t>(clock.getMillis()) + 30000;
     uint32_t last_gps_position_save_ms = 0;
     bool pairing_screen_visible = false;
     uint32_t next_gps_screen_ms = 0;
@@ -229,12 +228,6 @@ extern "C" void app_main(void){
         if(GPS_TEST_SCREEN && !pairing_screen_visible && static_cast<int32_t>(now - next_gps_screen_ms) >= 0){
             watch::gps_test_display_show();
             next_gps_screen_ms = static_cast<uint32_t>(clock.getMillis()) + 2000;
-        }
-
-        if(static_cast<int32_t>(now - next_log) >= 0){
-            ESP_LOGI(TAG, "BLE paired=%d RX=%lu adverts=%lu pool=%d queued=%d", ble.connected(), static_cast<unsigned long>(mesh.packetCount()), static_cast<unsigned long>(mesh.validAdvertCount()), packet_manager.getFreeCount(), packet_manager.getOutboundTotal());
-
-            next_log = now + 30000;
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));
