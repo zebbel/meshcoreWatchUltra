@@ -17,7 +17,8 @@ namespace watch {
     static constexpr uint8_t LPP_GPS = 0x88;
 
     static void add_i24(uint8_t *out, int32_t value){
-        uint32_t bits = static_cast<uint32_t>(value) & 0xFFFFFF;
+        uint32_t bits =
+            static_cast<uint32_t>(value) & 0xFFFFFF;
 
         out[0] = static_cast<uint8_t>(bits >> 16);
         out[1] = static_cast<uint8_t>(bits >> 8);
@@ -35,15 +36,19 @@ namespace watch {
         return battery.millivolts;
     }
 
-    size_t WatchTelemetry::encode(uint8_t permissions,
-                                  uint8_t *out,
-                                  size_t capacity){
-        if(out == nullptr || !(permissions & TELEM_BASE))
+    size_t WatchTelemetry::encode(
+        uint8_t permissions,
+        uint8_t *out,
+        size_t capacity){
+
+        if(out == nullptr ||
+           !(permissions & TELEM_BASE)){
             return 0;
+        }
 
         size_t n = 0;
 
-        // Battery data comes from the AXP2101 component.
+        // Battery measurements come from the AXP2101 component.
         AXP2101::battery_info_t battery;
         AXP2101::read_battery(battery);
 
@@ -63,11 +68,13 @@ namespace watch {
             out[n++] = battery.percentage;
         }
 
-        // GPS data comes exclusively from the GPS component.
+        // Obtain GPS readings exclusively through MIA_M10Q.
         if(permissions & TELEM_LOCATION){
             MIA_M10Q::fix_t fix;
 
-            if(MIA_M10Q::get_fresh_fix(fix) && capacity - n >= 11){
+            if(MIA_M10Q::get_fresh_fix(fix) &&
+               capacity - n >= 11){
+
                 int32_t lat = static_cast<int32_t>(
                     lround(fix.latitude * 10000.0));
 
@@ -88,9 +95,9 @@ namespace watch {
 
                 add_i24(&out[n], alt);
                 n += 3;
+
             }else{
-                // The GPS component decides when and how to acquire a fix.
-                // Never return an old position as current telemetry.
+                // Never transmit a stale location.
                 MIA_M10Q::request_fix();
                 ESP_LOGD(TAG, "No fresh GPS fix available");
             }

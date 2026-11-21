@@ -48,7 +48,7 @@ static bool init_hardware(){
 extern "C" void app_main(void){
     ESP_LOGI(TAG, "T-Watch Ultra: MeshCore BLE companion");
 
-    // Keep existing NVS contents intact.
+    // Keep all existing NVS contents intact.
     esp_err_t err = nvs_flash_init();
 
     if(err != ESP_OK){
@@ -90,7 +90,8 @@ extern "C" void app_main(void){
         return;
     }
 
-    if(!init_hardware()) return;
+    if(!init_hardware())
+        return;
 
     const sx1262::config_t config = settings.get().radio();
 
@@ -102,7 +103,6 @@ extern "C" void app_main(void){
         return;
     }
 
-    // PIN must be visible on the watch, not printed over USB.
     err = watch::pairing_display_init();
 
     if(err != ESP_OK){
@@ -143,21 +143,20 @@ extern "C" void app_main(void){
         return;
     }
 
-    // Initialize GPS as an independent hardware component.
-    // A GPS failure does not prevent BLE or battery telemetry.
+    // Independent GNSS hardware component.
     err = MIA_M10Q::init();
 
     if(err != ESP_OK){
-        ESP_LOGW(TAG, "GPS unavailable: %s",
+        ESP_LOGW(TAG, "MIA_M10Q unavailable: %s",
                  esp_err_to_name(err));
     }
 
-    // MeshCorePort only consumes telemetry data.
     static watch::WatchTelemetry telemetry;
-
     static watch::WatchBLE ble;
 
-    static watch::WatchCompanion companion(ble, mesh, radio, settings, contacts, rtc, clock, telemetry);
+    static watch::WatchCompanion companion(
+        ble, mesh, radio, settings, contacts,
+        rtc, clock, telemetry);
 
     ble.set_pairing_pin(settings.get().ble_pin);
 
@@ -170,7 +169,7 @@ extern "C" void app_main(void){
     }
 
     ESP_LOGI(TAG,
-             "MeshCore node running; battery and GPS telemetry enabled");
+             "MeshCore node running; BLE companion and telemetry initialized");
 
     uint32_t next_log =
         static_cast<uint32_t>(clock.getMillis()) + 30000;
@@ -184,13 +183,14 @@ extern "C" void app_main(void){
             watch::pairing_display_show(pin);
         }
 
-        // The GPS component owns the UART and power state.
+        // GPS component handles its own power and UART.
         MIA_M10Q::loop();
 
         mesh.loop();
         companion.loop();
 
-        uint32_t now = static_cast<uint32_t>(clock.getMillis());
+        uint32_t now =
+            static_cast<uint32_t>(clock.getMillis());
 
         if(static_cast<int32_t>(now - next_log) >= 0){
             ESP_LOGI(TAG,
