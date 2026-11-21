@@ -16,7 +16,7 @@ namespace watch {
     // Does not use USB, Wi-Fi, or length-prefix framing.
     class WatchBLE {
     public:
-        static constexpr size_t MAX_FRAME = 176;
+        static constexpr size_t MAX_FRAME = 258;
 
         struct Frame {
             uint16_t length = 0;
@@ -27,6 +27,7 @@ namespace watch {
         esp_err_t begin(const char *name);
         bool receive(Frame &frame);
         bool send(const uint8_t *data, size_t length);
+        bool send_best_effort(const uint8_t *data, size_t length);
         void loop();
         bool connected() const { return authenticated_.load(); }
         bool can_send(size_t length) const;

@@ -309,6 +309,30 @@ namespace watch {
                  packet->getSNR(), score);
     }
 
+    void WatchMesh::logRxRaw(
+        float snr,
+        float rssi,
+        const uint8_t raw[],
+        int length)
+    {
+        if(raw_rx_callback_ == nullptr)
+            return;
+
+        if(raw == nullptr || length <= 0 ||
+        length > MAX_TRANS_UNIT)
+            return;
+
+        // Forward the original received LoRa bytes.
+        // Do not modify routing or packet processing.
+        raw_rx_callback_(
+            raw_rx_context_,
+            snr,
+            rssi,
+            raw,
+            static_cast<size_t>(length)
+        );
+    }
+
     void WatchMesh::onAdvertRecv(mesh::Packet *, const mesh::Identity &identity,
                                  uint32_t timestamp, const uint8_t *data, size_t length){
         valid_adverts_++;

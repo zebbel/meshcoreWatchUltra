@@ -37,9 +37,13 @@ namespace watch {
         RESP_NO_MORE=10, RESP_EXPORT_CONTACT=11, RESP_BATT=12,
         RESP_DEVICE=13, RESP_CHANNEL=18, RESP_TUNING=23,
         RESP_STATS=24, RESP_AUTOADD=25, RESP_REPEAT_FREQ=26,
-        RESP_DEFAULT_SCOPE=28,
-        PUSH_ADVERT=0x80, PUSH_ACK=0x82, PUSH_MSGS=0x83,
-        PUSH_NEW_ADVERT=0x8A, PUSH_TELEMETRY=0x8B
+        RESP_DEFAULT_SCOPE=28,  
+        PUSH_ADVERT=0x80,
+        PUSH_ACK=0x82,
+        PUSH_MSGS=0x83,
+        PUSH_LOG_RX=0x88,
+        PUSH_NEW_ADVERT=0x8A,
+        PUSH_TELEMETRY=0x8B
     };
 
     enum : uint8_t {
@@ -103,6 +107,7 @@ namespace watch {
         mesh_.set_peer_callback(peer_callback, this);
         mesh_.set_advert_callback(advert_callback, this);
         mesh_.set_ack_callback(ack_callback, this);
+        mesh_.set_raw_rx_callback(raw_rx_callback, this);
     }
 
     void WatchCompanion::group_callback(
@@ -133,6 +138,24 @@ namespace watch {
 
     void WatchCompanion::ack_callback(void *ctx, uint32_t crc){
         static_cast<WatchCompanion *>(ctx)->on_ack(crc);
+    }
+
+    void WatchCompanion::raw_rx_callback(
+        void *ctx,
+        float snr,
+        float rssi,
+        const uint8_t *raw,
+        size_t length)
+    {
+        if(ctx == nullptr)
+            return;
+
+        static_cast<WatchCompanion *>(ctx)->on_raw_rx(
+            snr,
+            rssi,
+            raw,
+            length
+        );
     }
 
     void WatchCompanion::enqueue(const uint8_t *data, size_t len){
@@ -270,6 +293,69 @@ namespace watch {
                 break;
             }
         }
+    }
+
+    void WatchCompanion::on_raw_rx(
+        float snr,
+        float rssi,
+        const uint8_t *raw,
+        size_t length)
+    {
+        if(raw == nullptr || length == 0)
+            return;
+
+        // MeshCore raw RX notification format:
+        //
+        // Byte 0: 0x88
+        // Byte 1: SNR multiplied by 4 (signed int8)
+        // Byte 2: RSSI in dBm (signed int8)
+        // Byte 3+: Original LoRa packet
+
+        constexpr size_t HEADER_SIZE = 3;
+
+        if(length > WatchBLE::MAX_FRAME - HEADER_SIZE)
+            return;
+
+        // Use only valid BLE signal byte ranges.
+        const float snr_scaled = snr * 4.0f;
+
+        const int snr_value =
+            snr_scaled < -128.0f ? -128 :
+            snr_scaled > 127.0f ? 127 :
+            static_cast<int>(snr_scaled);
+
+        const int rssi_value =
+            rssi < -128.0f ? -128 :
+            rssi > 127.0f ? 127 :
+            static_cast<int>(rssi);
+
+        uint8_t frame[WatchBLE::MAX_FRAME] = {};
+
+        frame[0] = PUSH_LOG_RX;
+
+        frame[1] = static_cast<uint8_t>(
+            static_cast<int8_t>(snr_value)
+        );
+
+        frame[2] = static_cast<uint8_t>(
+            static_cast<int8_t>(rssi_value)
+        );
+
+        memcpy(
+            &frame[HEADER_SIZE],
+            raw,
+            length
+        );
+
+        const size_t frame_length =
+            HEADER_SIZE + length;
+
+        // Best-effort only:
+        // never interfere with normal companion traffic.
+        ble_.send_best_effort(
+            frame,
+            frame_length
+        );
     }
 
     void WatchCompanion::reply_error(uint8_t code){

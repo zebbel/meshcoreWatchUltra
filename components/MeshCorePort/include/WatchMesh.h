@@ -11,29 +11,24 @@ namespace watch {
 
     class WatchMesh final : public mesh::Mesh {
     public:
-        using GroupCallback = void (*)(void *ctx, const mesh::Packet *packet,
-                                       uint8_t channel_index, uint32_t timestamp,
-                                       const uint8_t *text, size_t length);
-        using PeerCallback = void (*)(void *, const mesh::Packet *, const uint8_t pub[32],
-                                      uint8_t text_type, uint32_t timestamp,
-                                      const uint8_t *text, size_t length);
-        using AdvertCallback = void (*)(void *, const mesh::Identity &,
-                                        uint32_t timestamp, const uint8_t *, size_t);
+        using GroupCallback = void (*)(void *ctx, const mesh::Packet *packet, uint8_t channel_index, uint32_t timestamp, const uint8_t *text, size_t length);
+        using PeerCallback = void (*)(void *, const mesh::Packet *, const uint8_t pub[32], uint8_t text_type, uint32_t timestamp, const uint8_t *text, size_t length);
+        using AdvertCallback = void (*)(void *, const mesh::Identity &, uint32_t timestamp, const uint8_t *, size_t);
         using AckCallback = void (*)(void *, uint32_t);
-        static constexpr int CHANNEL_COUNT = 8;
+        using RawRxCallback = void (*)(void *ctx, float snr, float rssi, const uint8_t *raw, size_t length);
+        static constexpr int CHANNEL_COUNT = 40;
 
-        WatchMesh(mesh::Radio &radio,
-                  mesh::MillisecondClock &clock,
-                  mesh::RNG &rng,
-                  mesh::RTCClock &rtc,
-                  mesh::PacketManager &manager,
-                  mesh::MeshTables &tables);
+        WatchMesh(mesh::Radio &radio, mesh::MillisecondClock &clock, mesh::RNG &rng, mesh::RTCClock &rtc, mesh::PacketManager &manager, mesh::MeshTables &tables);
 
         void set_group_callback(GroupCallback callback, void *context);
         void set_contacts(WatchContacts *contacts){ contacts_ = contacts; }
         void set_peer_callback(PeerCallback fn, void *ctx){ peer_callback_ = fn; peer_context_ = ctx; }
         void set_advert_callback(AdvertCallback fn, void *ctx){ advert_callback_ = fn; advert_context_ = ctx; }
         void set_ack_callback(AckCallback fn, void *ctx){ ack_callback_ = fn; ack_context_ = ctx; }
+        void set_raw_rx_callback(RawRxCallback fn, void *ctx){
+            raw_rx_callback_ = fn;
+            raw_rx_context_ = ctx;
+        }
         void set_tuning(uint32_t rx_milli, uint32_t airtime_milli){
             rx_delay_milli_ = rx_milli; airtime_factor_milli_ = airtime_milli;
         }
@@ -68,6 +63,8 @@ namespace watch {
                             const uint8_t *secret, uint8_t *data, size_t len) override;
         uint32_t getCADFailMaxDuration() const override;
         void logRx(mesh::Packet *packet, int length, float score) override;
+        void logRxRaw(float snr, float rssi, const uint8_t raw[], int length) override;
+
         int searchChannelsByHash(const uint8_t *hash,
                                  mesh::GroupChannel channels[], int max_matches) override;
         void onGroupDataRecv(mesh::Packet *packet, uint8_t type,
@@ -98,6 +95,8 @@ namespace watch {
         void *advert_context_ = nullptr;
         AckCallback ack_callback_ = nullptr;
         void *ack_context_ = nullptr;
+        RawRxCallback raw_rx_callback_ = nullptr;
+        void *raw_rx_context_ = nullptr;
         uint32_t rx_delay_milli_ = 1000;
         uint32_t airtime_factor_milli_ = 9000;
         uint8_t path_hash_size_ = 1;

@@ -129,7 +129,7 @@ namespace watch {
             store_rc,
             bond_count
         );
-        ble_att_set_preferred_mtu(247);
+        ble_att_set_preferred_mtu(517);
         started_ = true;
         nimble_port_freertos_init(host_task);
         ESP_LOGI(TAG, "Bluetooth-only MeshCore GATT service started: %s", device_name_);
@@ -363,6 +363,45 @@ namespace watch {
         frame.length = length;
         memcpy(frame.data, data, length);
         return xQueueSend(tx_queue_, &frame, 0) == pdTRUE;
+    }
+
+    bool WatchBLE::send_best_effort(
+        const uint8_t *data,
+        size_t length)
+    {
+        if(data == nullptr || length == 0 ||
+        length > MAX_FRAME)
+            return false;
+
+        if(tx_queue_ == nullptr)
+            return false;
+
+        // Do not enqueue frames that cannot be sent
+        // with the currently negotiated BLE MTU.
+        // An oversized frame must never block the queue.
+        if(!can_send(length))
+            return false;
+
+        // Preserve at least six queue slots for
+        // normal MeshCore protocol responses.
+        if(uxQueueSpacesAvailable(tx_queue_) <= 6)
+            return false;
+
+        Frame frame = {};
+
+        frame.length = static_cast<uint16_t>(length);
+
+        memcpy(
+            frame.data,
+            data,
+            length
+        );
+
+        return xQueueSend(
+            tx_queue_,
+            &frame,
+            0
+        ) == pdTRUE;
     }
 
     bool WatchBLE::can_send(size_t length) const{
