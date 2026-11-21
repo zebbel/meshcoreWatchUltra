@@ -157,8 +157,7 @@ extern "C" void app_main(void){
 
     static watch::WatchBLE ble;
 
-    static watch::WatchCompanion companion(
-        ble, mesh, radio, settings, contacts, rtc, clock, telemetry);
+    static watch::WatchCompanion companion(ble, mesh, radio, settings, contacts, rtc, clock, telemetry);
 
     ble.set_pairing_pin(settings.get().ble_pin);
 

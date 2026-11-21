@@ -1,5 +1,5 @@
 
-#include "MIA-M10Q.h"
+#include "MIA_M10Q.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -13,7 +13,7 @@
 
 namespace MIA_M10Q {
 
-    static const char *TAG = "MIA-M10Q";
+    static const char *TAG = "MIA_M10Q";
     static constexpr uart_port_t GPS_UART = UART_NUM_1;
 
     static constexpr uint32_t FIX_MAX_AGE_MS = 120000;
@@ -207,7 +207,7 @@ namespace MIA_M10Q {
         initialized = true;
         next_cycle_ms = millis_now();
 
-        ESP_LOGI(TAG, "MIA-M10Q initialized at %lu baud",
+        ESP_LOGI(TAG, "MIA_M10Q initialized at %lu baud",
                  static_cast<unsigned long>(
                      board::hardware::GPS_BAUD));
 

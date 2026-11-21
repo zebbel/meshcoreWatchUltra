@@ -1,7 +1,7 @@
 
 idf_component_register(
     SRCS
-        "MIA-M10Q.cpp"
+        "MIA_M10Q.cpp"
 
     INCLUDE_DIRS
         "include"

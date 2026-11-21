@@ -4,7 +4,7 @@
 #include <math.h>
 
 #include "AXP2101.h"
-#include "MIA-M10Q.h"
+#include "MIA_M10Q.h"
 #include "esp_log.h"
 
 namespace watch {

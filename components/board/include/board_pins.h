@@ -61,7 +61,7 @@ namespace board {
         constexpr gpio_num_t NFC_CS  = GPIO_NUM_4;
         constexpr gpio_num_t NFC_IRQ = GPIO_NUM_5;
 
-        // MIA-M10Q GNSS receiver
+        // MIA_M10Q GNSS receiver
         // UART pin directions from ESP32-S3
         constexpr gpio_num_t GPS_TX  = GPIO_NUM_43;
         constexpr gpio_num_t GPS_RX  = GPIO_NUM_44;
