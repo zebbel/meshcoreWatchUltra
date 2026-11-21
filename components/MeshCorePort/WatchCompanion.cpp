@@ -69,21 +69,12 @@ namespace watch {
         return static_cast<uint32_t>(clock.getMillis());
     }
 
-    WatchCompanion::WatchCompanion(
-        WatchBLE &ble, WatchMesh &mesh, MeshCoreRadio &radio,
-        WatchSettingsStore &settings, WatchContacts &contacts,
-        WatchRTC &rtc, mesh::MillisecondClock &clock,
-        WatchTelemetry &telemetry)
+    WatchCompanion::WatchCompanion(WatchBLE &ble, WatchMesh &mesh, MeshCoreRadio &radio, WatchSettingsStore &settings, WatchContacts &contacts, WatchRTC &rtc, mesh::MillisecondClock &clock, WatchTelemetry &telemetry)
         : ble_(ble), mesh_(mesh), radio_(radio),
           settings_(settings), contacts_(contacts),
           rtc_(rtc), clock_(clock), telemetry_(telemetry){
 
-        snprintf(node_name_, sizeof(node_name_),
-                 "Watch-%02X%02X%02X%02X",
-                 mesh_.self_id.pub_key[0],
-                 mesh_.self_id.pub_key[1],
-                 mesh_.self_id.pub_key[2],
-                 mesh_.self_id.pub_key[3]);
+        snprintf(node_name_, sizeof(node_name_), "Watch-%02X%02X%02X%02X", mesh_.self_id.pub_key[0], mesh_.self_id.pub_key[1], mesh_.self_id.pub_key[2], mesh_.self_id.pub_key[3]);
 
         nvs_handle_t h;
 
@@ -91,12 +82,7 @@ namespace watch {
             size_t n = sizeof(node_name_);
 
             if(nvs_get_str(h, "node_name", node_name_, &n) != ESP_OK){
-                snprintf(node_name_, sizeof(node_name_),
-                         "Watch-%02X%02X%02X%02X",
-                         mesh_.self_id.pub_key[0],
-                         mesh_.self_id.pub_key[1],
-                         mesh_.self_id.pub_key[2],
-                         mesh_.self_id.pub_key[3]);
+                snprintf(node_name_, sizeof(node_name_), "Watch-%02X%02X%02X%02X", mesh_.self_id.pub_key[0], mesh_.self_id.pub_key[1], mesh_.self_id.pub_key[2], mesh_.self_id.pub_key[3]);
             }
 
             nvs_close(h);
@@ -110,65 +96,41 @@ namespace watch {
         mesh_.set_raw_rx_callback(raw_rx_callback, this);
     }
 
-    void WatchCompanion::group_callback(
-        void *ctx, const mesh::Packet *p,
-        uint8_t ch, uint32_t ts,
-        const uint8_t *txt, size_t n){
+    void WatchCompanion::group_callback(void *ctx, const mesh::Packet *p, uint8_t ch, uint32_t ts, const uint8_t *txt, size_t n){
 
-        static_cast<WatchCompanion *>(ctx)->
-            on_group_message(p, ch, ts, txt, n);
+        static_cast<WatchCompanion *>(ctx)-> on_group_message(p, ch, ts, txt, n);
     }
 
-    void WatchCompanion::peer_callback(
-        void *ctx, const mesh::Packet *p,
-        const uint8_t pub[32], uint8_t type,
-        uint32_t ts, const uint8_t *txt, size_t n){
+    void WatchCompanion::peer_callback(void *ctx, const mesh::Packet *p, const uint8_t pub[32], uint8_t type, uint32_t ts, const uint8_t *txt, size_t n){
 
-        static_cast<WatchCompanion *>(ctx)->
-            on_peer_message(p, pub, type, ts, txt, n);
+        static_cast<WatchCompanion *>(ctx)-> on_peer_message(p, pub, type, ts, txt, n);
     }
 
-    void WatchCompanion::advert_callback(
-        void *ctx, const mesh::Identity &id,
-        uint32_t ts, const uint8_t *data, size_t n){
+    void WatchCompanion::advert_callback(void *ctx, const mesh::Identity &id, uint32_t ts, const uint8_t *data, size_t n){
 
-        static_cast<WatchCompanion *>(ctx)->
-            on_advert(id, ts, data, n);
+        static_cast<WatchCompanion *>(ctx)-> on_advert(id, ts, data, n);
     }
 
     void WatchCompanion::ack_callback(void *ctx, uint32_t crc){
         static_cast<WatchCompanion *>(ctx)->on_ack(crc);
     }
 
-    void WatchCompanion::raw_rx_callback(
-        void *ctx,
-        float snr,
-        float rssi,
-        const uint8_t *raw,
-        size_t length)
-    {
+    void WatchCompanion::raw_rx_callback(void *ctx, float snr, float rssi, const uint8_t *raw, size_t length){
         if(ctx == nullptr)
             return;
 
-        static_cast<WatchCompanion *>(ctx)->on_raw_rx(
-            snr,
-            rssi,
-            raw,
-            length
-        );
+        static_cast<WatchCompanion *>(ctx)->on_raw_rx(snr, rssi, raw, length);
     }
 
     void WatchCompanion::enqueue(const uint8_t *data, size_t len){
-        if(data == nullptr || len == 0 ||
-           len > WatchBLE::MAX_FRAME) return;
+        if(data == nullptr || len == 0 || len > WatchBLE::MAX_FRAME) return;
 
         if(message_count_ >= MESSAGE_QUEUE){
             ESP_LOGW(TAG, "RAM inbox full; new message not queued");
             return;
         }
 
-        auto &f =
-            messages_[(message_head_ + message_count_) % MESSAGE_QUEUE];
+        auto &f = messages_[(message_head_ + message_count_) % MESSAGE_QUEUE];
 
         memcpy(f.data, data, len);
         f.length = len;
@@ -178,17 +140,14 @@ namespace watch {
         ble_.send(&push, 1);
     }
 
-    void WatchCompanion::on_group_message(
-        const mesh::Packet *pkt, uint8_t ch,
-        uint32_t ts, const uint8_t *text, size_t n){
+    void WatchCompanion::on_group_message(const mesh::Packet *pkt, uint8_t ch, uint32_t ts, const uint8_t *text, size_t n){
 
         uint8_t f[WatchBLE::MAX_FRAME] = {};
         size_t i = 0;
 
         if(target_version_ >= 3){
             f[i++] = RESP_GROUP_V3;
-            f[i++] =
-                static_cast<uint8_t>(static_cast<int8_t>(pkt->getSNR() * 4));
+            f[i++] = static_cast<uint8_t>(static_cast<int8_t>(pkt->getSNR() * 4));
             f[i++] = 0;
             f[i++] = 0;
         }else{
@@ -211,18 +170,14 @@ namespace watch {
         enqueue(f, i);
     }
 
-    void WatchCompanion::on_peer_message(
-        const mesh::Packet *pkt, const uint8_t pub[32],
-        uint8_t type, uint32_t ts,
-        const uint8_t *text, size_t n){
+    void WatchCompanion::on_peer_message(const mesh::Packet *pkt, const uint8_t pub[32], uint8_t type, uint32_t ts, const uint8_t *text, size_t n){
 
         uint8_t f[WatchBLE::MAX_FRAME] = {};
         size_t i = 0;
 
         if(target_version_ >= 3){
             f[i++] = RESP_PEER_V3;
-            f[i++] =
-                static_cast<uint8_t>(static_cast<int8_t>(pkt->getSNR() * 4));
+            f[i++] = static_cast<uint8_t>(static_cast<int8_t>(pkt->getSNR() * 4));
             f[i++] = 0;
             f[i++] = 0;
         }else{
@@ -247,23 +202,18 @@ namespace watch {
         enqueue(f, i);
     }
 
-    void WatchCompanion::on_advert(
-        const mesh::Identity &id,
-        uint32_t ts, const uint8_t *data, size_t n){
+    void WatchCompanion::on_advert(const mesh::Identity &id, uint32_t ts, const uint8_t *data, size_t n){
 
         const auto *previous = contacts_.find(id.pub_key);
         bool is_new = previous == nullptr;
 
         const auto &cfg = settings_.get();
         bool manual = (cfg.manual_contact_mode & 1) != 0;
-        bool autoadd =
-            !manual || (cfg.autoadd_config & 0x1e) != 0;
+        bool autoadd = !manual || (cfg.autoadd_config & 0x1e) != 0;
 
         uint8_t mask = manual ? cfg.autoadd_config : 0;
 
-        if(!contacts_.observe_advert(
-            id, ts, data, n, rtc_.getCurrentTime(),
-            autoadd, mask)){
+        if(!contacts_.observe_advert(id, ts, data, n, rtc_.getCurrentTime(), autoadd, mask)){
             return;
         }
 
@@ -295,12 +245,7 @@ namespace watch {
         }
     }
 
-    void WatchCompanion::on_raw_rx(
-        float snr,
-        float rssi,
-        const uint8_t *raw,
-        size_t length)
-    {
+    void WatchCompanion::on_raw_rx(float snr, float rssi, const uint8_t *raw, size_t length){
         if(raw == nullptr || length == 0)
             return;
 
@@ -319,13 +264,11 @@ namespace watch {
         // Use only valid BLE signal byte ranges.
         const float snr_scaled = snr * 4.0f;
 
-        const int snr_value =
-            snr_scaled < -128.0f ? -128 :
+        const int snr_value = snr_scaled < -128.0f ? -128 :
             snr_scaled > 127.0f ? 127 :
             static_cast<int>(snr_scaled);
 
-        const int rssi_value =
-            rssi < -128.0f ? -128 :
+        const int rssi_value = rssi < -128.0f ? -128 :
             rssi > 127.0f ? 127 :
             static_cast<int>(rssi);
 
@@ -333,35 +276,21 @@ namespace watch {
 
         frame[0] = PUSH_LOG_RX;
 
-        frame[1] = static_cast<uint8_t>(
-            static_cast<int8_t>(snr_value)
-        );
+        frame[1] = static_cast<uint8_t>(static_cast<int8_t>(snr_value));
 
-        frame[2] = static_cast<uint8_t>(
-            static_cast<int8_t>(rssi_value)
-        );
+        frame[2] = static_cast<uint8_t>(static_cast<int8_t>(rssi_value));
 
-        memcpy(
-            &frame[HEADER_SIZE],
-            raw,
-            length
-        );
+        memcpy(&frame[HEADER_SIZE], raw, length);
 
-        const size_t frame_length =
-            HEADER_SIZE + length;
+        const size_t frame_length = HEADER_SIZE + length;
 
         // Best-effort only:
         // never interfere with normal companion traffic.
-        ble_.send_best_effort(
-            frame,
-            frame_length
-        );
+        ble_.send_best_effort(frame, frame_length);
     }
 
     void WatchCompanion::reply_error(uint8_t code){
-        ESP_LOGW(TAG,
-                 "Companion command rejected: error=%u",
-                 static_cast<unsigned>(code));
+        ESP_LOGW(TAG, "Companion command rejected: error=%u", static_cast<unsigned>(code));
 
         const uint8_t f[2] = {RESP_ERROR, code};
         ble_.send(f, 2);
@@ -378,8 +307,7 @@ namespace watch {
         if(nvs_open("meshcore", NVS_READWRITE, &h) != ESP_OK)
             return false;
 
-        esp_err_t err =
-            nvs_set_str(h, "node_name", node_name_);
+        esp_err_t err = nvs_set_str(h, "node_name", node_name_);
 
         if(err == ESP_OK)
             err = nvs_commit(h);
@@ -388,46 +316,32 @@ namespace watch {
         return err == ESP_OK;
     }
 
-    bool WatchCompanion::update_settings(
-        const WatchSettings &next, bool radio_change){
+    bool WatchCompanion::update_settings(const WatchSettings &next, bool radio_change){
 
         if(!next.valid()){
-            ESP_LOGW(TAG,
-                     "Invalid settings: freq=%lu kHz BW=%lu Hz SF=%u CR=%u TX=%d dBm",
-                     static_cast<unsigned long>(next.freq_khz),
-                     static_cast<unsigned long>(next.bandwidth_hz),
-                     next.sf, next.cr, next.tx_power_dbm);
+            ESP_LOGW(TAG, "Invalid settings: freq=%lu kHz BW=%lu Hz SF=%u CR=%u TX=%d dBm", static_cast<unsigned long>(next.freq_khz), static_cast<unsigned long>(next.bandwidth_hz), next.sf, next.cr, next.tx_power_dbm);
             return false;
         }
 
         const WatchSettings before = settings_.get();
 
-        const bool radio_changed = radio_change &&
-            (next.freq_khz != before.freq_khz ||
-             next.bandwidth_hz != before.bandwidth_hz ||
-             next.sf != before.sf ||
-             next.cr != before.cr ||
-             next.tx_power_dbm != before.tx_power_dbm);
+        const bool radio_changed = radio_change && (next.freq_khz != before.freq_khz || next.bandwidth_hz != before.bandwidth_hz || next.sf != before.sf || next.cr != before.cr || next.tx_power_dbm != before.tx_power_dbm);
 
         if(radio_change && !radio_changed)
             return true;
 
         if(radio_changed && mesh_.pendingOutboundCount() != 0){
-            ESP_LOGW(TAG,
-                     "Cannot change active radio while outbound packets are queued");
+            ESP_LOGW(TAG, "Cannot change active radio while outbound packets are queued");
             return false;
         }
 
         if(radio_changed && !radio_.applyConfig(next.radio())){
-            ESP_LOGW(TAG,
-                     "Radio driver rejected requested configuration");
+            ESP_LOGW(TAG, "Radio driver rejected requested configuration");
             return false;
         }
 
         if(settings_.save(next) == ESP_OK){
-            mesh_.set_tuning(
-                next.rx_delay_milli,
-                next.airtime_factor_milli);
+            mesh_.set_tuning(next.rx_delay_milli, next.airtime_factor_milli);
             mesh_.set_path_hash_mode(next.path_hash_mode);
             mesh_.set_scope_key(next.default_scope_key);
             ble_.set_pairing_pin(next.ble_pin);
@@ -436,10 +350,8 @@ namespace watch {
 
         ESP_LOGE(TAG, "Unable to persist settings to NVS");
 
-        if(radio_changed &&
-           !radio_.applyConfig(before.radio())){
-            ESP_LOGE(TAG,
-                     "Failed restoring radio after NVS error");
+        if(radio_changed && !radio_.applyConfig(before.radio())){
+            ESP_LOGE(TAG, "Failed restoring radio after NVS error");
         }
 
         return false;
@@ -480,8 +392,7 @@ namespace watch {
         f[i++] = s.sf;
         f[i++] = s.cr;
 
-        const size_t n =
-            strnlen(node_name_, sizeof(node_name_));
+        const size_t n = strnlen(node_name_, sizeof(node_name_));
 
         memcpy(&f[i], node_name_, n);
         i += n;
@@ -501,16 +412,13 @@ namespace watch {
         put_u32(&f[i], settings_.get().ble_pin);
         i += 4;
 
-        snprintf(reinterpret_cast<char *>(&f[i]),
-                 12, "%s", "2026-11-20");
+        snprintf(reinterpret_cast<char *>(&f[i]), 12, "%s", "2026-11-20");
         i += 12;
 
-        snprintf(reinterpret_cast<char *>(&f[i]),
-                 40, "%s", "LilyGO T-Watch Ultra");
+        snprintf(reinterpret_cast<char *>(&f[i]), 40, "%s", "LilyGO T-Watch Ultra");
         i += 40;
 
-        snprintf(reinterpret_cast<char *>(&f[i]),
-                 20, "%s", "watch-ble-m6");
+        snprintf(reinterpret_cast<char *>(&f[i]), 20, "%s", "watch-ble-m6");
         i += 20;
 
         f[i++] = 0;
@@ -536,8 +444,7 @@ namespace watch {
         ble_.send(f, sizeof(f));
     }
 
-    bool WatchCompanion::send_contact(
-        const WatchContact &c, uint8_t code){
+    bool WatchCompanion::send_contact(const WatchContact &c, uint8_t code){
 
         uint8_t f[WatchContacts::WIRE_LENGTH] = {};
         size_t n = contacts_.to_wire(f, c);
@@ -557,11 +464,9 @@ namespace watch {
             contact_index_ < WatchContacts::CAPACITY;
             contact_index_++){
 
-            const WatchContact *peer =
-                contacts_.at(contact_index_);
+            const WatchContact *peer = contacts_.at(contact_index_);
 
-            if(peer == nullptr ||
-               peer->lastmod <= contact_since_){
+            if(peer == nullptr || peer->lastmod <= contact_since_){
                 continue;
             }
 
@@ -582,8 +487,7 @@ namespace watch {
             contact_sync_ = false;
     }
 
-    void WatchCompanion::handle(
-        const uint8_t *cmd, size_t len){
+    void WatchCompanion::handle(const uint8_t *cmd, size_t len){
 
         if(cmd == nullptr || len == 0)
             return;
@@ -618,8 +522,7 @@ namespace watch {
                     return;
                 }
 
-                contact_since_ =
-                    len >= 5 ? get_u32(&cmd[1]) : 0;
+                contact_since_ = len >= 5 ? get_u32(&cmd[1]) : 0;
 
                 contact_index_ = 0;
                 last_mod_ = 0;
@@ -649,8 +552,7 @@ namespace watch {
                 return;
 
             case CMD_ADD_CONTACT: {
-                switch(contacts_.update_from_wire(
-                    cmd, len, rtc_.getCurrentTime())){
+                switch(contacts_.update_from_wire(cmd, len, rtc_.getCurrentTime())){
 
                     case ContactUpdateResult::SAVED:
                         reply_ok();
@@ -671,20 +573,14 @@ namespace watch {
             }
 
             case CMD_IMPORT_CONTACT: {
-                if(len < 1 + 2 + PUB_KEY_SIZE +
-                   4 + SIGNATURE_SIZE + 1){
+                if(len < 1 + 2 + PUB_KEY_SIZE + 4 + SIGNATURE_SIZE + 1){
                     reply_error(ERR_ILLEGAL);
                     return;
                 }
 
                 mesh::Packet packet;
 
-                if(!packet.readFrom(
-                    &cmd[1],
-                    static_cast<uint8_t>(len - 1)) ||
-                   packet.getPayloadType() != PAYLOAD_TYPE_ADVERT ||
-                   packet.payload_len <
-                       PUB_KEY_SIZE + 4 + SIGNATURE_SIZE + 1){
+                if(!packet.readFrom(&cmd[1], static_cast<uint8_t>(len - 1)) || packet.getPayloadType() != PAYLOAD_TYPE_ADVERT || packet.payload_len < PUB_KEY_SIZE + 4 + SIGNATURE_SIZE + 1){
 
                     reply_error(ERR_ILLEGAL);
                     return;
@@ -692,11 +588,9 @@ namespace watch {
 
                 const uint8_t *payload = packet.payload;
 
-                const size_t header_len =
-                    PUB_KEY_SIZE + 4 + SIGNATURE_SIZE;
+                const size_t header_len = PUB_KEY_SIZE + 4 + SIGNATURE_SIZE;
 
-                const size_t advert_len =
-                    packet.payload_len - header_len;
+                const size_t advert_len = packet.payload_len - header_len;
 
                 if(advert_len > MAX_ADVERT_DATA_SIZE){
                     reply_error(ERR_ILLEGAL);
@@ -710,40 +604,24 @@ namespace watch {
                     return;
                 }
 
-                uint8_t signed_data[
-                    PUB_KEY_SIZE + 4 + MAX_ADVERT_DATA_SIZE] = {};
+                uint8_t signed_data[PUB_KEY_SIZE + 4 + MAX_ADVERT_DATA_SIZE] = {};
 
-                memcpy(
-                    signed_data, payload, PUB_KEY_SIZE + 4);
+                memcpy(signed_data, payload, PUB_KEY_SIZE + 4);
 
-                memcpy(
-                    signed_data + PUB_KEY_SIZE + 4,
-                    payload + header_len, advert_len);
+                memcpy(signed_data + PUB_KEY_SIZE + 4, payload + header_len, advert_len);
 
-                if(!sender.verify(
-                    payload + PUB_KEY_SIZE + 4,
-                    signed_data,
-                    static_cast<int>(
-                        PUB_KEY_SIZE + 4 + advert_len))){
+                if(!sender.verify(payload + PUB_KEY_SIZE + 4, signed_data, static_cast<int>(PUB_KEY_SIZE + 4 + advert_len))){
 
-                    ESP_LOGW(TAG,
-                             "Rejected unsigned or forged contact advert");
+                    ESP_LOGW(TAG, "Rejected unsigned or forged contact advert");
                     reply_error(ERR_ILLEGAL);
                     return;
                 }
 
-                const uint32_t timestamp =
-                    get_u32(payload + PUB_KEY_SIZE);
+                const uint32_t timestamp = get_u32(payload + PUB_KEY_SIZE);
 
-                if(!contacts_.observe_advert(
-                    sender, timestamp,
-                    payload + header_len,
-                    advert_len, rtc_.getCurrentTime(),
-                    true, 0)){
+                if(!contacts_.observe_advert(sender, timestamp, payload + header_len, advert_len, rtc_.getCurrentTime(), true, 0)){
 
-                    reply_error(
-                        contacts_.count() == WatchContacts::CAPACITY
-                        ? ERR_FULL : ERR_ILLEGAL);
+                    reply_error(contacts_.count() == WatchContacts::CAPACITY ? ERR_FULL : ERR_ILLEGAL);
                     return;
                 }
 
@@ -762,20 +640,16 @@ namespace watch {
                     return;
                 }
 
-                size_t name_len =
-                    strnlen(node_name_, sizeof(node_name_));
+                size_t name_len = strnlen(node_name_, sizeof(node_name_));
 
-                const bool location =
-                    before.advert_loc_policy != 0;
+                const bool location = before.advert_loc_policy != 0;
 
                 const size_t offset = location ? 9 : 1;
 
                 if(name_len > MAX_ADVERT_DATA_SIZE - offset){
                     name_len = MAX_ADVERT_DATA_SIZE - offset;
 
-                    while(name_len > 0 &&
-                          (static_cast<uint8_t>(
-                              node_name_[name_len]) & 0xC0) == 0x80){
+                    while(name_len > 0 && (static_cast<uint8_t>(node_name_[name_len]) & 0xC0) == 0x80){
                         name_len--;
                     }
                 }
@@ -789,22 +663,13 @@ namespace watch {
                 app_data[0] = location ? 0x91 : 0x81;
 
                 if(location){
-                    put_u32(
-                        &app_data[1],
-                        static_cast<uint32_t>(
-                            before.latitude_micro));
-                    put_u32(
-                        &app_data[5],
-                        static_cast<uint32_t>(
-                            before.longitude_micro));
+                    put_u32(&app_data[1], static_cast<uint32_t>(before.latitude_micro));
+                    put_u32(&app_data[5], static_cast<uint32_t>(before.longitude_micro));
                 }
 
-                memcpy(
-                    &app_data[offset],
-                    node_name_, name_len);
+                memcpy(&app_data[offset], node_name_, name_len);
 
-                mesh::Packet *packet = mesh_.createAdvert(
-                    mesh_.self_id, app_data, offset + name_len);
+                mesh::Packet *packet = mesh_.createAdvert(mesh_.self_id, app_data, offset + name_len);
 
                 if(packet == nullptr){
                     reply_error(ERR_FULL);
@@ -813,19 +678,15 @@ namespace watch {
 
                 packet->header |= ROUTE_TYPE_FLOOD;
 
-                uint8_t response[WatchBLE::MAX_FRAME] = {
-                    RESP_EXPORT_CONTACT
-                };
+                uint8_t response[WatchBLE::MAX_FRAME] = { RESP_EXPORT_CONTACT };
 
-                if(packet->getRawLength() + 1 >
-                   static_cast<int>(sizeof(response))){
+                if(packet->getRawLength() + 1 > static_cast<int>(sizeof(response))){
                     mesh_.releasePacket(packet);
                     reply_error(ERR_FULL);
                     return;
                 }
 
-                const uint8_t packet_len =
-                    packet->writeTo(&response[1]);
+                const uint8_t packet_len = packet->writeTo(&response[1]);
 
                 mesh_.releasePacket(packet);
 
@@ -870,8 +731,7 @@ namespace watch {
             }
 
             case CMD_SET_TIME:
-                if(len != 5 ||
-                   get_u32(&cmd[1]) < rtc_.getCurrentTime()){
+                if(len != 5 || get_u32(&cmd[1]) < rtc_.getCurrentTime()){
                     reply_error(ERR_ILLEGAL);
                     return;
                 }
@@ -926,8 +786,7 @@ namespace watch {
                 char name[32] = {};
                 memcpy(name, &cmd[2], 31);
 
-                if(!mesh_.set_channel(
-                    cmd[1], name, &cmd[34])){
+                if(!mesh_.set_channel(cmd[1], name, &cmd[34])){
                     reply_error(ERR_ILLEGAL);
                     return;
                 }
@@ -947,9 +806,7 @@ namespace watch {
                 if(ts == 0)
                     ts = rtc_.getCurrentTimeUnique();
 
-                if(!mesh_.send_channel_text(
-                    cmd[2], ts, node_name_,
-                    &cmd[7], len - 7)){
+                if(!mesh_.send_channel_text(cmd[2], ts, node_name_, &cmd[7], len - 7)){
 
                     reply_error(ERR_FULL);
                     return;
@@ -965,8 +822,7 @@ namespace watch {
                     return;
                 }
 
-                const auto *recipient =
-                    contacts_.find(&cmd[7], 6);
+                const auto *recipient = contacts_.find(&cmd[7], 6);
 
                 if(recipient == nullptr){
                     reply_error(ERR_NOT_FOUND);
@@ -981,17 +837,13 @@ namespace watch {
                 uint32_t ack = 0;
                 uint32_t timeout = 0;
 
-                if(!mesh_.send_private_text(
-                    *recipient, ts, &cmd[13],
-                    len - 13, ack, timeout)){
+                if(!mesh_.send_private_text(*recipient, ts, &cmd[13], len - 13, ack, timeout)){
 
                     reply_error(ERR_FULL);
                     return;
                 }
 
-                pending_acks_[ack_next_] = {
-                    ack, time_ms(clock_)
-                };
+                pending_acks_[ack_next_] = { ack, time_ms(clock_) };
 
                 ack_next_ = (ack_next_ + 1) % 8;
 
@@ -1012,8 +864,7 @@ namespace watch {
                     auto &f = messages_[message_head_];
 
                     if(ble_.send(f.data, f.length)){
-                        message_head_ =
-                            (message_head_ + 1) % MESSAGE_QUEUE;
+                        message_head_ = (message_head_ + 1) % MESSAGE_QUEUE;
                         message_count_--;
                     }
                 }
@@ -1025,12 +876,7 @@ namespace watch {
                     return;
                 }
 
-                if(!mesh_.send_self_advert(
-                    node_name_,
-                    len > 1 && cmd[1] == 1,
-                    before.latitude_micro,
-                    before.longitude_micro,
-                    before.advert_loc_policy != 0)){
+                if(!mesh_.send_self_advert(node_name_, len > 1 && cmd[1] == 1, before.latitude_micro, before.longitude_micro, before.advert_loc_policy != 0)){
 
                     reply_error(ERR_FULL);
                     return;
@@ -1047,10 +893,8 @@ namespace watch {
 
                 WatchSettings next = before;
 
-                next.latitude_micro =
-                    static_cast<int32_t>(get_u32(&cmd[1]));
-                next.longitude_micro =
-                    static_cast<int32_t>(get_u32(&cmd[5]));
+                next.latitude_micro = static_cast<int32_t>(get_u32(&cmd[1]));
+                next.longitude_micro = static_cast<int32_t>(get_u32(&cmd[5]));
 
                 if(!update_settings(next, false)){
                     reply_error(ERR_ILLEGAL);
@@ -1204,8 +1048,7 @@ namespace watch {
                 next.autoadd_config = cmd[1];
 
                 if(len == 3){
-                    next.autoadd_max_hops =
-                        cmd[2] > 64 ? 64 : cmd[2];
+                    next.autoadd_max_hops = cmd[2] > 64 ? 64 : cmd[2];
                 }
 
                 if(!update_settings(next, false)){
@@ -1218,11 +1061,7 @@ namespace watch {
             }
 
             case CMD_GET_AUTOADD: {
-                uint8_t f[3] = {
-                    RESP_AUTOADD,
-                    before.autoadd_config,
-                    before.autoadd_max_hops
-                };
+                uint8_t f[3] = { RESP_AUTOADD, before.autoadd_config, before.autoadd_max_hops };
 
                 ble_.send(f, sizeof(f));
                 return;
@@ -1258,8 +1097,7 @@ namespace watch {
                     if(len == 18){
                         mesh_.set_scope_key(&cmd[2]);
                     }else if(len == 2){
-                        mesh_.set_scope_key(
-                            before.default_scope_key);
+                        mesh_.set_scope_key(before.default_scope_key);
                     }else{
                         reply_error(ERR_ILLEGAL);
                         return;
@@ -1275,31 +1113,21 @@ namespace watch {
             case CMD_SET_DEFAULT_SCOPE: {
                 WatchSettings next = before;
 
-                memset(
-                    next.default_scope_name, 0,
-                    sizeof(next.default_scope_name));
+                memset(next.default_scope_name, 0, sizeof(next.default_scope_name));
 
-                memset(
-                    next.default_scope_key, 0,
-                    sizeof(next.default_scope_key));
+                memset(next.default_scope_key, 0, sizeof(next.default_scope_key));
 
                 if(len == 48){
-                    const size_t n = strnlen(
-                        reinterpret_cast<const char *>(&cmd[1]),
-                        31);
+                    const size_t n = strnlen(reinterpret_cast<const char *>(&cmd[1]), 31);
 
                     if(n == 0 || n >= 31){
                         reply_error(ERR_ILLEGAL);
                         return;
                     }
 
-                    memcpy(
-                        next.default_scope_name,
-                        &cmd[1], n);
+                    memcpy(next.default_scope_name, &cmd[1], n);
 
-                    memcpy(
-                        next.default_scope_key,
-                        &cmd[32], 16);
+                    memcpy(next.default_scope_key, &cmd[32], 16);
 
                 }else if(len != 1){
                     reply_error(ERR_ILLEGAL);
@@ -1319,13 +1147,9 @@ namespace watch {
                 uint8_t f[48] = {RESP_DEFAULT_SCOPE};
 
                 if(before.default_scope_name[0] != 0){
-                    memcpy(
-                        &f[1],
-                        before.default_scope_name, 31);
+                    memcpy(&f[1], before.default_scope_name, 31);
 
-                    memcpy(
-                        &f[32],
-                        before.default_scope_key, 16);
+                    memcpy(&f[32], before.default_scope_key, 16);
 
                     ble_.send(f, sizeof(f));
                 }else{
@@ -1348,22 +1172,13 @@ namespace watch {
                     return;
                 }
 
-                uint8_t f[WatchBLE::MAX_FRAME] = {
-                    PUSH_TELEMETRY, 0
-                };
+                uint8_t f[WatchBLE::MAX_FRAME] = { PUSH_TELEMETRY, 0 };
 
                 memcpy(&f[2], mesh_.self_id.pub_key, 6);
 
-                size_t bytes = telemetry_.encode(
-                    TELEM_BASE | TELEM_LOCATION,
-                    &f[8], sizeof(f) - 8);
+                size_t bytes = telemetry_.encode(TELEM_BASE | TELEM_LOCATION, &f[8], sizeof(f) - 8);
 
-                ESP_LOGI(
-                    TAG,
-                    "BLE telemetry: payload_bytes=%u gps_included=%d",
-                    static_cast<unsigned>(bytes),
-                    bytes >= 11 ? 1 : 0
-                );
+                ESP_LOGI(TAG, "BLE telemetry: payload_bytes=%u gps_included=%d", static_cast<unsigned>(bytes), bytes >= 11 ? 1 : 0);
 
                 if(!ble_.send(f, 8 + bytes)){
                     reply_error(ERR_BAD_STATE);
@@ -1375,17 +1190,11 @@ namespace watch {
             case CMD_GET_BATT: {
                 uint8_t f[11] = {RESP_BATT};
 
-                put_u16(
-                    &f[1],
-                    telemetry_.battery_millivolts());
+                put_u16(&f[1], telemetry_.battery_millivolts());
 
-                const auto *part = esp_partition_find_first(
-                    ESP_PARTITION_TYPE_DATA,
-                    ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
-                    "storage");
+                const auto *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "storage");
 
-                uint32_t total =
-                    part ? part->size / 1024U : 0;
+                uint32_t total = part ? part->size / 1024U : 0;
 
                 put_u32(&f[7], total);
 
@@ -1403,72 +1212,48 @@ namespace watch {
                 size_t n = 2;
 
                 if(cmd[1] == 0){
-                    put_u16(
-                        &f[n],
-                        telemetry_.battery_millivolts());
+                    put_u16(&f[n], telemetry_.battery_millivolts());
                     n += 2;
 
-                    put_u32(
-                        &f[n],
-                        time_ms(clock_) / 1000);
+                    put_u32(&f[n], time_ms(clock_) / 1000);
                     n += 4;
 
                     put_u16(&f[n], mesh_.errorFlags());
                     n += 2;
 
-                    f[n++] = static_cast<uint8_t>(
-                        mesh_.pendingOutboundCount());
+                    f[n++] = static_cast<uint8_t>(mesh_.pendingOutboundCount());
 
                 }else if(cmd[1] == 1){
                     put_u16(&f[n], 0);
                     n += 2;
 
-                    f[n++] = static_cast<uint8_t>(
-                        static_cast<int8_t>(
-                            radio_.getLastRSSI()));
+                    f[n++] = static_cast<uint8_t>(static_cast<int8_t>(radio_.getLastRSSI()));
 
-                    f[n++] = static_cast<uint8_t>(
-                        static_cast<int8_t>(
-                            radio_.getLastSNR() * 4));
+                    f[n++] = static_cast<uint8_t>(static_cast<int8_t>(radio_.getLastSNR() * 4));
 
-                    put_u32(
-                        &f[n],
-                        mesh_.getTotalAirTime() / 1000);
+                    put_u32(&f[n], mesh_.getTotalAirTime() / 1000);
                     n += 4;
 
-                    put_u32(
-                        &f[n],
-                        mesh_.getReceiveAirTime() / 1000);
+                    put_u32(&f[n], mesh_.getReceiveAirTime() / 1000);
                     n += 4;
 
                 }else if(cmd[1] == 2){
                     put_u32(&f[n], mesh_.packetCount());
                     n += 4;
 
-                    put_u32(
-                        &f[n],
-                        mesh_.getNumSentFlood() +
-                        mesh_.getNumSentDirect());
+                    put_u32(&f[n], mesh_.getNumSentFlood() + mesh_.getNumSentDirect());
                     n += 4;
 
-                    put_u32(
-                        &f[n],
-                        mesh_.getNumSentFlood());
+                    put_u32(&f[n], mesh_.getNumSentFlood());
                     n += 4;
 
-                    put_u32(
-                        &f[n],
-                        mesh_.getNumSentDirect());
+                    put_u32(&f[n], mesh_.getNumSentDirect());
                     n += 4;
 
-                    put_u32(
-                        &f[n],
-                        mesh_.getNumRecvFlood());
+                    put_u32(&f[n], mesh_.getNumRecvFlood());
                     n += 4;
 
-                    put_u32(
-                        &f[n],
-                        mesh_.getNumRecvDirect());
+                    put_u32(&f[n], mesh_.getNumRecvDirect());
                     n += 4;
 
                     put_u32(&f[n], 0);
@@ -1484,16 +1269,14 @@ namespace watch {
             }
 
             case CMD_REBOOT:
-                if(len != 7 ||
-                   memcmp(&cmd[1], "reboot", 6) != 0){
+                if(len != 7 || memcmp(&cmd[1], "reboot", 6) != 0){
                     reply_error(ERR_ILLEGAL);
                     return;
                 }
 
                 reply_ok();
 
-                reboot_at_ms_ =
-                    time_ms(clock_) + 2000;
+                reboot_at_ms_ = time_ms(clock_) + 2000;
 
                 if(reboot_at_ms_ == 0)
                     reboot_at_ms_ = 1;
@@ -1501,10 +1284,7 @@ namespace watch {
                 return;
 
             default:
-                ESP_LOGW(
-                    TAG,
-                    "Unsupported companion command %u (len=%u)",
-                    cmd[0], static_cast<unsigned>(len));
+                ESP_LOGW(TAG, "Unsupported companion command %u (len=%u)", cmd[0], static_cast<unsigned>(len));
 
                 reply_error(ERR_UNSUPPORTED);
                 return;
@@ -1526,13 +1306,9 @@ namespace watch {
 
         ble_.loop();
 
-        if(reboot_at_ms_ != 0 &&
-           static_cast<int32_t>(
-               time_ms(clock_) - reboot_at_ms_) >= 0){
+        if(reboot_at_ms_ != 0 && static_cast<int32_t>(time_ms(clock_) - reboot_at_ms_) >= 0){
 
-            ESP_LOGI(
-                TAG,
-                "Reboot requested by paired companion");
+            ESP_LOGI(TAG, "Reboot requested by paired companion");
 
             esp_restart();
         }

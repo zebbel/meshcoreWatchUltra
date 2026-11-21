@@ -17,8 +17,7 @@ namespace watch {
     static constexpr uint8_t LPP_GPS = 0x88;
 
     static void add_i24(uint8_t *out, int32_t value){
-        uint32_t bits =
-            static_cast<uint32_t>(value) & 0xFFFFFF;
+        uint32_t bits = static_cast<uint32_t>(value) & 0xFFFFFF;
 
         out[0] = static_cast<uint8_t>(bits >> 16);
         out[1] = static_cast<uint8_t>(bits >> 8);
@@ -28,21 +27,16 @@ namespace watch {
     uint16_t WatchTelemetry::battery_millivolts() const{
         AXP2101::battery_info_t battery;
 
-        if(AXP2101::read_battery(battery) != ESP_OK ||
-           !battery.voltage_valid){
+        if(AXP2101::read_battery(battery) != ESP_OK || !battery.voltage_valid){
             return 0;
         }
 
         return battery.millivolts;
     }
 
-    size_t WatchTelemetry::encode(
-        uint8_t permissions,
-        uint8_t *out,
-        size_t capacity){
+    size_t WatchTelemetry::encode(uint8_t permissions, uint8_t *out, size_t capacity){
 
-        if(out == nullptr ||
-           !(permissions & TELEM_BASE)){
+        if(out == nullptr || !(permissions & TELEM_BASE)){
             return 0;
         }
 
@@ -53,8 +47,7 @@ namespace watch {
         AXP2101::read_battery(battery);
 
         if(battery.voltage_valid && capacity - n >= 4){
-            uint16_t scaled = static_cast<uint16_t>(
-                (battery.millivolts + 5U) / 10U);
+            uint16_t scaled = static_cast<uint16_t>((battery.millivolts + 5U) / 10U);
 
             out[n++] = CHANNEL_SELF;
             out[n++] = LPP_VOLTAGE;
@@ -72,17 +65,13 @@ namespace watch {
         if(permissions & TELEM_LOCATION){
             MIA_M10Q::fix_t fix;
 
-            if(MIA_M10Q::get_fresh_fix(fix) &&
-               capacity - n >= 11){
+            if(MIA_M10Q::get_fresh_fix(fix) && capacity - n >= 11){
 
-                int32_t lat = static_cast<int32_t>(
-                    lround(fix.latitude * 10000.0));
+                int32_t lat = static_cast<int32_t>(lround(fix.latitude * 10000.0));
 
-                int32_t lon = static_cast<int32_t>(
-                    lround(fix.longitude * 10000.0));
+                int32_t lon = static_cast<int32_t>(lround(fix.longitude * 10000.0));
 
-                int32_t alt = static_cast<int32_t>(
-                    lround(fix.altitude * 100.0));
+                int32_t alt = static_cast<int32_t>(lround(fix.altitude * 100.0));
 
                 out[n++] = CHANNEL_SELF;
                 out[n++] = LPP_GPS;

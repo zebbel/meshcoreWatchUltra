@@ -195,13 +195,9 @@ namespace sx1262 {
     }
 
     static esp_err_t set_packet_length(uint8_t length){
-        uint8_t cmd[7] = {
-            CMD_SET_PACKET_PARAMS,
-            static_cast<uint8_t>(current_config.preamble_symbols >> 8),
-            static_cast<uint8_t>(current_config.preamble_symbols),
+        uint8_t cmd[7] = { CMD_SET_PACKET_PARAMS, static_cast<uint8_t>(current_config.preamble_symbols >> 8), static_cast<uint8_t>(current_config.preamble_symbols),
             0x00, // Explicit header
-            length,
-            static_cast<uint8_t>(current_config.crc_enabled ? 0x01 : 0x00),
+            length, static_cast<uint8_t>(current_config.crc_enabled ? 0x01 : 0x00),
             0x00  // Standard IQ
         };
         return command(cmd, sizeof(cmd));
@@ -732,12 +728,7 @@ namespace sx1262 {
             return err;
         }
 
-        if(pending_irq & (
-            IRQ_RX_DONE |
-            IRQ_CRC_ERR |
-            IRQ_HEADER_ERR |
-            IRQ_TIMEOUT
-        )){
+        if(pending_irq & (IRQ_RX_DONE | IRQ_CRC_ERR | IRQ_HEADER_ERR | IRQ_TIMEOUT)){
             xSemaphoreGive(radio_mutex);
             return ESP_OK;
         }
@@ -745,29 +736,18 @@ namespace sx1262 {
         // Enter standby before configuring CAD.
         receiving = false;
 
-        const uint8_t standby[] = {
-            CMD_SET_STANDBY,
-            0x01
-        };
+        const uint8_t standby[] = { CMD_SET_STANDBY, 0x01 };
 
         // Enable CAD_DONE and CAD_DETECTED interrupts.
-        const uint16_t cad_irq_mask =
-            IRQ_CAD_DONE | IRQ_CAD_DETECTED;
+        const uint16_t cad_irq_mask = IRQ_CAD_DONE | IRQ_CAD_DETECTED;
 
-        const uint8_t cad_irq[] = {
-            CMD_SET_DIO_IRQ_PARAMS,
+        const uint8_t cad_irq[] = { CMD_SET_DIO_IRQ_PARAMS,
 
-            static_cast<uint8_t>(cad_irq_mask >> 8),
-            static_cast<uint8_t>(cad_irq_mask),
+            static_cast<uint8_t>(cad_irq_mask >> 8), static_cast<uint8_t>(cad_irq_mask),
 
-            static_cast<uint8_t>(cad_irq_mask >> 8),
-            static_cast<uint8_t>(cad_irq_mask),
+            static_cast<uint8_t>(cad_irq_mask >> 8), static_cast<uint8_t>(cad_irq_mask),
 
-            0x00,
-            0x00,
-            0x00,
-            0x00
-        };
+            0x00, 0x00, 0x00, 0x00 };
 
         // SX1262 SetCadParams:
         // CAD symbol count = 4
@@ -775,20 +755,9 @@ namespace sx1262 {
         // Detection minimum = 10
         // Exit mode         = CAD_ONLY
         // Timeout           = 0
-        const uint8_t cad_params[] = {
-            CMD_SET_CAD_PARAMS,
-            0x02,
-            21,
-            10,
-            0x00,
-            0x00,
-            0x00,
-            0x00
-        };
+        const uint8_t cad_params[] = { CMD_SET_CAD_PARAMS, 0x02, 21, 10, 0x00, 0x00, 0x00, 0x00 };
 
-        const uint8_t run_cad[] = {
-            CMD_SET_CAD
-        };
+        const uint8_t run_cad[] = { CMD_SET_CAD };
 
         do{
             err = command(standby, sizeof(standby));
@@ -850,25 +819,15 @@ namespace sx1262 {
         }while(false);
 
         // Restore the original RX/TX interrupt configuration.
-        const uint8_t normal_irq[] = {
-            CMD_SET_DIO_IRQ_PARAMS,
+        const uint8_t normal_irq[] = { CMD_SET_DIO_IRQ_PARAMS,
 
-            static_cast<uint8_t>(IRQ_MASK >> 8),
-            static_cast<uint8_t>(IRQ_MASK),
+            static_cast<uint8_t>(IRQ_MASK >> 8), static_cast<uint8_t>(IRQ_MASK),
 
-            static_cast<uint8_t>(IRQ_MASK >> 8),
-            static_cast<uint8_t>(IRQ_MASK),
+            static_cast<uint8_t>(IRQ_MASK >> 8), static_cast<uint8_t>(IRQ_MASK),
 
-            0x00,
-            0x00,
-            0x00,
-            0x00
-        };
+            0x00, 0x00, 0x00, 0x00 };
 
-        esp_err_t restore_err = command(
-            normal_irq,
-            sizeof(normal_irq)
-        );
+        esp_err_t restore_err = command(normal_irq, sizeof(normal_irq));
 
         // Resume continuous reception after CAD.
         if(restore_err == ESP_OK){
@@ -879,21 +838,13 @@ namespace sx1262 {
             err = restore_err;
             busy = true;
 
-            ESP_LOGE(
-                TAG,
-                "Failed to restore RX after CAD: %s",
-                esp_err_to_name(restore_err)
-            );
+            ESP_LOGE(TAG, "Failed to restore RX after CAD: %s", esp_err_to_name(restore_err));
         }
 
         if(err != ESP_OK){
             busy = true;
 
-            ESP_LOGW(
-                TAG,
-                "CAD failed: %s",
-                esp_err_to_name(err)
-            );
+            ESP_LOGW(TAG, "CAD failed: %s", esp_err_to_name(err));
         }
 
         xSemaphoreGive(radio_mutex);

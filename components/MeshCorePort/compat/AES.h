@@ -41,18 +41,10 @@ public:
 
         psa_set_key_type(&attrs, PSA_KEY_TYPE_AES);
         psa_set_key_bits(&attrs, 128);
-        psa_set_key_usage_flags(
-            &attrs,
-            PSA_KEY_USAGE_ENCRYPT | PSA_KEY_USAGE_DECRYPT
-        );
+        psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_ENCRYPT | PSA_KEY_USAGE_DECRYPT);
         psa_set_key_algorithm(&attrs, PSA_ALG_ECB_NO_PADDING);
 
-        psa_status_t status = psa_import_key(
-            &attrs,
-            key,
-            length,
-            &key_id_
-        );
+        psa_status_t status = psa_import_key(&attrs, key, length, &key_id_);
 
         psa_reset_key_attributes(&attrs);
         check(status, "Import AES key");
@@ -71,12 +63,7 @@ private:
 
     static void check(psa_status_t status, const char *what){
         if(status != PSA_SUCCESS){
-            ESP_LOGE(
-                "MeshAES",
-                "%s failed: %ld",
-                what,
-                static_cast<long>(status)
-            );
+            ESP_LOGE("MeshAES", "%s failed: %ld", what, static_cast<long>(status));
             abort();
         }
     }
@@ -89,25 +76,8 @@ private:
         uint8_t output[32] = {};
         size_t output_length = 0;
 
-        psa_status_t status = encrypt ?
-            psa_cipher_encrypt(
-                key_id_,
-                PSA_ALG_ECB_NO_PADDING,
-                src,
-                16,
-                output,
-                sizeof(output),
-                &output_length
-            ) :
-            psa_cipher_decrypt(
-                key_id_,
-                PSA_ALG_ECB_NO_PADDING,
-                src,
-                16,
-                output,
-                sizeof(output),
-                &output_length
-            );
+        psa_status_t status = encrypt ? psa_cipher_encrypt(key_id_, PSA_ALG_ECB_NO_PADDING, src, 16, output, sizeof(output), &output_length) :
+            psa_cipher_decrypt(key_id_, PSA_ALG_ECB_NO_PADDING, src, 16, output, sizeof(output), &output_length);
 
         check(status, encrypt ? "AES encrypt" : "AES decrypt");
 

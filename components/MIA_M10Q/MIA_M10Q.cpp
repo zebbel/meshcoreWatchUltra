@@ -56,12 +56,10 @@ namespace MIA_M10Q {
         return end != text && *end == 0 && isfinite(value);
     }
 
-    static bool angle(const char *text, char hemisphere,
-                      bool latitude, double &out){
+    static bool angle(const char *text, char hemisphere, bool latitude, double &out){
         double degrees_minutes = 0;
 
-        if(!number(text, degrees_minutes) ||
-           degrees_minutes < 0) return false;
+        if(!number(text, degrees_minutes) || degrees_minutes < 0) return false;
 
         int degrees = static_cast<int>(degrees_minutes / 100);
         double minutes = degrees_minutes - degrees * 100;
@@ -92,8 +90,7 @@ namespace MIA_M10Q {
 
         const char *star = strchr(input, '*');
 
-        if(star == nullptr ||
-           star[1] == 0 || star[2] == 0 || star[3] != 0)
+        if(star == nullptr || star[1] == 0 || star[2] == 0 || star[3] != 0)
             return false;
 
         int hi = hex_digit(star[1]);
@@ -131,34 +128,23 @@ namespace MIA_M10Q {
 
         // GGA supplies position, fix quality, and altitude.
         // Accept GP and GN talker IDs.
-        if(count < 11 ||
-           strlen(fields[0]) != 6 ||
-           strcmp(fields[0] + 3, "GGA") != 0)
+        if(count < 11 || strlen(fields[0]) != 6 || strcmp(fields[0] + 3, "GGA") != 0)
             return false;
 
         // 0 means there is no valid GNSS fix.
-        if(fields[6][0] < '1' ||
-           fields[6][0] > '8' ||
-           fields[6][1] != 0)
+        if(fields[6][0] < '1' || fields[6][0] > '8' || fields[6][1] != 0)
             return false;
 
-        if(strlen(fields[3]) != 1 ||
-           strlen(fields[5]) != 1 ||
-           strcmp(fields[10], "M") != 0)
+        if(strlen(fields[3]) != 1 || strlen(fields[5]) != 1 || strcmp(fields[10], "M") != 0)
             return false;
 
         fix_t result = {};
 
-        if(!angle(fields[2], fields[3][0],
-                  true, result.latitude) ||
-           !angle(fields[4], fields[5][0],
-                  false, result.longitude) ||
-           !number(fields[9], result.altitude)){
+        if(!angle(fields[2], fields[3][0], true, result.latitude) || !angle(fields[4], fields[5][0], false, result.longitude) || !number(fields[9], result.altitude)){
             return false;
         }
 
-        if(result.altitude < -1000 ||
-           result.altitude > 20000)
+        if(result.altitude < -1000 || result.altitude > 20000)
             return false;
 
         result.valid = true;
@@ -177,29 +163,21 @@ namespace MIA_M10Q {
         config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
         config.source_clk = UART_SCLK_DEFAULT;
 
-        esp_err_t err = uart_driver_install(
-            GPS_UART, 2048, 0, 0, nullptr, 0);
+        esp_err_t err = uart_driver_install(GPS_UART, 2048, 0, 0, nullptr, 0);
 
         if(err != ESP_OK){
-            ESP_LOGE(TAG, "GNSS UART driver failed: %s",
-                     esp_err_to_name(err));
+            ESP_LOGE(TAG, "GNSS UART driver failed: %s", esp_err_to_name(err));
             return err;
         }
 
         err = uart_param_config(GPS_UART, &config);
 
         if(err == ESP_OK){
-            err = uart_set_pin(
-                GPS_UART,
-                board::pins::GPS_TX,
-                board::pins::GPS_RX,
-                UART_PIN_NO_CHANGE,
-                UART_PIN_NO_CHANGE);
+            err = uart_set_pin(GPS_UART, board::pins::GPS_TX, board::pins::GPS_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
         }
 
         if(err != ESP_OK){
-            ESP_LOGE(TAG, "GNSS UART configuration failed: %s",
-                     esp_err_to_name(err));
+            ESP_LOGE(TAG, "GNSS UART configuration failed: %s", esp_err_to_name(err));
             uart_driver_delete(GPS_UART);
             return err;
         }
@@ -207,9 +185,7 @@ namespace MIA_M10Q {
         initialized = true;
         next_cycle_ms = millis_now();
 
-        ESP_LOGI(TAG, "MIA_M10Q initialized at %lu baud",
-                 static_cast<unsigned long>(
-                     board::hardware::GPS_BAUD));
+        ESP_LOGI(TAG, "MIA_M10Q initialized at %lu baud", static_cast<unsigned long>(board::hardware::GPS_BAUD));
 
         return ESP_OK;
     }
@@ -221,8 +197,7 @@ namespace MIA_M10Q {
         esp_err_t err = AXP2101::enable(AXP2101::rail_t::gps);
 
         if(err != ESP_OK){
-            ESP_LOGW(TAG, "GNSS power-on failed: %s",
-                     esp_err_to_name(err));
+            ESP_LOGW(TAG, "GNSS power-on failed: %s", esp_err_to_name(err));
             next_cycle_ms = now + 60000;
             return;
         }
@@ -245,8 +220,7 @@ namespace MIA_M10Q {
         esp_err_t err = AXP2101::disable(AXP2101::rail_t::gps);
 
         if(err != ESP_OK){
-            ESP_LOGW(TAG, "GNSS power-off failed: %s",
-                     esp_err_to_name(err));
+            ESP_LOGW(TAG, "GNSS power-off failed: %s", esp_err_to_name(err));
             return;
         }
 
@@ -254,8 +228,7 @@ namespace MIA_M10Q {
         stopped_ms = now;
         next_cycle_ms = now + ACQUISITION_PERIOD_MS;
 
-        ESP_LOGI(TAG, "GNSS acquisition finished, fix=%d",
-                 have_cycle_fix);
+        ESP_LOGI(TAG, "GNSS acquisition finished, fix=%d", have_cycle_fix);
     }
 
     static void consume(uint8_t ch, uint32_t now){
@@ -279,8 +252,7 @@ namespace MIA_M10Q {
             const bool valid_fix = parse_gga(sentence, parsed);
 
             // Diagnostic only; does not print private coordinates.
-            if(strlen(sentence) >= 6 &&
-            strncmp(sentence + 3, "GGA", 3) == 0){
+            if(strlen(sentence) >= 6 && strncmp(sentence + 3, "GGA", 3) == 0){
                 ESP_LOGI(TAG, "NMEA GGA received, valid_fix=%d", valid_fix ? 1 : 0);
             }
 
@@ -317,24 +289,20 @@ namespace MIA_M10Q {
 
         uint8_t bytes[128];
 
-        int n = uart_read_bytes(
-            GPS_UART, bytes, sizeof(bytes), 0);
+        int n = uart_read_bytes(GPS_UART, bytes, sizeof(bytes), 0);
 
         if(n > 0){
             for(int i = 0; i < n; i++)
                 consume(bytes[i], now);
         }
 
-        if(now - started_ms >= ACQUISITION_TIMEOUT_MS ||
-           (have_cycle_fix &&
-            now - first_fix_ms >= FIX_HOLD_MS)){
+        if(now - started_ms >= ACQUISITION_TIMEOUT_MS || (have_cycle_fix && now - first_fix_ms >= FIX_HOLD_MS)){
             stop_acquisition(now);
         }
     }
 
     bool get_fresh_fix(fix_t &fix){
-        if(!latest.valid ||
-           millis_now() - latest.updated_ms > FIX_MAX_AGE_MS){
+        if(!latest.valid || millis_now() - latest.updated_ms > FIX_MAX_AGE_MS){
             return false;
         }
 
@@ -353,8 +321,7 @@ namespace MIA_M10Q {
 
         const uint32_t now = millis_now();
 
-        if(stopped_ms != 0 &&
-           now - stopped_ms < MIN_OFF_MS){
+        if(stopped_ms != 0 && now - stopped_ms < MIN_OFF_MS){
             return;
         }
 

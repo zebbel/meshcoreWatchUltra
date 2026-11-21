@@ -37,8 +37,7 @@ static bool init_hardware(){
     if(err == ESP_OK) err = sx1262::init();
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Hardware init failed: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "Hardware init failed: %s", esp_err_to_name(err));
         return false;
     }
 
@@ -52,17 +51,14 @@ extern "C" void app_main(void){
     esp_err_t err = nvs_flash_init();
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "NVS unavailable: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "NVS unavailable: %s", esp_err_to_name(err));
         return;
     }
 
     err = nvs_flash_init_partition("contacts");
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG,
-                "Contact NVS initialization failed: %s",
-                esp_err_to_name(err));
+        ESP_LOGE(TAG, "Contact NVS initialization failed: %s", esp_err_to_name(err));
         return;
     }
 
@@ -74,8 +70,7 @@ extern "C" void app_main(void){
     bootloader_random_disable();
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Persistent identity unavailable: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "Persistent identity unavailable: %s", esp_err_to_name(err));
         return;
     }
 
@@ -84,8 +79,7 @@ extern "C" void app_main(void){
     err = settings.load();
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Stored settings invalid: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "Stored settings invalid: %s", esp_err_to_name(err));
         return;
     }
 
@@ -94,8 +88,7 @@ extern "C" void app_main(void){
     err = contacts.load();
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Contacts unavailable: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "Contacts unavailable: %s", esp_err_to_name(err));
         return;
     }
 
@@ -107,16 +100,14 @@ extern "C" void app_main(void){
     err = sx1262::configure(config);
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Radio configure failed: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "Radio configure failed: %s", esp_err_to_name(err));
         return;
     }
 
     err = watch::pairing_display_init();
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Cannot display secure BLE pairing code: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "Cannot display secure BLE pairing code: %s", esp_err_to_name(err));
         return;
     }
 
@@ -126,22 +117,18 @@ extern "C" void app_main(void){
     static StaticPoolPacketManager packet_manager(24);
     static SimpleMeshTables duplicate_table;
 
-    static watch::WatchMesh mesh(
-        radio, clock, rng, rtc, packet_manager, duplicate_table);
+    static watch::WatchMesh mesh(radio, clock, rng, rtc, packet_manager, duplicate_table);
 
     mesh.self_id = identity;
     mesh.set_contacts(&contacts);
-    mesh.set_tuning(
-        settings.get().rx_delay_milli,
-        settings.get().airtime_factor_milli);
+    mesh.set_tuning(settings.get().rx_delay_milli, settings.get().airtime_factor_milli);
     mesh.set_path_hash_mode(settings.get().path_hash_mode);
     mesh.set_scope_key(settings.get().default_scope_key);
 
     err = mesh.load_channels();
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Failed loading channels: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed loading channels: %s", esp_err_to_name(err));
         return;
     }
 
@@ -156,32 +143,26 @@ extern "C" void app_main(void){
     err = MIA_M10Q::init();
 
     if(err != ESP_OK){
-        ESP_LOGW(TAG, "MIA_M10Q unavailable: %s",
-                 esp_err_to_name(err));
+        ESP_LOGW(TAG, "MIA_M10Q unavailable: %s", esp_err_to_name(err));
     }
 
     static watch::WatchTelemetry telemetry;
     static watch::WatchBLE ble;
 
-    static watch::WatchCompanion companion(
-        ble, mesh, radio, settings, contacts,
-        rtc, clock, telemetry);
+    static watch::WatchCompanion companion(ble, mesh, radio, settings, contacts, rtc, clock, telemetry);
 
     ble.set_pairing_pin(settings.get().ble_pin);
 
     err = ble.begin("MeshCore-Watch");
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "BLE start failed: %s",
-                 esp_err_to_name(err));
+        ESP_LOGE(TAG, "BLE start failed: %s", esp_err_to_name(err));
         return;
     }
 
-    ESP_LOGI(TAG,
-             "MeshCore node running; BLE companion and telemetry initialized");
+    ESP_LOGI(TAG, "MeshCore node running; BLE companion and telemetry initialized");
 
-    uint32_t next_log =
-        static_cast<uint32_t>(clock.getMillis()) + 30000;
+    uint32_t next_log = static_cast<uint32_t>(clock.getMillis()) + 30000;
 
     while(true){
         uint32_t pin = ble.take_pairing_pin();
@@ -198,17 +179,10 @@ extern "C" void app_main(void){
         mesh.loop();
         companion.loop();
 
-        uint32_t now =
-            static_cast<uint32_t>(clock.getMillis());
+        uint32_t now = static_cast<uint32_t>(clock.getMillis());
 
         if(static_cast<int32_t>(now - next_log) >= 0){
-            ESP_LOGI(TAG,
-                     "BLE paired=%d RX=%lu adverts=%lu pool=%d queued=%d",
-                     ble.connected(),
-                     static_cast<unsigned long>(mesh.packetCount()),
-                     static_cast<unsigned long>(mesh.validAdvertCount()),
-                     packet_manager.getFreeCount(),
-                     packet_manager.getOutboundTotal());
+            ESP_LOGI(TAG, "BLE paired=%d RX=%lu adverts=%lu pool=%d queued=%d", ble.connected(), static_cast<unsigned long>(mesh.packetCount()), static_cast<unsigned long>(mesh.validAdvertCount()), packet_manager.getFreeCount(), packet_manager.getOutboundTotal());
 
             next_log = now + 30000;
         }

@@ -37,9 +37,7 @@ namespace watch {
         ContactUpdateResult update_from_wire(const uint8_t *wire, size_t length, uint32_t now);
         bool remove(const uint8_t pub[PUB_KEY_SIZE]);
         bool reset_path(const uint8_t pub[PUB_KEY_SIZE]);
-        bool observe_advert(const mesh::Identity &id, uint32_t timestamp,
-                            const uint8_t *app_data, size_t length, uint32_t now,
-                            bool allow_auto_add, uint8_t autoadd_mask);
+        bool observe_advert(const mesh::Identity &id, uint32_t timestamp, const uint8_t *app_data, size_t length, uint32_t now, bool allow_auto_add, uint8_t autoadd_mask);
         size_t to_wire(uint8_t result[WIRE_LENGTH], const WatchContact &contact) const;
     private:
         WatchContact contacts_[CAPACITY] = {};

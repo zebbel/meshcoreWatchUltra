@@ -17,8 +17,7 @@ namespace watch {
 
         // Upstream Dispatcher::tryParsePacket() trusts at least the first
         // header and path fields. Validate boundaries before passing it data.
-        const bool transport = (bytes[0] & PH_ROUTE_MASK) == ROUTE_TYPE_TRANSPORT_FLOOD ||
-                               (bytes[0] & PH_ROUTE_MASK) == ROUTE_TYPE_TRANSPORT_DIRECT;
+        const bool transport = (bytes[0] & PH_ROUTE_MASK) == ROUTE_TYPE_TRANSPORT_FLOOD || (bytes[0] & PH_ROUTE_MASK) == ROUTE_TYPE_TRANSPORT_DIRECT;
         const int path_index = transport ? 5 : 1;
 
         if(length <= path_index + 1) return 0;
@@ -73,10 +72,7 @@ namespace watch {
         return radio_.getLastSNR();
     }
 
-    WatchRouting::WatchRouting(mesh::Radio &radio,
-                               mesh::MillisecondClock &clock,
-                               StaticPoolPacketManager &manager,
-                               SimpleMeshTables &tables)
+    WatchRouting::WatchRouting(mesh::Radio &radio, mesh::MillisecondClock &clock, StaticPoolPacketManager &manager, SimpleMeshTables &tables)
         : mesh::Dispatcher(radio, clock, manager), tables_(tables){}
 
     // Read-only monitoring does not need flood retransmission delays.
@@ -98,15 +94,7 @@ namespace watch {
         uint8_t hash[MAX_HASH_SIZE] = {};
         packet->calculatePacketHash(hash);
 
-        ESP_LOGI(TAG, "RX %s: type=%u route=%u payload=%u, RSSI=%.1f, SNR=%.1f, hash=%02X%02X%02X%02X%02X%02X%02X%02X",
-                 duplicate ? "duplicate" : "unique",
-                 static_cast<unsigned>(packet->getPayloadType()),
-                 static_cast<unsigned>(packet->getRouteType()),
-                 static_cast<unsigned>(packet->payload_len),
-                 _radio->getLastRSSI(),
-                 packet->getSNR(),
-                 hash[0], hash[1], hash[2], hash[3],
-                 hash[4], hash[5], hash[6], hash[7]);
+        ESP_LOGI(TAG, "RX %s: type=%u route=%u payload=%u, RSSI=%.1f, SNR=%.1f, hash=%02X%02X%02X%02X%02X%02X%02X%02X", duplicate ? "duplicate" : "unique", static_cast<unsigned>(packet->getPayloadType()), static_cast<unsigned>(packet->getRouteType()), static_cast<unsigned>(packet->payload_len), _radio->getLastRSSI(), packet->getSNR(), hash[0], hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7]);
 
         return ACTION_RELEASE; // Never repeat or transmit a received packet.
     }

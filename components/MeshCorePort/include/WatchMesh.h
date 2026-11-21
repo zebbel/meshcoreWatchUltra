@@ -39,16 +39,12 @@ namespace watch {
         }
         int pendingOutboundCount() const { return _mgr->getOutboundTotal(); }
         uint16_t errorFlags() const { return _err_flags; }
-        bool send_private_text(const WatchContact &contact, uint32_t timestamp,
-                               const uint8_t *text, size_t len, uint32_t &ack_hash,
-                               uint32_t &timeout_ms);
-        bool send_channel_text(uint8_t channel, uint32_t timestamp, const char *name,
-                               const uint8_t *text, size_t length);
+        bool send_private_text(const WatchContact &contact, uint32_t timestamp, const uint8_t *text, size_t len, uint32_t &ack_hash, uint32_t &timeout_ms);
+        bool send_channel_text(uint8_t channel, uint32_t timestamp, const char *name, const uint8_t *text, size_t length);
         esp_err_t load_channels();
         bool set_channel(uint8_t index, const char *name, const uint8_t secret[16]);
         bool get_channel(uint8_t index, char name[32], uint8_t secret[16]) const;
-        bool send_self_advert(const char *name, bool flood, int32_t lat_micro = 0,
-                              int32_t lon_micro = 0, bool with_location = false);
+        bool send_self_advert(const char *name, bool flood, int32_t lat_micro = 0, int32_t lon_micro = 0, bool with_location = false);
         uint32_t packetCount() const { return packets_received_; }
         uint32_t validAdvertCount() const { return valid_adverts_; }
         uint32_t ackCount() const { return acks_received_; }
@@ -59,20 +55,14 @@ namespace watch {
         int calcRxDelay(float score, uint32_t airtime) const override;
         int searchPeersByHash(const uint8_t *hash) override;
         void getPeerSharedSecret(uint8_t *out, int matching_index) override;
-        void onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx,
-                            const uint8_t *secret, uint8_t *data, size_t len) override;
+        void onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, const uint8_t *secret, uint8_t *data, size_t len) override;
         uint32_t getCADFailMaxDuration() const override;
         void logRx(mesh::Packet *packet, int length, float score) override;
         void logRxRaw(float snr, float rssi, const uint8_t raw[], int length) override;
 
-        int searchChannelsByHash(const uint8_t *hash,
-                                 mesh::GroupChannel channels[], int max_matches) override;
-        void onGroupDataRecv(mesh::Packet *packet, uint8_t type,
-                             const mesh::GroupChannel &channel,
-                             uint8_t *data, size_t length) override;
-        void onAdvertRecv(mesh::Packet *packet, const mesh::Identity &identity,
-                          uint32_t timestamp, const uint8_t *app_data,
-                          size_t app_data_length) override;
+        int searchChannelsByHash(const uint8_t *hash, mesh::GroupChannel channels[], int max_matches) override;
+        void onGroupDataRecv(mesh::Packet *packet, uint8_t type, const mesh::GroupChannel &channel, uint8_t *data, size_t length) override;
+        void onAdvertRecv(mesh::Packet *packet, const mesh::Identity &identity, uint32_t timestamp, const uint8_t *app_data, size_t app_data_length) override;
         void onAckRecv(mesh::Packet *packet, uint32_t ack_crc) override;
 
     private:

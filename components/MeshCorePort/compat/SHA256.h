@@ -15,10 +15,7 @@ class SHA256 {
 public:
     SHA256(){
         check(psa_crypto_init(), "PSA initialization");
-        check(
-            psa_hash_setup(&hash_, PSA_ALG_SHA_256),
-            "SHA256 setup"
-        );
+        check(psa_hash_setup(&hash_, PSA_ALG_SHA_256), "SHA256 setup");
     }
 
     ~SHA256(){
@@ -51,29 +48,14 @@ public:
         psa_set_key_type(&attrs, PSA_KEY_TYPE_HMAC);
         psa_set_key_bits(&attrs, length * 8);
         psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_SIGN_MESSAGE);
-        psa_set_key_algorithm(
-            &attrs,
-            PSA_ALG_HMAC(PSA_ALG_SHA_256)
-        );
+        psa_set_key_algorithm(&attrs, PSA_ALG_HMAC(PSA_ALG_SHA_256));
 
-        psa_status_t status = psa_import_key(
-            &attrs,
-            key,
-            length,
-            &mac_key_
-        );
+        psa_status_t status = psa_import_key(&attrs, key, length, &mac_key_);
 
         psa_reset_key_attributes(&attrs);
         check(status, "HMAC key import");
 
-        check(
-            psa_mac_sign_setup(
-                &mac_,
-                mac_key_,
-                PSA_ALG_HMAC(PSA_ALG_SHA_256)
-            ),
-            "HMAC setup"
-        );
+        check(psa_mac_sign_setup(&mac_, mac_key_, PSA_ALG_HMAC(PSA_ALG_SHA_256)), "HMAC setup");
 
         hmac_mode_ = true;
     }
@@ -83,44 +65,21 @@ public:
         if(data == nullptr) abort();
 
         if(hmac_mode_){
-            check(
-                psa_mac_update(
-                    &mac_,
-                    static_cast<const uint8_t *>(data),
-                    length
-                ),
-                "HMAC update"
-            );
+            check(psa_mac_update(&mac_, static_cast<const uint8_t *>(data), length), "HMAC update");
         }else{
-            check(
-                psa_hash_update(
-                    &hash_,
-                    static_cast<const uint8_t *>(data),
-                    length
-                ),
-                "SHA256 update"
-            );
+            check(psa_hash_update(&hash_, static_cast<const uint8_t *>(data), length), "SHA256 update");
         }
     }
 
     void finalize(uint8_t *output, size_t length){
-        if(hmac_mode_ || length > 32 ||
-           (length > 0 && output == nullptr)){
+        if(hmac_mode_ || length > 32 || (length > 0 && output == nullptr)){
             abort();
         }
 
         uint8_t digest[32] = {};
         size_t digest_length = 0;
 
-        check(
-            psa_hash_finish(
-                &hash_,
-                digest,
-                sizeof(digest),
-                &digest_length
-            ),
-            "SHA256 finish"
-        );
+        check(psa_hash_finish(&hash_, digest, sizeof(digest), &digest_length), "SHA256 finish");
 
         if(digest_length != sizeof(digest)){
             abort();
@@ -133,30 +92,18 @@ public:
         memset(digest, 0, sizeof(digest));
     }
 
-    void finalizeHMAC(const uint8_t *key,
-                      size_t key_length,
-                      uint8_t *output,
-                      size_t length){
+    void finalizeHMAC(const uint8_t *key, size_t key_length, uint8_t *output, size_t length){
         (void)key;
         (void)key_length;
 
-        if(!hmac_mode_ || length > 32 ||
-           (length > 0 && output == nullptr)){
+        if(!hmac_mode_ || length > 32 || (length > 0 && output == nullptr)){
             abort();
         }
 
         uint8_t mac[32] = {};
         size_t mac_length = 0;
 
-        check(
-            psa_mac_sign_finish(
-                &mac_,
-                mac,
-                sizeof(mac),
-                &mac_length
-            ),
-            "HMAC finish"
-        );
+        check(psa_mac_sign_finish(&mac_, mac, sizeof(mac), &mac_length), "HMAC finish");
 
         if(mac_length != sizeof(mac)){
             abort();
@@ -170,10 +117,7 @@ public:
 
         hmac_mode_ = false;
 
-        check(
-            psa_destroy_key(mac_key_),
-            "Destroy HMAC key"
-        );
+        check(psa_destroy_key(mac_key_), "Destroy HMAC key");
 
         mac_key_ = 0;
     }
@@ -187,12 +131,7 @@ private:
 
     static void check(psa_status_t status, const char *what){
         if(status != PSA_SUCCESS){
-            ESP_LOGE(
-                "MeshSHA256",
-                "%s failed: %ld",
-                what,
-                static_cast<long>(status)
-            );
+            ESP_LOGE("MeshSHA256", "%s failed: %ld", what, static_cast<long>(status));
             abort();
         }
     }

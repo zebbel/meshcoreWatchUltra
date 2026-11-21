@@ -12,9 +12,7 @@ namespace watch {
 
     class WatchTelemetry {
     public:
-        size_t encode(uint8_t permissions,
-                      uint8_t *buffer,
-                      size_t capacity);
+        size_t encode(uint8_t permissions, uint8_t *buffer, size_t capacity);
 
         uint16_t battery_millivolts() const;
     };

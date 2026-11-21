@@ -28,27 +28,18 @@ namespace watch {
         if(!c.present || c.type > 4) return false;
         if(memchr(c.name, 0, sizeof(c.name)) == nullptr) return false;
         if(c.path_len != 0xFF && !mesh::Packet::isValidPathLen(c.path_len)) return false;
-        if(c.latitude_micro < -90000000 || c.latitude_micro > 90000000 ||
-           c.longitude_micro < -180000000 || c.longitude_micro > 180000000) return false;
+        if(c.latitude_micro < -90000000 || c.latitude_micro > 90000000 || c.longitude_micro < -180000000 || c.longitude_micro > 180000000) return false;
         return true;
     }
 
-    esp_err_t WatchContacts::load()
-    {
+    esp_err_t WatchContacts::load(){
         nvs_handle_t h = 0;
 
         // Load only from the NEW contacts partition.
-        esp_err_t err = nvs_open_from_partition(
-            "contacts",
-            NAMESPACE,
-            NVS_READWRITE,
-            &h
-        );
+        esp_err_t err = nvs_open_from_partition("contacts", NAMESPACE, NVS_READWRITE, &h);
 
         if(err != ESP_OK){
-            ESP_LOGE(TAG,
-                    "Cannot open contacts partition: %s",
-                    esp_err_to_name(err));
+            ESP_LOGE(TAG, "Cannot open contacts partition: %s", esp_err_to_name(err));
             return err;
         }
 
@@ -64,13 +55,9 @@ namespace watch {
             if(err == ESP_ERR_NVS_NOT_FOUND)
                 continue;
 
-            if(err != ESP_OK ||
-            size != sizeof(item) ||
-            !record_valid(item)){
+            if(err != ESP_OK || size != sizeof(item) || !record_valid(item)){
 
-                ESP_LOGE(TAG,
-                        "Invalid contact record %s",
-                        key);
+                ESP_LOGE(TAG, "Invalid contact record %s", key);
 
                 nvs_close(h);
                 return ESP_ERR_INVALID_CRC;
@@ -81,9 +68,7 @@ namespace watch {
 
         nvs_close(h);
 
-        ESP_LOGI(TAG,
-                "Loaded %u contacts from new NVS",
-                static_cast<unsigned>(count()));
+        ESP_LOGI(TAG, "Loaded %u contacts from new NVS", static_cast<unsigned>(count()));
 
         return ESP_OK;
     }
@@ -112,10 +97,7 @@ namespace watch {
     }
 
 
-    bool WatchContacts::save_slot(
-        size_t idx,
-        const WatchContact *value)
-    {
+    bool WatchContacts::save_slot(size_t idx, const WatchContact *value){
         if(idx >= CAPACITY)
             return false;
 
@@ -125,24 +107,15 @@ namespace watch {
         nvs_handle_t h = 0;
 
         // Write only to the NEW contacts partition.
-        esp_err_t err = nvs_open_from_partition(
-            "contacts",
-            NAMESPACE,
-            NVS_READWRITE,
-            &h
-        );
+        esp_err_t err = nvs_open_from_partition("contacts", NAMESPACE, NVS_READWRITE, &h);
 
         if(err != ESP_OK){
-            ESP_LOGE(TAG,
-                    "Cannot open contacts storage: %s",
-                    esp_err_to_name(err));
+            ESP_LOGE(TAG, "Cannot open contacts storage: %s", esp_err_to_name(err));
             return false;
         }
 
         if(value != nullptr){
-            err = nvs_set_blob(
-                h, key, value, sizeof(*value)
-            );
+            err = nvs_set_blob(h, key, value, sizeof(*value));
         }else{
             err = nvs_erase_key(h, key);
         }
@@ -153,14 +126,11 @@ namespace watch {
         nvs_close(h);
 
         if(err != ESP_OK){
-            ESP_LOGE(TAG,
-                    "Contact write failed %s: %s",
-                    key, esp_err_to_name(err));
+            ESP_LOGE(TAG, "Contact write failed %s: %s", key, esp_err_to_name(err));
             return false;
         }
 
-        contacts_[idx] =
-            value ? *value : WatchContact{};
+        contacts_[idx] = value ? *value : WatchContact{};
 
         return true;
     }
@@ -212,9 +182,7 @@ namespace watch {
         return save_slot(i, &c);
     }
 
-    bool WatchContacts::observe_advert(const mesh::Identity &id, uint32_t timestamp,
-                                       const uint8_t *data, size_t len, uint32_t now,
-                                       bool auto_add, uint8_t mask){
+    bool WatchContacts::observe_advert(const mesh::Identity &id, uint32_t timestamp, const uint8_t *data, size_t len, uint32_t now, bool auto_add, uint8_t mask){
         if(data == nullptr || len < 1) return false;
         uint8_t type = data[0] & 0x0F;
         if(type == 0 || type > 4) return false;

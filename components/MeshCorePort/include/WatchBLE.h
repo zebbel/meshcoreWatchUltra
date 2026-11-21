@@ -58,8 +58,7 @@ namespace watch {
         bool started_ = false;
 
         int on_gap_event(struct ble_gap_event *event);
-        int on_characteristic(uint16_t connection_handle, uint16_t attr_handle,
-                              struct ble_gatt_access_ctxt *ctxt);
+        int on_characteristic(uint16_t connection_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt);
         void sync();
         void advertise();
         void host_loop();

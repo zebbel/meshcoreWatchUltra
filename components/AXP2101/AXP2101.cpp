@@ -28,8 +28,7 @@ namespace AXP2101 {
         if(pmu_handle == nullptr)
             return ESP_ERR_INVALID_STATE;
 
-        return i2c_master_transmit_receive(
-            pmu_handle, &reg, 1, data, len, 1000);
+        return i2c_master_transmit_receive(pmu_handle, &reg, 1, data, len, 1000);
     }
 
     esp_err_t read_battery(battery_info_t &out){
@@ -37,13 +36,10 @@ namespace AXP2101 {
 
         uint8_t raw[2] = {};
 
-        esp_err_t voltage_err =
-            read_register(REG_BATTERY_V, raw, sizeof(raw));
+        esp_err_t voltage_err = read_register(REG_BATTERY_V, raw, sizeof(raw));
 
         if(voltage_err == ESP_OK){
-            uint16_t mv =
-                (static_cast<uint16_t>(raw[0] & 0x1F) << 8) |
-                static_cast<uint16_t>(raw[1]);
+            uint16_t mv = (static_cast<uint16_t>(raw[0] & 0x1F) << 8) | static_cast<uint16_t>(raw[1]);
 
             if(mv >= 2000 && mv <= 5000){
                 out.voltage_valid = true;
@@ -52,8 +48,7 @@ namespace AXP2101 {
         }
 
         uint8_t percent = 0;
-        esp_err_t percent_err =
-            read_register(REG_BATTERY_PC, &percent, 1);
+        esp_err_t percent_err = read_register(REG_BATTERY_PC, &percent, 1);
 
         if(percent_err == ESP_OK && percent <= 100){
             out.percent_valid = true;
@@ -88,12 +83,10 @@ namespace AXP2101 {
         config.device_address = board::addresses::AXP2101;
         config.scl_speed_hz = 100000;
 
-        esp_err_t err = i2c_master_bus_add_device(
-            board::i2c_bus(), &config, &pmu_handle);
+        esp_err_t err = i2c_master_bus_add_device(board::i2c_bus(), &config, &pmu_handle);
 
         if(err != ESP_OK){
-            ESP_LOGE(TAG, "Unable to register AXP2101: %s",
-                     esp_err_to_name(err));
+            ESP_LOGE(TAG, "Unable to register AXP2101: %s", esp_err_to_name(err));
             return err;
         }
 
@@ -119,12 +112,10 @@ namespace AXP2101 {
 
         uint8_t data[2] = {reg, value};
 
-        return i2c_master_transmit(
-            pmu_handle, data, sizeof(data), 1000);
+        return i2c_master_transmit(pmu_handle, data, sizeof(data), 1000);
     }
 
-    static esp_err_t update_axp_register(
-        uint8_t reg, uint8_t mask, uint8_t value){
+    static esp_err_t update_axp_register(uint8_t reg, uint8_t mask, uint8_t value){
 
         uint8_t current = 0;
         esp_err_t err = read_register(reg, &current, 1);
@@ -132,8 +123,7 @@ namespace AXP2101 {
         if(err != ESP_OK)
             return err;
 
-        uint8_t updated =
-            (current & ~mask) | (value & mask);
+        uint8_t updated = (current & ~mask) | (value & mask);
 
         if(updated == current)
             return ESP_OK;
@@ -149,21 +139,16 @@ namespace AXP2101 {
             return err;
 
         if((verify & mask) != (updated & mask)){
-            ESP_LOGE(TAG,
-                     "AXP2101 register 0x%02X verification failed",
-                     reg);
+            ESP_LOGE(TAG, "AXP2101 register 0x%02X verification failed", reg);
             return ESP_ERR_INVALID_RESPONSE;
         }
 
         return ESP_OK;
     }
 
-    static esp_err_t set_voltage_reg(
-        uint8_t reg, uint16_t millivolts){
+    static esp_err_t set_voltage_reg(uint8_t reg, uint16_t millivolts){
 
-        if(millivolts < 500 ||
-           millivolts > 3500 ||
-           (millivolts - 500) % 100 != 0){
+        if(millivolts < 500 || millivolts > 3500 || (millivolts - 500) % 100 != 0){
             return ESP_ERR_INVALID_ARG;
         }
 
@@ -179,17 +164,14 @@ namespace AXP2101 {
 
         uint8_t mask = 1 << bit;
 
-        esp_err_t err = update_axp_register(
-            0x90, mask, enabled ? mask : 0);
+        esp_err_t err = update_axp_register(0x90, mask, enabled ? mask : 0);
 
         if(err != ESP_OK){
-            ESP_LOGE(TAG, "Unable to change rail %u: %s",
-                     bit, esp_err_to_name(err));
+            ESP_LOGE(TAG, "Unable to change rail %u: %s", bit, esp_err_to_name(err));
             return err;
         }
 
-        ESP_LOGI(TAG, "Power rail %u: %s",
-                 bit, enabled ? "On" : "Off");
+        ESP_LOGI(TAG, "Power rail %u: %s", bit, enabled ? "On" : "Off");
 
         return ESP_OK;
     }
@@ -208,24 +190,13 @@ namespace AXP2101 {
             uint16_t millivolts;
         };
 
-        static constexpr voltage_t voltages[] = {
-            {0x92, 3300},
-            {0x93, 3300},
-            {0x94, 3300},
-            {0x95, 1800},
-            {0x96, 3300},
-            {0x97, 3300},
-            {0x99, 3300}
-        };
+        static constexpr voltage_t voltages[] = { {0x92, 3300}, {0x93, 3300}, {0x94, 3300}, {0x95, 1800}, {0x96, 3300}, {0x97, 3300}, {0x99, 3300} };
 
         for(const auto &entry : voltages){
-            esp_err_t err =
-                set_voltage_reg(entry.reg, entry.millivolts);
+            esp_err_t err = set_voltage_reg(entry.reg, entry.millivolts);
 
             if(err != ESP_OK){
-                ESP_LOGE(TAG,
-                         "Voltage configuration failed at 0x%02X",
-                         entry.reg);
+                ESP_LOGE(TAG, "Voltage configuration failed at 0x%02X", entry.reg);
                 return err;
             }
         }
@@ -237,8 +208,7 @@ namespace AXP2101 {
     static esp_err_t configure_charger(){
 #if defined(CONFIG_MCW_POWER_APPLY_CHARGER)
 
-        if(CONFIG_MCW_POWER_PRECHARGE_MA % 25 != 0 ||
-           CONFIG_MCW_POWER_TERMINATION_MA % 25 != 0){
+        if(CONFIG_MCW_POWER_PRECHARGE_MA % 25 != 0 || CONFIG_MCW_POWER_TERMINATION_MA % 25 != 0){
             ESP_LOGE(TAG, "Charging currents must use 25 mA steps");
             return ESP_ERR_INVALID_ARG;
         }
@@ -270,16 +240,13 @@ namespace AXP2101 {
         usb_code = 2;
 #endif
 
-        esp_err_t err = update_axp_register(
-            0x61, 0x0F, CONFIG_MCW_POWER_PRECHARGE_MA / 25);
+        esp_err_t err = update_axp_register(0x61, 0x0F, CONFIG_MCW_POWER_PRECHARGE_MA / 25);
         if(err != ESP_OK) return err;
 
         err = update_axp_register(0x62, 0x1F, fast_code);
         if(err != ESP_OK) return err;
 
-        err = update_axp_register(
-            0x63, 0x1F,
-            0x10 | (CONFIG_MCW_POWER_TERMINATION_MA / 25));
+        err = update_axp_register(0x63, 0x1F, 0x10 | (CONFIG_MCW_POWER_TERMINATION_MA / 25));
         if(err != ESP_OK) return err;
 
         err = update_axp_register(0x64, 0x07, target_code);
@@ -288,9 +255,7 @@ namespace AXP2101 {
         err = update_axp_register(0x16, 0x07, usb_code);
         if(err != ESP_OK) return err;
 
-        err = update_axp_register(
-            0x15, 0x0F,
-            (CONFIG_MCW_POWER_USB_VOLTAGE_MV - 3880) / 80);
+        err = update_axp_register(0x15, 0x0F, (CONFIG_MCW_POWER_USB_VOLTAGE_MV - 3880) / 80);
         if(err != ESP_OK) return err;
 
 #if defined(CONFIG_MCW_POWER_CHARGING_ENABLED)
@@ -333,15 +298,7 @@ namespace AXP2101 {
         err = update_axp_register(0x30, 0x05, 0x05);
         if(err != ESP_OK) return err;
 
-        static constexpr rail_t rails[] = {
-            rail_t::sd,
-            rail_t::display,
-            rail_t::radio,
-            rail_t::sensor,
-            rail_t::gps,
-            rail_t::speaker,
-            rail_t::nfc
-        };
+        static constexpr rail_t rails[] = { rail_t::sd, rail_t::display, rail_t::radio, rail_t::sensor, rail_t::gps, rail_t::speaker, rail_t::nfc };
 
         for(const auto &rail : rails){
             err = disable(rail);

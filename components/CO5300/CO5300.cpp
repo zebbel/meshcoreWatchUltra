@@ -45,19 +45,7 @@ namespace CO5300 {
     };
 
     // Initialization sequence from LilyGO T-Watch Ultra reference firmware
-    static constexpr command_t init_commands[] = {
-        {0xFE, {0x00}, 1, false},
-        {0xC4, {0x80}, 1, false},
-        {0x3A, {0x55}, 1, false},
-        {0x35, {0x00}, 1, false},
-        {0x53, {0x20}, 1, false},
-        {0x63, {0xFF}, 1, false},
-        {0x2A, {0x00, 0x16, 0x01, 0xAF}, 4, false},
-        {0x2B, {0x00, 0x00, 0x01, 0xF5}, 4, false},
-        {0x11, {}, 0, true},
-        {0x29, {}, 0, true},
-        {0x51, {0x00}, 1, false}
-    };
+    static constexpr command_t init_commands[] = { {0xFE, {0x00}, 1, false}, {0xC4, {0x80}, 1, false}, {0x3A, {0x55}, 1, false}, {0x35, {0x00}, 1, false}, {0x53, {0x20}, 1, false}, {0x63, {0xFF}, 1, false}, {0x2A, {0x00, 0x16, 0x01, 0xAF}, 4, false}, {0x2B, {0x00, 0x00, 0x01, 0xF5}, 4, false}, {0x11, {}, 0, true}, {0x29, {}, 0, true}, {0x51, {0x00}, 1, false} };
 
     // Send a command using the CO5300 0x02 command and 24-bit address format
     static esp_err_t write_command(uint8_t command, const uint8_t *data = nullptr, size_t length = 0){

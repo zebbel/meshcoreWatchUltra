@@ -28,8 +28,7 @@ namespace watch {
 
             uint8_t derived_pub[PUB_KEY_SIZE] = {};
             ed25519_derive_pub(derived_pub, keypair);
-            if(memcmp(derived_pub, keypair + PRV_KEY_SIZE, PUB_KEY_SIZE) != 0 ||
-               !mesh::LocalIdentity::validatePrivateKey(keypair)){
+            if(memcmp(derived_pub, keypair + PRV_KEY_SIZE, PUB_KEY_SIZE) != 0 || !mesh::LocalIdentity::validatePrivateKey(keypair)){
                 memset(keypair, 0, sizeof(keypair));
                 nvs_close(handle);
                 ESP_LOGE(TAG, "Stored identity is invalid. Will not regenerate automatically");
@@ -39,8 +38,7 @@ namespace watch {
             identity.readFrom(keypair, sizeof(keypair));
             memset(keypair, 0, sizeof(keypair));
             nvs_close(handle);
-            ESP_LOGI(TAG, "Restored persistent identity %02X%02X%02X%02X",
-                     identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
+            ESP_LOGI(TAG, "Restored persistent identity %02X%02X%02X%02X", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
             return ESP_OK;
         }
 
@@ -68,8 +66,7 @@ namespace watch {
 
             identity = candidate;
             nvs_close(handle);
-            ESP_LOGI(TAG, "Generated and saved identity %02X%02X%02X%02X",
-                     identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
+            ESP_LOGI(TAG, "Generated and saved identity %02X%02X%02X%02X", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
             return ESP_OK;
         }
 

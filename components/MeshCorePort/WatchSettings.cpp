@@ -29,15 +29,12 @@ namespace watch {
         // Do not interpret this as a substitute for local spectrum compliance checks.
         const uint64_t center = static_cast<uint64_t>(freq_khz) * 1000ULL;
         if(center < 869400000ULL || center > 869650000ULL) return false;
-        if(center < 869400000ULL + bandwidth_hz / 2 ||
-           center + bandwidth_hz / 2 > 869650000ULL) return false;
-        if(bandwidth_hz != 62500 && bandwidth_hz != 125000 &&
-           bandwidth_hz != 250000 && bandwidth_hz != 500000) return false;
+        if(center < 869400000ULL + bandwidth_hz / 2 || center + bandwidth_hz / 2 > 869650000ULL) return false;
+        if(bandwidth_hz != 62500 && bandwidth_hz != 125000 && bandwidth_hz != 250000 && bandwidth_hz != 500000) return false;
         if(sf < 7 || sf > 12 || cr < 5 || cr > 8) return false;
         if(tx_power_dbm < -9 || tx_power_dbm > 14) return false;
         if(rx_delay_milli > 20000 || airtime_factor_milli < 9000 || airtime_factor_milli > 20000) return false;
-        if(latitude_micro < -90000000 || latitude_micro > 90000000 ||
-           longitude_micro < -180000000 || longitude_micro > 180000000) return false;
+        if(latitude_micro < -90000000 || latitude_micro > 90000000 || longitude_micro < -180000000 || longitude_micro > 180000000) return false;
         if(ble_pin != 0 && (ble_pin < 100000 || ble_pin > 999999)) return false;
         if((telemetry_modes & 0xC0) != 0 || advert_loc_policy > 2 || multi_acks > 4) return false;
         if(path_hash_mode > 2 || autoadd_max_hops > 64) return false;
@@ -64,10 +61,7 @@ namespace watch {
             return ESP_ERR_INVALID_CRC;
         }
         current_ = persisted;
-        ESP_LOGI(TAG, "Settings: %lu kHz BW=%lu SF=%u CR=4/%u TX=%d dBm",
-                 static_cast<unsigned long>(current_.freq_khz),
-                 static_cast<unsigned long>(current_.bandwidth_hz),
-                 current_.sf, current_.cr, current_.tx_power_dbm);
+        ESP_LOGI(TAG, "Settings: %lu kHz BW=%lu SF=%u CR=4/%u TX=%d dBm", static_cast<unsigned long>(current_.freq_khz), static_cast<unsigned long>(current_.bandwidth_hz), current_.sf, current_.cr, current_.tx_power_dbm);
         return ESP_OK;
     }
 

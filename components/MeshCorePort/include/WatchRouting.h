@@ -47,12 +47,7 @@ namespace watch {
     // Retained for compatibility and regression testing.
     class WatchRouting final : public mesh::Dispatcher {
     public:
-        WatchRouting(
-            mesh::Radio &radio,
-            mesh::MillisecondClock &clock,
-            StaticPoolPacketManager &manager,
-            SimpleMeshTables &tables
-        );
+        WatchRouting(mesh::Radio &radio, mesh::MillisecondClock &clock, StaticPoolPacketManager &manager, SimpleMeshTables &tables);
 
         uint32_t uniqueCount() const {
             return unique_count_;
@@ -63,14 +58,9 @@ namespace watch {
         }
 
     protected:
-        mesh::DispatcherAction onRecvPacket(
-            mesh::Packet *packet
-        ) override;
+        mesh::DispatcherAction onRecvPacket(mesh::Packet *packet) override;
 
-        int calcRxDelay(
-            float score,
-            uint32_t air_time
-        ) const override;
+        int calcRxDelay(float score, uint32_t air_time) const override;
 
     private:
         SimpleMeshTables &tables_;

@@ -11,14 +11,9 @@
 namespace watch {
 
     static const char *TAG = "WatchMesh";
-    static constexpr uint8_t PUBLIC_KEY_16[16] = {
-        0x8B, 0x33, 0x87, 0xE9, 0xC5, 0xCD, 0xEA, 0x6A,
-        0xC9, 0xE5, 0xED, 0xBA, 0xA1, 0x15, 0xCD, 0x72
-    };
+    static constexpr uint8_t PUBLIC_KEY_16[16] = { 0x8B, 0x33, 0x87, 0xE9, 0xC5, 0xCD, 0xEA, 0x6A, 0xC9, 0xE5, 0xED, 0xBA, 0xA1, 0x15, 0xCD, 0x72 };
 
-    WatchMesh::WatchMesh(mesh::Radio &radio, mesh::MillisecondClock &clock,
-                         mesh::RNG &rng, mesh::RTCClock &rtc,
-                         mesh::PacketManager &manager, mesh::MeshTables &tables)
+    WatchMesh::WatchMesh(mesh::Radio &radio, mesh::MillisecondClock &clock, mesh::RNG &rng, mesh::RTCClock &rtc, mesh::PacketManager &manager, mesh::MeshTables &tables)
         : mesh::Mesh(radio, clock, rng, rtc, manager, tables){
         set_public_channel(channels_[0]);
     }
@@ -32,8 +27,7 @@ namespace watch {
         channel = Channel{};
         memcpy(channel.name, "Public", 7);
         memcpy(channel.value.secret, PUBLIC_KEY_16, 16);
-        mesh::Utils::sha256(channel.value.hash, sizeof(channel.value.hash),
-                            PUBLIC_KEY_16, 16);
+        mesh::Utils::sha256(channel.value.hash, sizeof(channel.value.hash), PUBLIC_KEY_16, 16);
     }
 
     esp_err_t WatchMesh::load_channels(){
@@ -50,15 +44,13 @@ namespace watch {
             if(err == ESP_ERR_NVS_NOT_FOUND){
                 continue;
             }
-            if(err != ESP_OK || length != sizeof(saved) ||
-               memchr(saved.name, 0, sizeof(saved.name)) == nullptr){
+            if(err != ESP_OK || length != sizeof(saved) || memchr(saved.name, 0, sizeof(saved.name)) == nullptr){
                 nvs_close(h);
                 return ESP_ERR_INVALID_CRC;
             }
             memcpy(channels_[i].name, saved.name, sizeof(saved.name));
             memcpy(channels_[i].value.secret, saved.key, sizeof(saved.key));
-            mesh::Utils::sha256(channels_[i].value.hash,
-                                sizeof(channels_[i].value.hash), saved.key, sizeof(saved.key));
+            mesh::Utils::sha256(channels_[i].value.hash, sizeof(channels_[i].value.hash), saved.key, sizeof(saved.key));
         }
         nvs_close(h);
         return ESP_OK;
@@ -93,8 +85,7 @@ namespace watch {
         memcpy(channels_[index].name, saved.name, 32);
         memset(channels_[index].value.secret, 0, 32);
         memcpy(channels_[index].value.secret, secret, 16);
-        mesh::Utils::sha256(channels_[index].value.hash,
-                            sizeof(channels_[index].value.hash), secret, 16);
+        mesh::Utils::sha256(channels_[index].value.hash, sizeof(channels_[index].value.hash), secret, 16);
         return true;
     }
 
@@ -157,17 +148,13 @@ namespace watch {
         sendFlood(packet, codes, delay, path_hash_size_);
     }
 
-    bool WatchMesh::send_private_text(const WatchContact &contact, uint32_t timestamp,
-                                      const uint8_t *text, size_t len,
-                                      uint32_t &ack_hash, uint32_t &timeout_ms){
-        if(!contact.present || !text || len == 0 || len > 150 || timestamp == 0 ||
-           _mgr->getOutboundTotal() >= 20) return false;
+    bool WatchMesh::send_private_text(const WatchContact &contact, uint32_t timestamp, const uint8_t *text, size_t len, uint32_t &ack_hash, uint32_t &timeout_ms){
+        if(!contact.present || !text || len == 0 || len > 150 || timestamp == 0 || _mgr->getOutboundTotal() >= 20) return false;
         uint8_t plain[5 + 150] = {};
         memcpy(plain, &timestamp, 4);
         plain[4] = 0; // TXT_TYPE_PLAIN, first attempt
         memcpy(&plain[5], text, len);
-        mesh::Utils::sha256(reinterpret_cast<uint8_t *>(&ack_hash), 4,
-                            plain, 5 + len, self_id.pub_key, PUB_KEY_SIZE);
+        mesh::Utils::sha256(reinterpret_cast<uint8_t *>(&ack_hash), 4, plain, 5 + len, self_id.pub_key, PUB_KEY_SIZE);
         uint8_t secret[PUB_KEY_SIZE] = {};
         self_id.calcSharedSecret(secret, contact.public_key);
         mesh::Identity dest(contact.public_key);
@@ -179,11 +166,9 @@ namespace watch {
         return true;
     }
 
-    void WatchMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx,
-                                   const uint8_t *secret, uint8_t *data, size_t len){
+    void WatchMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, const uint8_t *secret, uint8_t *data, size_t len){
         (void)secret;
-        if(type != PAYLOAD_TYPE_TXT_MSG || len < 6 || sender_idx < 0 || sender_idx >= 4 ||
-           contacts_ == nullptr || matching_slots_[sender_idx] < 0) return;
+        if(type != PAYLOAD_TYPE_TXT_MSG || len < 6 || sender_idx < 0 || sender_idx >= 4 || contacts_ == nullptr || matching_slots_[sender_idx] < 0) return;
         const auto *contact = contacts_->at(matching_slots_[sender_idx]);
         if(contact == nullptr) return;
         uint8_t txt_type = data[4] >> 2;
@@ -210,23 +195,19 @@ namespace watch {
         return 60000; // Retry busy channels for up to a minute.
     }
 
-    int WatchMesh::searchChannelsByHash(const uint8_t *hash,
-                                        mesh::GroupChannel channels[], int max_matches){
+    int WatchMesh::searchChannelsByHash(const uint8_t *hash, mesh::GroupChannel channels[], int max_matches){
         if(hash == nullptr || channels == nullptr || max_matches < 1) return 0;
         int matches = 0;
         for(int i = 0; i < CHANNEL_COUNT && matches < max_matches; i++){
-            if(channels_[i].name[0] != 0 &&
-               memcmp(hash, channels_[i].value.hash, PATH_HASH_SIZE) == 0){
+            if(channels_[i].name[0] != 0 && memcmp(hash, channels_[i].value.hash, PATH_HASH_SIZE) == 0){
                 channels[matches++] = channels_[i].value;
             }
         }
         return matches;
     }
 
-    bool WatchMesh::send_channel_text(uint8_t channel, uint32_t timestamp, const char *name,
-                                      const uint8_t *text, size_t length){
-        if(channel >= CHANNEL_COUNT || channels_[channel].name[0] == 0 ||
-           timestamp == 0 || name == nullptr || text == nullptr || length == 0) return false;
+    bool WatchMesh::send_channel_text(uint8_t channel, uint32_t timestamp, const char *name, const uint8_t *text, size_t length){
+        if(channel >= CHANNEL_COUNT || channels_[channel].name[0] == 0 || timestamp == 0 || name == nullptr || text == nullptr || length == 0) return false;
         if(_mgr->getOutboundTotal() >= 20) return false;
         size_t name_length = strnlen(name, 32);
         if(name_length == 0 || name_length > 31) return false;
@@ -240,15 +221,13 @@ namespace watch {
         data[5 + name_length] = ':';
         data[5 + name_length + 1] = ' ';
         memcpy(&data[5 + prefix], text, length);
-        mesh::Packet *packet = createGroupDatagram(
-            PAYLOAD_TYPE_GRP_TXT, channels_[channel].value, data, 5 + prefix + length);
+        mesh::Packet *packet = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, channels_[channel].value, data, 5 + prefix + length);
         if(packet == nullptr) return false;
         send_scoped_flood(packet);
         return true;
     }
 
-    bool WatchMesh::send_self_advert(const char *name, bool flood, int32_t lat_micro,
-                                     int32_t lon_micro, bool with_location){
+    bool WatchMesh::send_self_advert(const char *name, bool flood, int32_t lat_micro, int32_t lon_micro, bool with_location){
         if(name == nullptr) return false;
         size_t length = strnlen(name, MAX_ADVERT_DATA_SIZE);
         const size_t overhead = with_location ? 9 : 1;
@@ -273,13 +252,10 @@ namespace watch {
         return true;
     }
 
-    void WatchMesh::onGroupDataRecv(mesh::Packet *packet, uint8_t type,
-                                    const mesh::GroupChannel &channel,
-                                    uint8_t *data, size_t length){
+    void WatchMesh::onGroupDataRecv(mesh::Packet *packet, uint8_t type, const mesh::GroupChannel &channel, uint8_t *data, size_t length){
         int index = -1;
         for(int i = 0; i < CHANNEL_COUNT; i++){
-            if(channels_[i].name[0] != 0 &&
-               memcmp(channel.secret, channels_[i].value.secret, sizeof(channel.secret)) == 0){
+            if(channels_[i].name[0] != 0 && memcmp(channel.secret, channels_[i].value.secret, sizeof(channel.secret)) == 0){
                 index = i;
                 break;
             }
@@ -294,52 +270,31 @@ namespace watch {
         if(end != nullptr) text_length = end - text;
         if(text_length > 160) text_length = 160;
         if(group_callback_ != nullptr){
-            group_callback_(group_context_, packet, static_cast<uint8_t>(index),
-                            timestamp, text, text_length);
+            group_callback_(group_context_, packet, static_cast<uint8_t>(index), timestamp, text, text_length);
         }
     }
 
     void WatchMesh::logRx(mesh::Packet *packet, int length, float score){
         packets_received_++;
-        ESP_LOGI(TAG, "RX #%lu type=%u route=%u len=%d payload=%u SNR=%.1f score=%.2f",
-                 static_cast<unsigned long>(packets_received_),
-                 static_cast<unsigned>(packet->getPayloadType()),
-                 static_cast<unsigned>(packet->getRouteType()),
-                 length, static_cast<unsigned>(packet->payload_len),
-                 packet->getSNR(), score);
+        ESP_LOGI(TAG, "RX #%lu type=%u route=%u len=%d payload=%u SNR=%.1f score=%.2f", static_cast<unsigned long>(packets_received_), static_cast<unsigned>(packet->getPayloadType()), static_cast<unsigned>(packet->getRouteType()), length, static_cast<unsigned>(packet->payload_len), packet->getSNR(), score);
     }
 
-    void WatchMesh::logRxRaw(
-        float snr,
-        float rssi,
-        const uint8_t raw[],
-        int length)
-    {
+    void WatchMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int length){
         if(raw_rx_callback_ == nullptr)
             return;
 
-        if(raw == nullptr || length <= 0 ||
-        length > MAX_TRANS_UNIT)
+        if(raw == nullptr || length <= 0 || length > MAX_TRANS_UNIT)
             return;
 
         // Forward the original received LoRa bytes.
         // Do not modify routing or packet processing.
-        raw_rx_callback_(
-            raw_rx_context_,
-            snr,
-            rssi,
-            raw,
-            static_cast<size_t>(length)
-        );
+        raw_rx_callback_(raw_rx_context_, snr, rssi, raw, static_cast<size_t>(length));
     }
 
-    void WatchMesh::onAdvertRecv(mesh::Packet *, const mesh::Identity &identity,
-                                 uint32_t timestamp, const uint8_t *data, size_t length){
+    void WatchMesh::onAdvertRecv(mesh::Packet *, const mesh::Identity &identity, uint32_t timestamp, const uint8_t *data, size_t length){
         valid_adverts_++;
         if(advert_callback_ != nullptr) advert_callback_(advert_context_, identity, timestamp, data, length);
-        ESP_LOGI(TAG, "Verified advert: %02X%02X%02X%02X",
-                 identity.pub_key[0], identity.pub_key[1],
-                 identity.pub_key[2], identity.pub_key[3]);
+        ESP_LOGI(TAG, "Verified advert: %02X%02X%02X%02X", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
     }
 
     void WatchMesh::onAckRecv(mesh::Packet *, uint32_t ack){

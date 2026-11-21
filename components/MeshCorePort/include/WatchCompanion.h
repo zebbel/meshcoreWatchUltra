@@ -16,10 +16,7 @@ namespace watch {
 
     class WatchCompanion {
     public:
-        WatchCompanion(WatchBLE &ble, WatchMesh &mesh, MeshCoreRadio &radio,
-                       WatchSettingsStore &settings, WatchContacts &contacts,
-                       WatchRTC &rtc, mesh::MillisecondClock &clock,
-                       WatchTelemetry &telemetry);
+        WatchCompanion(WatchBLE &ble, WatchMesh &mesh, MeshCoreRadio &radio, WatchSettingsStore &settings, WatchContacts &contacts, WatchRTC &rtc, mesh::MillisecondClock &clock, WatchTelemetry &telemetry);
 
         void loop();
 
@@ -54,39 +51,19 @@ namespace watch {
         PendingAck pending_acks_[8] = {};
         uint8_t ack_next_ = 0;
 
-        static void group_callback(void *ctx, const mesh::Packet *,
-                                   uint8_t channel, uint32_t time,
-                                   const uint8_t *text, size_t len);
-        static void peer_callback(void *ctx, const mesh::Packet *,
-                                  const uint8_t pub[32], uint8_t type,
-                                  uint32_t time, const uint8_t *text, size_t len);
-        static void advert_callback(void *ctx, const mesh::Identity &,
-                                    uint32_t time, const uint8_t *data, size_t len);
+        static void group_callback(void *ctx, const mesh::Packet *, uint8_t channel, uint32_t time, const uint8_t *text, size_t len);
+        static void peer_callback(void *ctx, const mesh::Packet *, const uint8_t pub[32], uint8_t type, uint32_t time, const uint8_t *text, size_t len);
+        static void advert_callback(void *ctx, const mesh::Identity &, uint32_t time, const uint8_t *data, size_t len);
         static void ack_callback(void *ctx, uint32_t ack);
 
-        static void raw_rx_callback(
-            void *ctx,
-            float snr,
-            float rssi,
-            const uint8_t *raw,
-            size_t length
-        );
+        static void raw_rx_callback(void *ctx, float snr, float rssi, const uint8_t *raw, size_t length);
 
-        void on_raw_rx(
-            float snr,
-            float rssi,
-            const uint8_t *raw,
-            size_t length
-        );
+        void on_raw_rx(float snr, float rssi, const uint8_t *raw, size_t length);
 
 
-        void on_group_message(const mesh::Packet *, uint8_t channel,
-                              uint32_t time, const uint8_t *text, size_t len);
-        void on_peer_message(const mesh::Packet *, const uint8_t pub[32],
-                             uint8_t type, uint32_t time,
-                             const uint8_t *text, size_t len);
-        void on_advert(const mesh::Identity &, uint32_t time,
-                       const uint8_t *data, size_t len);
+        void on_group_message(const mesh::Packet *, uint8_t channel, uint32_t time, const uint8_t *text, size_t len);
+        void on_peer_message(const mesh::Packet *, const uint8_t pub[32], uint8_t type, uint32_t time, const uint8_t *text, size_t len);
+        void on_advert(const mesh::Identity &, uint32_t time, const uint8_t *data, size_t len);
         void on_ack(uint32_t code);
 
         void enqueue(const uint8_t *data, size_t len);
@@ -96,8 +73,7 @@ namespace watch {
         void reply_error(uint8_t code);
         void reply_ok();
 
-        bool send_contact(const WatchContact &contact,
-                          uint8_t response_code = 3);
+        bool send_contact(const WatchContact &contact, uint8_t response_code = 3);
         bool save_name();
         bool update_settings(const WatchSettings &next, bool reconfigure_radio);
         void handle_device_query();

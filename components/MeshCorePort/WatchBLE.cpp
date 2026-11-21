@@ -29,22 +29,15 @@ namespace watch {
     static WatchBLE *instance = nullptr;
 
     // The MeshCore companion BLE service and standard UART characteristics.
-    static const ble_uuid128_t service_uuid = BLE_UUID128_INIT(
-        0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
-        0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E);
-    static const ble_uuid128_t rx_uuid = BLE_UUID128_INIT(
-        0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
-        0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E);
-    static const ble_uuid128_t tx_uuid = BLE_UUID128_INIT(
-        0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
-        0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E);
+    static const ble_uuid128_t service_uuid = BLE_UUID128_INIT(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E);
+    static const ble_uuid128_t rx_uuid = BLE_UUID128_INIT(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E);
+    static const ble_uuid128_t tx_uuid = BLE_UUID128_INIT(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E);
 
     int watch_ble_gap_callback(struct ble_gap_event *event, void *){
         return instance == nullptr ? 0 : instance->on_gap_event(event);
     }
 
-    int watch_ble_access_callback(uint16_t conn, uint16_t attr,
-                                  struct ble_gatt_access_ctxt *ctxt, void *){
+    int watch_ble_access_callback(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt, void *){
         return instance == nullptr ? BLE_ATT_ERR_UNLIKELY : instance->on_characteristic(conn, attr, ctxt);
     }
 
@@ -118,17 +111,9 @@ namespace watch {
         ble_store_config_init();
         int bond_count = -1;
 
-        int store_rc = ble_store_util_count(
-            BLE_STORE_OBJ_TYPE_PEER_SEC,
-            &bond_count
-        );
+        int store_rc = ble_store_util_count(BLE_STORE_OBJ_TYPE_PEER_SEC, &bond_count);
 
-        ESP_LOGI(
-            TAG,
-            "BLE bond storage: rc=%d stored_bonds=%d",
-            store_rc,
-            bond_count
-        );
+        ESP_LOGI(TAG, "BLE bond storage: rc=%d stored_bonds=%d", store_rc, bond_count);
         ble_att_set_preferred_mtu(517);
         started_ = true;
         nimble_port_freertos_init(host_task);
@@ -153,27 +138,14 @@ namespace watch {
 
         uint8_t address[6] = {};
 
-        rc = ble_hs_id_copy_addr(
-            own_addr_type_,
-            address,
-            nullptr
-        );
+        rc = ble_hs_id_copy_addr(own_addr_type_, address, nullptr);
 
         if(rc == 0){
-            ESP_LOGI(
-                TAG,
-                "BLE identity type=%u address=%02X:%02X:%02X:%02X:%02X:%02X",
-                static_cast<unsigned>(own_addr_type_),
-                address[5], address[4], address[3],
-                address[2], address[1], address[0]
-            );
+            ESP_LOGI(TAG, "BLE identity type=%u address=%02X:%02X:%02X:%02X:%02X:%02X", static_cast<unsigned>(own_addr_type_), address[5], address[4], address[3], address[2], address[1], address[0]);
         }
 
         if(own_addr_type_ != BLE_OWN_ADDR_PUBLIC){
-            ESP_LOGW(
-                TAG,
-                "Public BLE address unavailable; using random identity"
-            );
+            ESP_LOGW(TAG, "Public BLE address unavailable; using random identity");
         }
 
         advertise();
@@ -197,8 +169,7 @@ namespace watch {
         params.conn_mode = BLE_GAP_CONN_MODE_UND;
         params.disc_mode = BLE_GAP_DISC_MODE_GEN;
         if(rc == 0){
-            rc = ble_gap_adv_start(own_addr_type_, nullptr, BLE_HS_FOREVER,
-                                   &params, watch_ble_gap_callback, nullptr);
+            rc = ble_gap_adv_start(own_addr_type_, nullptr, BLE_HS_FOREVER, &params, watch_ble_gap_callback, nullptr);
         }
         if(rc != 0) ESP_LOGE(TAG, "Advertising failed: %d", rc);
     }
@@ -248,24 +219,11 @@ namespace watch {
             case BLE_GAP_EVENT_ENC_CHANGE: {
                 ble_gap_conn_desc security_desc = {};
 
-                int find_rc = ble_gap_conn_find(
-                    event->enc_change.conn_handle,
-                    &security_desc
-                );
+                int find_rc = ble_gap_conn_find(event->enc_change.conn_handle, &security_desc);
 
-                ESP_LOGI(
-                    TAG,
-                    "BLE security: status=%d lookup=%d encrypted=%d authenticated=%d bonded=%d",
-                    event->enc_change.status,
-                    find_rc,
-                    find_rc == 0 ? security_desc.sec_state.encrypted : 0,
-                    find_rc == 0 ? security_desc.sec_state.authenticated : 0,
-                    find_rc == 0 ? security_desc.sec_state.bonded : 0
-                );
+                ESP_LOGI(TAG, "BLE security: status=%d lookup=%d encrypted=%d authenticated=%d bonded=%d", event->enc_change.status, find_rc, find_rc == 0 ? security_desc.sec_state.encrypted : 0, find_rc == 0 ? security_desc.sec_state.authenticated : 0, find_rc == 0 ? security_desc.sec_state.bonded : 0);
                 ble_gap_conn_desc desc = {};
-                if(event->enc_change.status == 0 &&
-                   ble_gap_conn_find(event->enc_change.conn_handle, &desc) == 0 &&
-                   desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded){
+                if(event->enc_change.status == 0 && ble_gap_conn_find(event->enc_change.conn_handle, &desc) == 0 && desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded){
                     authenticated_.store(true);
                     clear_pin_.store(true);
                     ESP_LOGI(TAG, "Authenticated BLE bond established");
@@ -285,35 +243,19 @@ namespace watch {
 
                 ble_gap_conn_desc desc = {};
 
-                int rc = ble_gap_conn_find(
-                    event->repeat_pairing.conn_handle,
-                    &desc
-                );
+                int rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
 
                 if(rc != 0){
-                    ESP_LOGE(
-                        TAG,
-                        "Repeat pairing: connection lookup failed, rc=%d",
-                        rc
-                    );
+                    ESP_LOGE(TAG, "Repeat pairing: connection lookup failed, rc=%d", rc);
                     return BLE_GAP_REPEAT_PAIRING_IGNORE;
                 }
 
-                ESP_LOGW(
-                    TAG,
-                    "Repeat pairing requested; replacing stale peer bond"
-                );
+                ESP_LOGW(TAG, "Repeat pairing requested; replacing stale peer bond");
 
-                rc = ble_store_util_delete_peer(
-                    &desc.peer_id_addr
-                );
+                rc = ble_store_util_delete_peer(&desc.peer_id_addr);
 
                 if(rc != 0){
-                    ESP_LOGE(
-                        TAG,
-                        "Failed to remove stale peer bond, rc=%d",
-                        rc
-                    );
+                    ESP_LOGE(TAG, "Failed to remove stale peer bond, rc=%d", rc);
                     return BLE_GAP_REPEAT_PAIRING_IGNORE;
                 }
 
@@ -327,8 +269,7 @@ namespace watch {
         return 0;
     }
 
-    int WatchBLE::on_characteristic(uint16_t conn, uint16_t attr,
-                                     struct ble_gatt_access_ctxt *ctxt){
+    int WatchBLE::on_characteristic(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt){
         (void)attr;
         if(!authenticated_.load() || conn != connection_handle_.load()){
             return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
@@ -365,12 +306,8 @@ namespace watch {
         return xQueueSend(tx_queue_, &frame, 0) == pdTRUE;
     }
 
-    bool WatchBLE::send_best_effort(
-        const uint8_t *data,
-        size_t length)
-    {
-        if(data == nullptr || length == 0 ||
-        length > MAX_FRAME)
+    bool WatchBLE::send_best_effort(const uint8_t *data, size_t length){
+        if(data == nullptr || length == 0 || length > MAX_FRAME)
             return false;
 
         if(tx_queue_ == nullptr)
@@ -391,17 +328,9 @@ namespace watch {
 
         frame.length = static_cast<uint16_t>(length);
 
-        memcpy(
-            frame.data,
-            data,
-            length
-        );
+        memcpy(frame.data, data, length);
 
-        return xQueueSend(
-            tx_queue_,
-            &frame,
-            0
-        ) == pdTRUE;
+        return xQueueSend(tx_queue_, &frame, 0) == pdTRUE;
     }
 
     bool WatchBLE::can_send(size_t length) const{
@@ -409,8 +338,7 @@ namespace watch {
         ble_gap_conn_desc desc = {};
         uint16_t conn = connection_handle_.load();
         if(conn == 0xFFFF || ble_gap_conn_find(conn, &desc) != 0) return false;
-        return desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded &&
-               ble_att_mtu(conn) >= length + 3;
+        return desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded && ble_att_mtu(conn) >= length + 3;
     }
 
     void WatchBLE::loop(){
