@@ -33,6 +33,5 @@ namespace MIA_M10Q {
     void loop();
     bool get_fresh_fix(fix_t &fix);
     void request_fix();
-    void set_test_mode(bool enabled);
     void get_status(status_t &status);
 }

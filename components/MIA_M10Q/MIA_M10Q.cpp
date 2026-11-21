@@ -404,11 +404,6 @@ namespace MIA_M10Q {
         next_cycle_ms = now;
     }
 
-    void set_test_mode(bool enabled){
-        test_mode = enabled;
-        if(enabled && initialized && !powered) next_cycle_ms = millis_now();
-    }
-
     void get_status(status_t &status){
         status = diagnostics;
         status.initialized = initialized;

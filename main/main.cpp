@@ -27,7 +27,6 @@
 #include "helpers/StaticPoolPacketManager.h"
 
 static const char *TAG = "MeshCoreWatch";
-static constexpr bool GPS_TEST_SCREEN = false;
 
 static bool init_hardware(){
     esp_err_t err = board::init();
@@ -39,7 +38,7 @@ static bool init_hardware(){
     if(err == ESP_OK) err = sx1262::init();
 
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Hardware init failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Hardware init failed");
         return false;
     }
 
@@ -49,18 +48,13 @@ static bool init_hardware(){
 extern "C" void app_main(void){
     ESP_LOGI(TAG, "T-Watch Ultra: MeshCore BLE companion");
 
-    // Keep all existing NVS contents intact.
-    esp_err_t err = nvs_flash_init();
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "NVS unavailable: %s", esp_err_to_name(err));
+    if(nvs_flash_init() != ESP_OK){
+        ESP_LOGE(TAG, "NVS unavailable");
         return;
     }
 
-    err = nvs_flash_init_partition("contacts");
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "Contact NVS initialization failed: %s", esp_err_to_name(err));
+    if(nvs_flash_init_partition("contacts") != ESP_OK){
+        ESP_LOGE(TAG, "Contact NVS initialization failed");
         return;
     }
 
@@ -68,29 +62,23 @@ extern "C" void app_main(void){
     static mesh::LocalIdentity identity;
 
     bootloader_random_enable();
-    err = watch::load_or_create_identity(identity, rng);
-    bootloader_random_disable();
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "Persistent identity unavailable: %s", esp_err_to_name(err));
+    if(watch::load_or_create_identity(identity, rng) != ESP_OK){
+        ESP_LOGE(TAG, "Persistent identity unavailable");
         return;
     }
+    bootloader_random_disable();
 
     static watch::WatchSettingsStore settings;
 
-    err = settings.load();
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "Stored settings invalid: %s", esp_err_to_name(err));
+    if(settings.load() != ESP_OK){
+        ESP_LOGE(TAG, "Stored settings invalid");
         return;
     }
 
     static watch::WatchContacts contacts;
 
-    err = contacts.load();
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "Contacts unavailable: %s", esp_err_to_name(err));
+    if(contacts.load() != ESP_OK){
+        ESP_LOGE(TAG, "Contacts unavailable");
         return;
     }
 
@@ -99,17 +87,13 @@ extern "C" void app_main(void){
 
     const sx1262::config_t config = settings.get().radio();
 
-    err = sx1262::configure(config);
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "Radio configure failed: %s", esp_err_to_name(err));
+    if(sx1262::configure(config) != ESP_OK){
+        ESP_LOGE(TAG, "Radio configure failed");
         return;
     }
 
-    err = watch::pairing_display_init();
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "Cannot display secure BLE pairing code: %s", esp_err_to_name(err));
+    if(watch::pairing_display_init() != ESP_OK){
+        ESP_LOGE(TAG, "Cannot display secure BLE pairing code");
         return;
     }
 
@@ -127,10 +111,8 @@ extern "C" void app_main(void){
     mesh.set_path_hash_mode(settings.get().path_hash_mode);
     mesh.set_scope_key(settings.get().default_scope_key);
 
-    err = mesh.load_channels();
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "Failed loading channels: %s", esp_err_to_name(err));
+    if(mesh.load_channels() != ESP_OK){
+        ESP_LOGE(TAG, "Failed loading channels");
         return;
     }
 
@@ -141,14 +123,9 @@ extern "C" void app_main(void){
         return;
     }
 
-    // Independent GNSS hardware component.
-    err = MIA_M10Q::init();
-
-    if(err != ESP_OK){
-        ESP_LOGW(TAG, "MIA_M10Q unavailable: %s", esp_err_to_name(err));
+    if(MIA_M10Q::init() != ESP_OK){
+        ESP_LOGW(TAG, "MIA_M10Q unavailable");
     }
-
-    if(GPS_TEST_SCREEN && err == ESP_OK) MIA_M10Q::set_test_mode(true);
 
     static watch::WatchTelemetry telemetry;
     static watch::WatchBLE ble;
@@ -157,10 +134,8 @@ extern "C" void app_main(void){
 
     ble.set_pairing_pin(settings.get().ble_pin);
 
-    err = ble.begin("MeshCore-Watch");
-
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "BLE start failed: %s", esp_err_to_name(err));
+    if(ble.begin("MeshCore-Watch") != ESP_OK){
+        ESP_LOGE(TAG, "BLE start failed");
         return;
     }
 
@@ -168,7 +143,6 @@ extern "C" void app_main(void){
 
     uint32_t last_gps_position_save_ms = 0;
     bool pairing_screen_visible = false;
-    uint32_t next_gps_screen_ms = 0;
 
     while(true){
         uint32_t pin = ble.take_pairing_pin();
@@ -214,21 +188,13 @@ extern "C" void app_main(void){
                     last_gps_position_save_ms = gps_now;
                     ESP_LOGI(TAG, "GPS position synchronized to companion settings");
                 }else{
-                    ESP_LOGW(TAG, "GPS position could not be saved: %s", esp_err_to_name(save_err));
+                    ESP_LOGW(TAG, "GPS position could not be saved", esp_err_to_name(save_err));
                 }
             }
         }
 
         mesh.loop();
         companion.loop();
-
-
-        uint32_t now = static_cast<uint32_t>(clock.getMillis());
-
-        if(GPS_TEST_SCREEN && !pairing_screen_visible && static_cast<int32_t>(now - next_gps_screen_ms) >= 0){
-            watch::gps_test_display_show();
-            next_gps_screen_ms = static_cast<uint32_t>(clock.getMillis()) + 2000;
-        }
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }

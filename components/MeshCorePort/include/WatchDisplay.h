@@ -8,5 +8,4 @@ namespace watch {
     esp_err_t pairing_display_init();
     void pairing_display_show(uint32_t six_digit_pin);
     void pairing_display_clear();
-    void gps_test_display_show();
 }
