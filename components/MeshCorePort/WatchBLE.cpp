@@ -19,7 +19,7 @@
 #include "os/os_mbuf.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-#include "store/config/ble_store_config.h"
+#include "host/ble_store.h"
 
 extern "C" void ble_store_config_init(void);
 
@@ -116,6 +116,19 @@ namespace watch {
         ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
         ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
         ble_store_config_init();
+        int bond_count = -1;
+
+        int store_rc = ble_store_util_count(
+            BLE_STORE_OBJ_TYPE_PEER_SEC,
+            &bond_count
+        );
+
+        ESP_LOGI(
+            TAG,
+            "BLE bond storage: rc=%d stored_bonds=%d",
+            store_rc,
+            bond_count
+        );
         ble_att_set_preferred_mtu(247);
         started_ = true;
         nimble_port_freertos_init(host_task);
@@ -124,10 +137,45 @@ namespace watch {
     }
 
     void WatchBLE::sync(){
-        if(ble_hs_util_ensure_addr(1) != 0 || ble_hs_id_infer_auto(0, &own_addr_type_) != 0){
-            ESP_LOGE(TAG, "No usable BLE address");
+        // Prefer the ESP32-S3 factory public BLE address.
+        // Unlike a generated random static address, it is stable
+        // across firmware updates, reboots and power cycles.
+        int rc = ble_hs_util_ensure_addr(0);
+
+        if(rc == 0){
+            rc = ble_hs_id_infer_auto(0, &own_addr_type_);
+        }
+
+        if(rc != 0){
+            ESP_LOGE(TAG, "No usable BLE address, rc=%d", rc);
             return;
         }
+
+        uint8_t address[6] = {};
+
+        rc = ble_hs_id_copy_addr(
+            own_addr_type_,
+            address,
+            nullptr
+        );
+
+        if(rc == 0){
+            ESP_LOGI(
+                TAG,
+                "BLE identity type=%u address=%02X:%02X:%02X:%02X:%02X:%02X",
+                static_cast<unsigned>(own_addr_type_),
+                address[5], address[4], address[3],
+                address[2], address[1], address[0]
+            );
+        }
+
+        if(own_addr_type_ != BLE_OWN_ADDR_PUBLIC){
+            ESP_LOGW(
+                TAG,
+                "Public BLE address unavailable; using random identity"
+            );
+        }
+
         advertise();
     }
 
@@ -198,6 +246,22 @@ namespace watch {
                 }
                 break;
             case BLE_GAP_EVENT_ENC_CHANGE: {
+                ble_gap_conn_desc security_desc = {};
+
+                int find_rc = ble_gap_conn_find(
+                    event->enc_change.conn_handle,
+                    &security_desc
+                );
+
+                ESP_LOGI(
+                    TAG,
+                    "BLE security: status=%d lookup=%d encrypted=%d authenticated=%d bonded=%d",
+                    event->enc_change.status,
+                    find_rc,
+                    find_rc == 0 ? security_desc.sec_state.encrypted : 0,
+                    find_rc == 0 ? security_desc.sec_state.authenticated : 0,
+                    find_rc == 0 ? security_desc.sec_state.bonded : 0
+                );
                 ble_gap_conn_desc desc = {};
                 if(event->enc_change.status == 0 &&
                    ble_gap_conn_find(event->enc_change.conn_handle, &desc) == 0 &&
@@ -211,12 +275,51 @@ namespace watch {
                     ble_gap_terminate(event->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
                 }
                 break;
-            }
+            }       
             case BLE_GAP_EVENT_REPEAT_PAIRING: {
-                // Never silently replace a stored bond. Clear bonds in a separate,
-                // explicitly authorized factory reset workflow.
-                ESP_LOGW(TAG, "Repeated pairing refused; remove old bond manually");
-                return BLE_GAP_REPEAT_PAIRING_IGNORE;
+                // The peer is requesting pairing although a bond
+                // already exists in local storage.
+                //
+                // Remove only this peer's old security information.
+                // Do not clear all BLE bonds or erase NVS.
+
+                ble_gap_conn_desc desc = {};
+
+                int rc = ble_gap_conn_find(
+                    event->repeat_pairing.conn_handle,
+                    &desc
+                );
+
+                if(rc != 0){
+                    ESP_LOGE(
+                        TAG,
+                        "Repeat pairing: connection lookup failed, rc=%d",
+                        rc
+                    );
+                    return BLE_GAP_REPEAT_PAIRING_IGNORE;
+                }
+
+                ESP_LOGW(
+                    TAG,
+                    "Repeat pairing requested; replacing stale peer bond"
+                );
+
+                rc = ble_store_util_delete_peer(
+                    &desc.peer_id_addr
+                );
+
+                if(rc != 0){
+                    ESP_LOGE(
+                        TAG,
+                        "Failed to remove stale peer bond, rc=%d",
+                        rc
+                    );
+                    return BLE_GAP_REPEAT_PAIRING_IGNORE;
+                }
+
+                // Keep MITM protection and Secure Connections enabled.
+                // A fresh authenticated pairing is still required.
+                return BLE_GAP_REPEAT_PAIRING_RETRY;
             }
             default:
                 break;
