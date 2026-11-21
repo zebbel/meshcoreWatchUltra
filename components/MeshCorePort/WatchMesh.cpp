@@ -276,7 +276,7 @@ namespace watch {
 
     void WatchMesh::logRx(mesh::Packet *packet, int length, float score){
         packets_received_++;
-        ESP_LOGI(TAG, "RX #%lu type=%u route=%u len=%d payload=%u SNR=%.1f score=%.2f", static_cast<unsigned long>(packets_received_), static_cast<unsigned>(packet->getPayloadType()), static_cast<unsigned>(packet->getRouteType()), length, static_cast<unsigned>(packet->payload_len), packet->getSNR(), score);
+        //ESP_LOGI(TAG, "RX #%lu type=%u route=%u len=%d payload=%u SNR=%.1f score=%.2f", static_cast<unsigned long>(packets_received_), static_cast<unsigned>(packet->getPayloadType()), static_cast<unsigned>(packet->getRouteType()), length, static_cast<unsigned>(packet->payload_len), packet->getSNR(), score);
     }
 
     void WatchMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int length){
@@ -291,9 +291,85 @@ namespace watch {
         raw_rx_callback_(raw_rx_context_, snr, rssi, raw, static_cast<size_t>(length));
     }
 
-    void WatchMesh::onAdvertRecv(mesh::Packet *, const mesh::Identity &identity, uint32_t timestamp, const uint8_t *data, size_t length){
+    void WatchMesh::cache_advert_path(const mesh::Packet *packet, const mesh::Identity &identity){
+        if(packet == nullptr || packet->path_len > 255) return;
+
+        const uint8_t encoded_length = static_cast<uint8_t>(packet->path_len);
+        if(!mesh::Packet::isValidPathLen(encoded_length)) return;
+
+        const size_t path_bytes = packet->getPathByteLen();
+        if(path_bytes > MAX_PATH_SIZE) return;
+
+        const uint32_t now = static_cast<uint32_t>(_ms->getMillis());
+
+        AdvertPath *slot = nullptr;
+        AdvertPath *oldest = nullptr;
+        uint32_t oldest_age = 0;
+
+        for(auto &entry : advert_paths_){
+            if(entry.valid && static_cast<uint32_t>(now - entry.seen_ms) >= ADVERT_PATH_MAX_AGE_MS) entry.valid = false;
+
+            if(entry.valid && memcmp(entry.public_key, identity.pub_key, PUB_KEY_SIZE) == 0){
+                slot = &entry;
+                break;
+            }
+
+            if(!entry.valid){
+                if(slot == nullptr) slot = &entry;
+                continue;
+            }
+
+            const uint32_t age = static_cast<uint32_t>(now - entry.seen_ms);
+
+            if(oldest == nullptr || age > oldest_age){
+                oldest = &entry;
+                oldest_age = age;
+            }
+        }
+
+        if(slot == nullptr) slot = oldest;
+        if(slot == nullptr) return;
+
+        memcpy(slot->public_key, identity.pub_key, PUB_KEY_SIZE);
+        memset(slot->path, 0, sizeof(slot->path));
+
+        if(path_bytes > 0) memcpy(slot->path, packet->path, path_bytes);
+
+        slot->path_len = encoded_length;
+        slot->received_at = getRTCClock()->getCurrentTime();
+        slot->seen_ms = now;
+        slot->valid = true;
+
+        ESP_LOGD(TAG, "Cached advertisement path: %02X%02X%02X%02X, hops=%u", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3], packet->getPathHashCount());
+    }
+
+    bool WatchMesh::get_advert_path(const uint8_t public_key[PUB_KEY_SIZE], uint32_t &received_at, uint8_t &path_len, uint8_t path[MAX_PATH_SIZE]) const{
+        if(public_key == nullptr || path == nullptr) return false;
+
+        const uint32_t now = static_cast<uint32_t>(_ms->getMillis());
+
+        for(const auto &entry : advert_paths_){
+            if(!entry.valid) continue;
+            if(memcmp(entry.public_key, public_key, PUB_KEY_SIZE) != 0) continue;
+            if(static_cast<uint32_t>(now - entry.seen_ms) >= ADVERT_PATH_MAX_AGE_MS) return false;
+            if(!mesh::Packet::isValidPathLen(entry.path_len)) return false;
+
+            received_at = entry.received_at;
+            path_len = entry.path_len;
+            memcpy(path, entry.path, MAX_PATH_SIZE);
+            return true;
+        }
+
+        return false;
+    }
+   
+    void WatchMesh::onAdvertRecv(mesh::Packet *packet, const mesh::Identity &identity, uint32_t timestamp, const uint8_t *data, size_t length){
         valid_adverts_++;
+
+        cache_advert_path(packet, identity);
+
         if(advert_callback_ != nullptr) advert_callback_(advert_context_, identity, timestamp, data, length);
+
         ESP_LOGI(TAG, "Verified advert: %02X%02X%02X%02X", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
     }
 

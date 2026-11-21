@@ -48,6 +48,7 @@ namespace watch {
         uint32_t packetCount() const { return packets_received_; }
         uint32_t validAdvertCount() const { return valid_adverts_; }
         uint32_t ackCount() const { return acks_received_; }
+        bool get_advert_path(const uint8_t public_key[PUB_KEY_SIZE], uint32_t &received_at, uint8_t &path_len, uint8_t path[MAX_PATH_SIZE]) const;
 
     protected:
         bool allowPacketForward(const mesh::Packet *packet) override;
@@ -71,6 +72,23 @@ namespace watch {
             mesh::GroupChannel value = {};
         };
         Channel channels_[CHANNEL_COUNT] = {};
+
+        static constexpr size_t ADVERT_PATH_CACHE_SIZE = 64;
+        static constexpr uint32_t ADVERT_PATH_MAX_AGE_MS = 24U * 60U * 60U * 1000U;
+
+        struct AdvertPath {
+            uint8_t public_key[PUB_KEY_SIZE] = {};
+            uint8_t path[MAX_PATH_SIZE] = {};
+            uint8_t path_len = 0;
+            uint32_t received_at = 0;
+            uint32_t seen_ms = 0;
+            bool valid = false;
+        };
+
+        AdvertPath advert_paths_[ADVERT_PATH_CACHE_SIZE] = {};
+
+        void cache_advert_path(const mesh::Packet *packet, const mesh::Identity &identity);
+
         static void set_public_channel(Channel &channel);
         GroupCallback group_callback_ = nullptr;
         void *group_context_ = nullptr;

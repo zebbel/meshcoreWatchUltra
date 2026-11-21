@@ -41,6 +41,7 @@ namespace watch {
         RESP_NO_MORE=10, RESP_EXPORT_CONTACT=11, RESP_BATT=12,
         RESP_DEVICE=13, RESP_CHANNEL=18,
         RESP_CUSTOM_VARS=21,
+        RESP_ADVERT_PATH=22,
         RESP_TUNING=23,
         RESP_STATS=24, RESP_AUTOADD=25, RESP_REPEAT_FREQ=26,
         RESP_DEFAULT_SCOPE=28,  
@@ -295,7 +296,8 @@ namespace watch {
         ble_.send_best_effort(frame, frame_length);
     }
 
-    void WatchCompanion::reply_error(uint8_t code){
+    void WatchCompanion::reply_error(uint8_t code, const uint8_t *cmd, size_t len){
+        ESP_LOGI(TAG, "BLE command=%u length=%u", cmd[0], static_cast<unsigned>(len));
         ESP_LOGW(TAG, "Companion command rejected: error=%u", static_cast<unsigned>(code));
 
         const uint8_t f[2] = {RESP_ERROR, code};
@@ -438,7 +440,6 @@ namespace watch {
         uint8_t secret[16] = {};
 
         if(!mesh_.get_channel(index, name, secret)){
-            reply_error(ERR_NOT_FOUND);
             return;
         }
 
@@ -498,15 +499,13 @@ namespace watch {
         if(cmd == nullptr || len == 0)
             return;
 
-        ESP_LOGI(TAG, "BLE command=%u length=%u", cmd[0], static_cast<unsigned>(len));
-
         const auto &before = settings_.get();
 
         switch(cmd[0]){
 
             case CMD_APP_START:
                 if(len < 8){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
                 contact_sync_ = false;
@@ -515,7 +514,7 @@ namespace watch {
 
             case CMD_DEVICE_QUERY:
                 if(len < 2){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
                 target_version_ = cmd[1];
@@ -524,7 +523,7 @@ namespace watch {
 
             case CMD_GET_CONTACTS: {
                 if(contact_sync_){
-                    reply_error(ERR_BAD_STATE);
+                    reply_error(ERR_BAD_STATE, cmd, len);
                     return;
                 }
 
@@ -537,7 +536,7 @@ namespace watch {
                 put_u32(&f[1], contacts_.count());
 
                 if(!ble_.send(f, sizeof(f))){
-                    reply_error(ERR_FULL);
+                    reply_error(ERR_FULL, cmd, len);
                     return;
                 }
 
@@ -547,14 +546,14 @@ namespace watch {
 
             case CMD_GET_CONTACT_KEY:
                 if(len != 1 + PUB_KEY_SIZE){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
                 if(auto *c = contacts_.find(&cmd[1]))
                     send_contact(*c);
                 else
-                    reply_error(ERR_NOT_FOUND);
+                    reply_error(ERR_NOT_FOUND , cmd, len);
                 return;
 
             case CMD_ADD_CONTACT: {
@@ -564,23 +563,23 @@ namespace watch {
                         reply_ok();
                         return;
                     case ContactUpdateResult::INVALID:
-                        reply_error(ERR_ILLEGAL);
+                        reply_error(ERR_ILLEGAL , cmd, len);
                         return;
                     case ContactUpdateResult::FULL:
-                        reply_error(ERR_FULL);
+                        reply_error(ERR_FULL, cmd, len);
                         return;
                     case ContactUpdateResult::STORAGE_ERROR:
-                        reply_error(ERR_IO);
+                        reply_error(ERR_IO, cmd, len);
                         return;
                 }
 
-                reply_error(ERR_IO);
+                reply_error(ERR_IO, cmd, len);
                 return;
             }
 
             case CMD_IMPORT_CONTACT: {
                 if(len < 1 + 2 + PUB_KEY_SIZE + 4 + SIGNATURE_SIZE + 1){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -588,7 +587,7 @@ namespace watch {
 
                 if(!packet.readFrom(&cmd[1], static_cast<uint8_t>(len - 1)) || packet.getPayloadType() != PAYLOAD_TYPE_ADVERT || packet.payload_len < PUB_KEY_SIZE + 4 + SIGNATURE_SIZE + 1){
 
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -599,14 +598,14 @@ namespace watch {
                 const size_t advert_len = packet.payload_len - header_len;
 
                 if(advert_len > MAX_ADVERT_DATA_SIZE){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
                 mesh::Identity sender(payload);
 
                 if(sender.matches(mesh_.self_id)){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -619,7 +618,7 @@ namespace watch {
                 if(!sender.verify(payload + PUB_KEY_SIZE + 4, signed_data, static_cast<int>(PUB_KEY_SIZE + 4 + advert_len))){
 
                     ESP_LOGW(TAG, "Rejected unsigned or forged contact advert");
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -627,7 +626,7 @@ namespace watch {
 
                 if(!contacts_.observe_advert(sender, timestamp, payload + header_len, advert_len, rtc_.getCurrentTime(), true, 0)){
 
-                    reply_error(contacts_.count() == WatchContacts::CAPACITY ? ERR_FULL : ERR_ILLEGAL);
+                    reply_error(contacts_.count() == WatchContacts::CAPACITY ? ERR_FULL : ERR_ILLEGAL, cmd, len);
                     return;
                 }
 
@@ -637,12 +636,12 @@ namespace watch {
 
             case CMD_EXPORT_CONTACT: {
                 if(len != 1){
-                    reply_error(ERR_UNSUPPORTED);
+                    reply_error(ERR_UNSUPPORTED, cmd, len);
                     return;
                 }
 
                 if(rtc_.getCurrentTime() == 0){
-                    reply_error(ERR_BAD_STATE);
+                    reply_error(ERR_BAD_STATE, cmd, len);
                     return;
                 }
 
@@ -661,7 +660,7 @@ namespace watch {
                 }
 
                 if(name_len == 0){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -678,7 +677,7 @@ namespace watch {
                 mesh::Packet *packet = mesh_.createAdvert(mesh_.self_id, app_data, offset + name_len);
 
                 if(packet == nullptr){
-                    reply_error(ERR_FULL);
+                    reply_error(ERR_FULL, cmd, len);
                     return;
                 }
 
@@ -688,7 +687,7 @@ namespace watch {
 
                 if(packet->getRawLength() + 1 > static_cast<int>(sizeof(response))){
                     mesh_.releasePacket(packet);
-                    reply_error(ERR_FULL);
+                    reply_error(ERR_FULL, cmd, len);
                     return;
                 }
 
@@ -697,18 +696,18 @@ namespace watch {
                 mesh_.releasePacket(packet);
 
                 if(!ble_.send(response, packet_len + 1))
-                    reply_error(ERR_BAD_STATE);
+                    reply_error(ERR_BAD_STATE, cmd, len);
                 return;
             }
 
             case CMD_REMOVE_CONTACT:
                 if(len < 1 + PUB_KEY_SIZE){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
                 if(!contacts_.remove(&cmd[1])){
-                    reply_error(ERR_NOT_FOUND);
+                    reply_error(ERR_NOT_FOUND , cmd, len);
                     return;
                 }
 
@@ -717,12 +716,12 @@ namespace watch {
 
             case CMD_RESET_PATH:
                 if(len < 1 + PUB_KEY_SIZE){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
                 if(!contacts_.reset_path(&cmd[1])){
-                    reply_error(ERR_NOT_FOUND);
+                    reply_error(ERR_NOT_FOUND , cmd, len);
                     return;
                 }
 
@@ -738,7 +737,7 @@ namespace watch {
 
             case CMD_SET_TIME:
                 if(len != 5 || get_u32(&cmd[1]) < rtc_.getCurrentTime()){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -748,7 +747,7 @@ namespace watch {
 
             case CMD_SET_NAME: {
                 if(len < 2 || len > 32){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -756,7 +755,7 @@ namespace watch {
                 memcpy(new_name, &cmd[1], len - 1);
 
                 if(memchr(new_name, ':', len - 1) != nullptr){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -766,7 +765,7 @@ namespace watch {
 
                 if(!save_name()){
                     memcpy(node_name_, prior, 32);
-                    reply_error(ERR_IO);
+                    reply_error(ERR_IO, cmd, len);
                     return;
                 }
 
@@ -776,7 +775,7 @@ namespace watch {
 
             case CMD_GET_CHANNEL:
                 if(len != 2){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -785,7 +784,7 @@ namespace watch {
 
             case CMD_SET_CHANNEL: {
                 if(len != 50){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -793,7 +792,7 @@ namespace watch {
                 memcpy(name, &cmd[2], 31);
 
                 if(!mesh_.set_channel(cmd[1], name, &cmd[34])){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -803,7 +802,7 @@ namespace watch {
 
             case CMD_SEND_CHANNEL_TXT: {
                 if(len < 8 || cmd[1] != 0){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -814,7 +813,7 @@ namespace watch {
 
                 if(!mesh_.send_channel_text(cmd[2], ts, node_name_, &cmd[7], len - 7)){
 
-                    reply_error(ERR_FULL);
+                    reply_error(ERR_FULL, cmd, len);
                     return;
                 }
 
@@ -824,14 +823,14 @@ namespace watch {
 
             case CMD_SEND_TXT: {
                 if(len < 14 || cmd[1] != 0){
-                    reply_error(ERR_UNSUPPORTED);
+                    reply_error(ERR_UNSUPPORTED, cmd, len);
                     return;
                 }
 
                 const auto *recipient = contacts_.find(&cmd[7], 6);
 
                 if(recipient == nullptr){
-                    reply_error(ERR_NOT_FOUND);
+                    reply_error(ERR_NOT_FOUND , cmd, len);
                     return;
                 }
 
@@ -845,7 +844,7 @@ namespace watch {
 
                 if(!mesh_.send_private_text(*recipient, ts, &cmd[13], len - 13, ack, timeout)){
 
-                    reply_error(ERR_FULL);
+                    reply_error(ERR_FULL, cmd, len);
                     return;
                 }
 
@@ -878,13 +877,13 @@ namespace watch {
 
             case CMD_SEND_ADVERT:
                 if(rtc_.getCurrentTime() == 0){
-                    reply_error(ERR_BAD_STATE);
+                    reply_error(ERR_BAD_STATE, cmd, len);
                     return;
                 }
 
                 if(!mesh_.send_self_advert(node_name_, len > 1 && cmd[1] == 1, before.latitude_micro, before.longitude_micro, before.advert_loc_policy != 0)){
 
-                    reply_error(ERR_FULL);
+                    reply_error(ERR_FULL, cmd, len);
                     return;
                 }
 
@@ -893,7 +892,7 @@ namespace watch {
 
             case CMD_SET_LOCATION: {
                 if(len != 9 && len != 13){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -903,7 +902,7 @@ namespace watch {
                 next.longitude_micro = static_cast<int32_t>(get_u32(&cmd[5]));
 
                 if(!update_settings(next, false)){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -913,12 +912,12 @@ namespace watch {
 
             case CMD_SET_RADIO: {
                 if(len < 11 || len > 12){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
                 if(len == 12 && cmd[11] != 0){
-                    reply_error(ERR_UNSUPPORTED);
+                    reply_error(ERR_UNSUPPORTED, cmd, len);
                     return;
                 }
 
@@ -930,7 +929,7 @@ namespace watch {
                 next.cr = cmd[10];
 
                 if(!update_settings(next, true)){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -940,7 +939,7 @@ namespace watch {
 
             case CMD_SET_POWER: {
                 if(len != 2){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -948,7 +947,7 @@ namespace watch {
                 next.tx_power_dbm = static_cast<int8_t>(cmd[1]);
 
                 if(!update_settings(next, true)){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -958,7 +957,7 @@ namespace watch {
 
             case CMD_SET_TUNING: {
                 if(len != 9){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -967,7 +966,7 @@ namespace watch {
                 next.airtime_factor_milli = get_u32(&cmd[5]);
 
                 if(!update_settings(next, false)){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -987,7 +986,7 @@ namespace watch {
 
             case CMD_SET_OTHER: {
                 if(len < 2 || len > 5){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1005,7 +1004,7 @@ namespace watch {
                     next.multi_acks = cmd[4];
 
                 if(!update_settings(next, false)){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1015,7 +1014,7 @@ namespace watch {
 
             case CMD_SET_BLE_PIN: {
                 if(len != 5){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1023,30 +1022,58 @@ namespace watch {
                 next.ble_pin = get_u32(&cmd[1]);
 
                 if(!update_settings(next, false)){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
                 reply_ok();
                 return;
             }
-
+            
             case CMD_GET_ADVERT_PATH: {
                 if(len != 34){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL, cmd, len);
                     return;
                 }
 
-                // Advertisement paths are not yet cached by WatchMesh.
-                // Do not substitute the contact's outbound routing path,
-                // because it may differ from the received advert path.
-                reply_error(ERR_NOT_FOUND);
+                // Request layout:
+                // Byte 0: command 42
+                // Byte 1: reserved
+                // Bytes 2-33: full 32-byte public key
+
+                uint32_t received_at = 0;
+                uint8_t path_len = 0;
+                uint8_t path[MAX_PATH_SIZE] = {};
+
+                if(!mesh_.get_advert_path(&cmd[2], received_at, path_len, path)){
+                    reply_error(ERR_NOT_FOUND, cmd, len);
+                    return;
+                }
+
+                // Official MeshCore response:
+                // Byte 0: response 22
+                // Bytes 1-4: reception timestamp
+                // Byte 5: encoded path length
+                // Bytes 6+: path bytes
+
+                uint8_t response[6 + MAX_PATH_SIZE] = {};
+                response[0] = RESP_ADVERT_PATH;
+
+                put_u32(&response[1], received_at);
+                response[5] = path_len;
+
+                const size_t path_bytes = mesh::Packet::writePath(&response[6], path, path_len);
+                const size_t response_length = 6 + path_bytes;
+
+                ESP_LOGI(TAG, "Advert path found: %02X%02X%02X%02X, hops=%u", cmd[2], cmd[3], cmd[4], cmd[5], path_len & 63);
+
+                if(!ble_.send(response, response_length)) reply_error(ERR_BAD_STATE, cmd, len);
                 return;
             }
 
             case CMD_SET_AUTOADD: {
                 if(len < 2 || len > 3){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1058,7 +1085,7 @@ namespace watch {
                 }
 
                 if(!update_settings(next, false)){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1075,7 +1102,7 @@ namespace watch {
 
             case CMD_SET_HASH_MODE: {
                 if(len != 3 || cmd[1] != 0){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1083,7 +1110,7 @@ namespace watch {
                 next.path_hash_mode = cmd[2];
 
                 if(!update_settings(next, false)){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1093,7 +1120,7 @@ namespace watch {
 
             case CMD_SET_TEMP_SCOPE:
                 if(len < 2){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1105,11 +1132,11 @@ namespace watch {
                     }else if(len == 2){
                         mesh_.set_scope_key(before.default_scope_key);
                     }else{
-                        reply_error(ERR_ILLEGAL);
+                        reply_error(ERR_ILLEGAL , cmd, len);
                         return;
                     }
                 }else{
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1127,7 +1154,7 @@ namespace watch {
                     const size_t n = strnlen(reinterpret_cast<const char *>(&cmd[1]), 31);
 
                     if(n == 0 || n >= 31){
-                        reply_error(ERR_ILLEGAL);
+                        reply_error(ERR_ILLEGAL , cmd, len);
                         return;
                     }
 
@@ -1136,12 +1163,12 @@ namespace watch {
                     memcpy(next.default_scope_key, &cmd[32], 16);
 
                 }else if(len != 1){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
                 if(!update_settings(next, false)){
-                    reply_error(ERR_IO);
+                    reply_error(ERR_IO, cmd, len);
                     return;
                 }
 
@@ -1174,7 +1201,7 @@ namespace watch {
             case CMD_SEND_TELEMETRY_REQ: {
                 // Standard MeshCore Bluetooth self-telemetry request.
                 if(len != 4){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1187,7 +1214,7 @@ namespace watch {
                 ESP_LOGI(TAG, "BLE telemetry: payload_bytes=%u gps_included=%d", static_cast<unsigned>(bytes), bytes >= 11 ? 1 : 0);
 
                 if(!ble_.send(f, 8 + bytes)){
-                    reply_error(ERR_BAD_STATE);
+                    reply_error(ERR_BAD_STATE, cmd, len);
                 }
 
                 return;
@@ -1210,7 +1237,7 @@ namespace watch {
 
             case CMD_GET_STATS: {
                 if(len != 2){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1266,7 +1293,7 @@ namespace watch {
                     n += 4;
 
                 }else{
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1276,7 +1303,7 @@ namespace watch {
 
             case CMD_REBOOT:
                 if(len != 7 || memcmp(&cmd[1], "reboot", 6) != 0){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1291,7 +1318,7 @@ namespace watch {
             
             case CMD_GET_CUSTOM_VARS: {
                 if(len != 1){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1302,7 +1329,7 @@ namespace watch {
 
             case CMD_SET_CUSTOM_VAR: {
                 if((len != 6 && !(len == 7 && cmd[6] == 0)) || memcmp(&cmd[1], "gps:", 4) != 0 || (cmd[5] != '0' && cmd[5] != '1')){
-                    reply_error(ERR_ILLEGAL);
+                    reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
 
@@ -1311,7 +1338,7 @@ namespace watch {
 
                 if(err != ESP_OK){
                     ESP_LOGW(TAG, "GPS setting update failed: %s", esp_err_to_name(err));
-                    reply_error(ERR_IO);
+                    reply_error(ERR_IO, cmd, len);
                     return;
                 }
 
@@ -1322,7 +1349,7 @@ namespace watch {
             default:
                 ESP_LOGW(TAG, "Unsupported companion command %u (len=%u)", cmd[0], static_cast<unsigned>(len));
 
-                reply_error(ERR_UNSUPPORTED);
+                reply_error(ERR_UNSUPPORTED, cmd, len);
                 return;
         }
     }

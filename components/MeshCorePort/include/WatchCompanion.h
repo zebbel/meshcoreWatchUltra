@@ -70,7 +70,7 @@ namespace watch {
         void pump_contacts();
         void handle(const uint8_t *command, size_t len);
 
-        void reply_error(uint8_t code);
+        void reply_error(uint8_t code, const uint8_t *cmd, size_t len);
         void reply_ok();
 
         bool send_contact(const WatchContact &contact, uint8_t response_code = 3);

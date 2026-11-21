@@ -27,7 +27,7 @@
 #include "helpers/StaticPoolPacketManager.h"
 
 static const char *TAG = "MeshCoreWatch";
-static constexpr bool GPS_TEST_SCREEN = true;
+static constexpr bool GPS_TEST_SCREEN = false;
 
 static bool init_hardware(){
     esp_err_t err = board::init();
