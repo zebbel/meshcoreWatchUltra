@@ -22,7 +22,7 @@ namespace watch {
         CMD_REBOOT=19, CMD_GET_BATT=20, CMD_SET_TUNING=21,
         CMD_DEVICE_QUERY=22, CMD_GET_CONTACT_KEY=30, CMD_GET_CHANNEL=31,
         CMD_SET_CHANNEL=32, CMD_SET_BLE_PIN=37, CMD_SET_OTHER=38,
-        CMD_SEND_TELEMETRY_REQ=39,
+        CMD_SEND_TELEMETRY_REQ=39, CMD_GET_ADVERT_PATH=42,
         CMD_GET_TUNING=43, CMD_GET_STATS=56, CMD_SET_AUTOADD=58,
         CMD_GET_AUTOADD=59, CMD_GET_REPEAT_FREQ=60, CMD_SET_HASH_MODE=61,
         CMD_SET_TEMP_SCOPE=54, CMD_SET_DEFAULT_SCOPE=63,
@@ -502,9 +502,7 @@ namespace watch {
         if(cmd == nullptr || len == 0)
             return;
 
-        ESP_LOGI(TAG,
-                 "BLE command=%u length=%u",
-                 cmd[0], static_cast<unsigned>(len));
+        ESP_LOGI(TAG, "BLE command=%u length=%u", cmd[0], static_cast<unsigned>(len));
 
         const auto &before = settings_.get();
 
@@ -1097,6 +1095,19 @@ namespace watch {
                 return;
             }
 
+            case CMD_GET_ADVERT_PATH: {
+                if(len != 34){
+                    reply_error(ERR_ILLEGAL);
+                    return;
+                }
+
+                // Advertisement paths are not yet cached by WatchMesh.
+                // Do not substitute the contact's outbound routing path,
+                // because it may differ from the received advert path.
+                reply_error(ERR_NOT_FOUND);
+                return;
+            }
+
             case CMD_SET_AUTOADD: {
                 if(len < 2 || len > 3){
                     reply_error(ERR_ILLEGAL);
@@ -1260,6 +1271,13 @@ namespace watch {
                 size_t bytes = telemetry_.encode(
                     TELEM_BASE | TELEM_LOCATION,
                     &f[8], sizeof(f) - 8);
+
+                ESP_LOGI(
+                    TAG,
+                    "BLE telemetry: payload_bytes=%u gps_included=%d",
+                    static_cast<unsigned>(bytes),
+                    bytes >= 11 ? 1 : 0
+                );
 
                 if(!ble_.send(f, 8 + bytes)){
                     reply_error(ERR_BAD_STATE);

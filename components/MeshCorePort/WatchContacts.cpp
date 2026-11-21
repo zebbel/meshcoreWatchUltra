@@ -33,25 +33,58 @@ namespace watch {
         return true;
     }
 
-    esp_err_t WatchContacts::load(){
-        nvs_handle_t h;
-        esp_err_t err = nvs_open(NAMESPACE, NVS_READWRITE, &h);
-        if(err != ESP_OK) return err;
+    esp_err_t WatchContacts::load()
+    {
+        nvs_handle_t h = 0;
+
+        // Load only from the NEW contacts partition.
+        esp_err_t err = nvs_open_from_partition(
+            "contacts",
+            NAMESPACE,
+            NVS_READWRITE,
+            &h
+        );
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG,
+                    "Cannot open contacts partition: %s",
+                    esp_err_to_name(err));
+            return err;
+        }
+
         for(size_t i = 0; i < CAPACITY; i++){
-            char key[8]; slot_key(i, key);
+            char key[8];
+            slot_key(static_cast<int>(i), key);
+
             WatchContact item = {};
             size_t size = sizeof(item);
+
             err = nvs_get_blob(h, key, &item, &size);
-            if(err == ESP_ERR_NVS_NOT_FOUND) continue;
-            if(err != ESP_OK || size != sizeof(item) || !record_valid(item)){
-                ESP_LOGE(TAG, "Invalid contact record %u; refusing automatic erase", static_cast<unsigned>(i));
+
+            if(err == ESP_ERR_NVS_NOT_FOUND)
+                continue;
+
+            if(err != ESP_OK ||
+            size != sizeof(item) ||
+            !record_valid(item)){
+
+                ESP_LOGE(TAG,
+                        "Invalid contact record %s",
+                        key);
+
                 nvs_close(h);
                 return ESP_ERR_INVALID_CRC;
             }
+
             contacts_[i] = item;
         }
+
         nvs_close(h);
-        ESP_LOGI(TAG, "Loaded %u contacts", static_cast<unsigned>(count()));
+
+        ESP_LOGI(TAG,
+                "Loaded %u contacts from new NVS",
+                static_cast<unsigned>(count()));
+
         return ESP_OK;
     }
 
@@ -78,18 +111,60 @@ namespace watch {
         return i >= 0 ? &contacts_[i] : nullptr;
     }
 
-    bool WatchContacts::save_slot(size_t idx, const WatchContact *value){
-        if(idx >= CAPACITY) return false;
-        char key[8]; slot_key(idx, key);
-        nvs_handle_t h;
-        if(nvs_open(NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return false;
-        esp_err_t err = value ? nvs_set_blob(h, key, value, sizeof(*value)) : nvs_erase_key(h, key);
-        if(err == ESP_OK) err = nvs_commit(h);
+
+    bool WatchContacts::save_slot(
+        size_t idx,
+        const WatchContact *value)
+    {
+        if(idx >= CAPACITY)
+            return false;
+
+        char key[8];
+        slot_key(static_cast<int>(idx), key);
+
+        nvs_handle_t h = 0;
+
+        // Write only to the NEW contacts partition.
+        esp_err_t err = nvs_open_from_partition(
+            "contacts",
+            NAMESPACE,
+            NVS_READWRITE,
+            &h
+        );
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG,
+                    "Cannot open contacts storage: %s",
+                    esp_err_to_name(err));
+            return false;
+        }
+
+        if(value != nullptr){
+            err = nvs_set_blob(
+                h, key, value, sizeof(*value)
+            );
+        }else{
+            err = nvs_erase_key(h, key);
+        }
+
+        if(err == ESP_OK)
+            err = nvs_commit(h);
+
         nvs_close(h);
-        if(err != ESP_OK) return false;
-        contacts_[idx] = value ? *value : WatchContact{};
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG,
+                    "Contact write failed %s: %s",
+                    key, esp_err_to_name(err));
+            return false;
+        }
+
+        contacts_[idx] =
+            value ? *value : WatchContact{};
+
         return true;
     }
+
 
     ContactUpdateResult WatchContacts::update_from_wire(const uint8_t *f, size_t len, uint32_t now){
         constexpr size_t REQUIRED = 1 + PUB_KEY_SIZE + 3 + MAX_PATH_SIZE + 32 + 4;

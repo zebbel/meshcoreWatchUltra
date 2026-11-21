@@ -28,7 +28,7 @@ namespace watch {
 
     class WatchContacts {
     public:
-        static constexpr size_t CAPACITY = 32;
+        static constexpr size_t CAPACITY = 350;
         static constexpr size_t WIRE_LENGTH = 1 + PUB_KEY_SIZE + 1 + 1 + 1 + MAX_PATH_SIZE + 32 + 4 + 4 + 4 + 4;
         esp_err_t load();
         size_t count() const;

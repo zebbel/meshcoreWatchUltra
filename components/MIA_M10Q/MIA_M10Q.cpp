@@ -276,7 +276,15 @@ namespace MIA_M10Q {
 
             fix_t parsed = {};
 
-            if(parse_gga(sentence, parsed)){
+            const bool valid_fix = parse_gga(sentence, parsed);
+
+            // Diagnostic only; does not print private coordinates.
+            if(strlen(sentence) >= 6 &&
+            strncmp(sentence + 3, "GGA", 3) == 0){
+                ESP_LOGI(TAG, "NMEA GGA received, valid_fix=%d", valid_fix ? 1 : 0);
+            }
+
+            if(valid_fix){
                 parsed.updated_ms = now;
                 latest = parsed;
 

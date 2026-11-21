@@ -57,6 +57,15 @@ extern "C" void app_main(void){
         return;
     }
 
+    err = nvs_flash_init_partition("contacts");
+
+    if(err != ESP_OK){
+        ESP_LOGE(TAG,
+                "Contact NVS initialization failed: %s",
+                esp_err_to_name(err));
+        return;
+    }
+
     static watch::WatchRNG rng;
     static mesh::LocalIdentity identity;
 
