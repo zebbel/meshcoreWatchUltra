@@ -1,5 +1,6 @@
 
 #include "WatchCompanion.h"
+#include "MIA_M10Q.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -22,7 +23,10 @@ namespace watch {
         CMD_REBOOT=19, CMD_GET_BATT=20, CMD_SET_TUNING=21,
         CMD_DEVICE_QUERY=22, CMD_GET_CONTACT_KEY=30, CMD_GET_CHANNEL=31,
         CMD_SET_CHANNEL=32, CMD_SET_BLE_PIN=37, CMD_SET_OTHER=38,
-        CMD_SEND_TELEMETRY_REQ=39, CMD_GET_ADVERT_PATH=42,
+        CMD_SEND_TELEMETRY_REQ=39,
+        CMD_GET_CUSTOM_VARS=40,
+        CMD_SET_CUSTOM_VAR=41,
+        CMD_GET_ADVERT_PATH=42,
         CMD_GET_TUNING=43, CMD_GET_STATS=56, CMD_SET_AUTOADD=58,
         CMD_GET_AUTOADD=59, CMD_GET_REPEAT_FREQ=60, CMD_SET_HASH_MODE=61,
         CMD_SET_TEMP_SCOPE=54, CMD_SET_DEFAULT_SCOPE=63,
@@ -35,7 +39,9 @@ namespace watch {
         RESP_SENT=6, RESP_PEER_V3=16, RESP_GROUP_V3=17,
         RESP_PEER_OLD=7, RESP_GROUP_OLD=8, RESP_CURR_TIME=9,
         RESP_NO_MORE=10, RESP_EXPORT_CONTACT=11, RESP_BATT=12,
-        RESP_DEVICE=13, RESP_CHANNEL=18, RESP_TUNING=23,
+        RESP_DEVICE=13, RESP_CHANNEL=18,
+        RESP_CUSTOM_VARS=21,
+        RESP_TUNING=23,
         RESP_STATS=24, RESP_AUTOADD=25, RESP_REPEAT_FREQ=26,
         RESP_DEFAULT_SCOPE=28,  
         PUSH_ADVERT=0x80,
@@ -1282,6 +1288,36 @@ namespace watch {
                     reboot_at_ms_ = 1;
 
                 return;
+            
+            case CMD_GET_CUSTOM_VARS: {
+                if(len != 1){
+                    reply_error(ERR_ILLEGAL);
+                    return;
+                }
+
+                const uint8_t response[] = {RESP_CUSTOM_VARS, 'g', 'p', 's', ':', static_cast<uint8_t>(MIA_M10Q::is_enabled() ? '1' : '0')};
+                ble_.send(response, sizeof(response));
+                return;
+            }
+
+            case CMD_SET_CUSTOM_VAR: {
+                if((len != 6 && !(len == 7 && cmd[6] == 0)) || memcmp(&cmd[1], "gps:", 4) != 0 || (cmd[5] != '0' && cmd[5] != '1')){
+                    reply_error(ERR_ILLEGAL);
+                    return;
+                }
+
+                bool enabled = cmd[5] == '1';
+                esp_err_t err = MIA_M10Q::set_enabled(enabled);
+
+                if(err != ESP_OK){
+                    ESP_LOGW(TAG, "GPS setting update failed: %s", esp_err_to_name(err));
+                    reply_error(ERR_IO);
+                    return;
+                }
+
+                reply_ok();
+                return;
+            }
 
             default:
                 ESP_LOGW(TAG, "Unsupported companion command %u (len=%u)", cmd[0], static_cast<unsigned>(len));

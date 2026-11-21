@@ -11,4 +11,5 @@ idf_component_register(
         AXP2101
         esp_driver_uart
         esp_timer
+        nvs_flash
 )

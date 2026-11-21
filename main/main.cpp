@@ -4,6 +4,7 @@
 #include "bootloader_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 
 #include "board.h"
 #include "AXP2101.h"
@@ -26,6 +27,7 @@
 #include "helpers/StaticPoolPacketManager.h"
 
 static const char *TAG = "MeshCoreWatch";
+static constexpr bool GPS_TEST_SCREEN = true;
 
 static bool init_hardware(){
     esp_err_t err = board::init();
@@ -146,6 +148,8 @@ extern "C" void app_main(void){
         ESP_LOGW(TAG, "MIA_M10Q unavailable: %s", esp_err_to_name(err));
     }
 
+    if(GPS_TEST_SCREEN && err == ESP_OK) MIA_M10Q::set_test_mode(true);
+
     static watch::WatchTelemetry telemetry;
     static watch::WatchBLE ble;
 
@@ -163,23 +167,69 @@ extern "C" void app_main(void){
     ESP_LOGI(TAG, "MeshCore node running; BLE companion and telemetry initialized");
 
     uint32_t next_log = static_cast<uint32_t>(clock.getMillis()) + 30000;
+    uint32_t last_gps_position_save_ms = 0;
+    bool pairing_screen_visible = false;
+    uint32_t next_gps_screen_ms = 0;
 
     while(true){
         uint32_t pin = ble.take_pairing_pin();
 
         if(ble.take_clear_pairing_display()){
             watch::pairing_display_clear();
+            pairing_screen_visible = false;
         }else if(pin != 0){
             watch::pairing_display_show(pin);
+            pairing_screen_visible = true;
         }
 
         // GPS component handles its own power and UART.
         MIA_M10Q::loop();
 
+        // Save the GPS position when a valid fix is available.
+        MIA_M10Q::fix_t gps_fix = {};
+
+        if(MIA_M10Q::get_fresh_fix(gps_fix)){
+            const int32_t gps_latitude = static_cast<int32_t>(lround(gps_fix.latitude * 1000000.0));
+            const int32_t gps_longitude = static_cast<int32_t>(lround(gps_fix.longitude * 1000000.0));
+
+            const watch::WatchSettings &current = settings.get();
+
+            int64_t latitude_difference = static_cast<int64_t>(gps_latitude) - current.latitude_micro;
+            int64_t longitude_difference = static_cast<int64_t>(gps_longitude) - current.longitude_micro;
+
+            if(latitude_difference < 0) latitude_difference = -latitude_difference;
+            if(longitude_difference < 0) longitude_difference = -longitude_difference;
+
+            const bool position_missing = current.latitude_micro == 0 && current.longitude_micro == 0;
+            const bool position_changed = latitude_difference >= 100 || longitude_difference >= 100;
+            const uint32_t gps_now = static_cast<uint32_t>(clock.getMillis());
+
+            if((position_missing || position_changed) && (last_gps_position_save_ms == 0 || gps_now - last_gps_position_save_ms >= 300000U)){
+                watch::WatchSettings updated = current;
+                updated.latitude_micro = gps_latitude;
+                updated.longitude_micro = gps_longitude;
+
+                esp_err_t save_err = settings.save(updated);
+
+                if(save_err == ESP_OK){
+                    last_gps_position_save_ms = gps_now;
+                    ESP_LOGI(TAG, "GPS position synchronized to companion settings");
+                }else{
+                    ESP_LOGW(TAG, "GPS position could not be saved: %s", esp_err_to_name(save_err));
+                }
+            }
+        }
+
         mesh.loop();
         companion.loop();
 
+
         uint32_t now = static_cast<uint32_t>(clock.getMillis());
+
+        if(GPS_TEST_SCREEN && !pairing_screen_visible && static_cast<int32_t>(now - next_gps_screen_ms) >= 0){
+            watch::gps_test_display_show();
+            next_gps_screen_ms = static_cast<uint32_t>(clock.getMillis()) + 2000;
+        }
 
         if(static_cast<int32_t>(now - next_log) >= 0){
             ESP_LOGI(TAG, "BLE paired=%d RX=%lu adverts=%lu pool=%d queued=%d", ble.connected(), static_cast<unsigned long>(mesh.packetCount()), static_cast<unsigned long>(mesh.validAdvertCount()), packet_manager.getFreeCount(), packet_manager.getOutboundTotal());

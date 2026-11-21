@@ -14,9 +14,25 @@ namespace MIA_M10Q {
         bool valid = false;
     };
 
+    struct status_t {
+        bool initialized = false;
+        bool powered = false;
+        bool has_gga = false;
+        uint32_t gga_count = 0;
+        uint32_t last_gga_ms = 0;
+        uint8_t fix_quality = 0;
+        uint8_t satellites = 0;
+        float hdop = 0;
+        char utc[7] = {};
+    };
+
+    bool is_enabled();
+    esp_err_t set_enabled(bool enabled);
+
     esp_err_t init();
     void loop();
     bool get_fresh_fix(fix_t &fix);
     void request_fix();
-
+    void set_test_mode(bool enabled);
+    void get_status(status_t &status);
 }

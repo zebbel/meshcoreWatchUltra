@@ -10,6 +10,7 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "nvs.h"
 
 namespace MIA_M10Q {
 
@@ -25,6 +26,7 @@ namespace MIA_M10Q {
     // This component is polled from the main application task.
     static bool initialized = false;
     static bool powered = false;
+    static bool gps_enabled = true;
     static bool have_cycle_fix = false;
 
     static uint32_t started_ms = 0;
@@ -35,6 +37,8 @@ namespace MIA_M10Q {
     static char sentence[128] = {};
     static size_t sentence_length = 0;
     static fix_t latest = {};
+    static status_t diagnostics = {};
+    static bool test_mode = false;
 
     static uint32_t millis_now(){
         return static_cast<uint32_t>(esp_timer_get_time() / 1000);
@@ -152,6 +156,63 @@ namespace MIA_M10Q {
         return true;
     }
 
+    static void parse_gga_diagnostics(const char *nmea, uint32_t now){
+        if(nmea == nullptr || nmea[0] != '$') return;
+
+        const char *star = strchr(nmea, '*');
+        if(star == nullptr || star[1] == 0 || star[2] == 0 || star[3] != 0) return;
+
+        int hi = hex_digit(star[1]);
+        int lo = hex_digit(star[2]);
+        if(hi < 0 || lo < 0) return;
+
+        uint8_t checksum = 0;
+        for(const char *p = nmea + 1; p < star; p++) checksum ^= static_cast<uint8_t>(*p);
+        if(checksum != static_cast<uint8_t>((hi << 4) | lo)) return;
+
+        size_t length = static_cast<size_t>(star - nmea);
+        if(length >= 128) return;
+
+        char copy[128] = {};
+        memcpy(copy, nmea, length);
+
+        char *fields[16] = {};
+        size_t count = 0;
+        fields[count++] = copy;
+
+        for(char *p = copy; *p != 0; p++){
+            if(*p == ','){
+                *p = 0;
+                if(count < 16) fields[count++] = p + 1;
+            }
+        }
+
+        if(count < 9 || strlen(fields[0]) != 6 || strcmp(fields[0] + 3, "GGA") != 0) return;
+        if(strlen(fields[6]) != 1 || fields[6][0] < '0' || fields[6][0] > '8') return;
+
+        char *end = nullptr;
+        long satellites = strtol(fields[7], &end, 10);
+        if(end == fields[7] || *end != 0 || satellites < 0 || satellites > 99) satellites = 0;
+
+        double hdop = 0;
+        if(!number(fields[8], hdop) || hdop < 0 || hdop > 99.9) hdop = 0;
+
+        diagnostics.has_gga = true;
+        diagnostics.gga_count++;
+        diagnostics.last_gga_ms = now;
+        diagnostics.fix_quality = static_cast<uint8_t>(fields[6][0] - '0');
+        diagnostics.satellites = static_cast<uint8_t>(satellites);
+        diagnostics.hdop = static_cast<float>(hdop);
+
+        memset(diagnostics.utc, 0, sizeof(diagnostics.utc));
+
+        if(strlen(fields[1]) >= 6){
+            bool valid_time = true;
+            for(int i = 0; i < 6; i++) valid_time &= fields[1][i] >= '0' && fields[1][i] <= '9';
+            if(valid_time) memcpy(diagnostics.utc, fields[1], 6);
+        }
+    }
+
     esp_err_t init(){
         if(initialized) return ESP_OK;
 
@@ -184,6 +245,17 @@ namespace MIA_M10Q {
 
         initialized = true;
         next_cycle_ms = millis_now();
+
+
+        nvs_handle_t h;
+        if(nvs_open("meshcore", NVS_READONLY, &h) == ESP_OK){
+            uint8_t value = 1;
+            if(nvs_get_u8(h, "gps_enabled", &value) == ESP_OK && value <= 1) gps_enabled = value != 0;
+            nvs_close(h);
+        }
+
+        ESP_LOGI(TAG, "GPS setting loaded: enabled=%d", gps_enabled);
+
 
         ESP_LOGI(TAG, "MIA_M10Q initialized at %lu baud", static_cast<unsigned long>(board::hardware::GPS_BAUD));
 
@@ -253,7 +325,7 @@ namespace MIA_M10Q {
 
             // Diagnostic only; does not print private coordinates.
             if(strlen(sentence) >= 6 && strncmp(sentence + 3, "GGA", 3) == 0){
-                ESP_LOGI(TAG, "NMEA GGA received, valid_fix=%d", valid_fix ? 1 : 0);
+                parse_gga_diagnostics(sentence, now);
             }
 
             if(valid_fix){
@@ -281,6 +353,11 @@ namespace MIA_M10Q {
 
         const uint32_t now = millis_now();
 
+        if(!gps_enabled){
+            if(powered) stop_acquisition(now);
+            return;
+        }
+
         if(!powered){
             if(static_cast<int32_t>(now - next_cycle_ms) >= 0)
                 start_acquisition(now);
@@ -296,13 +373,13 @@ namespace MIA_M10Q {
                 consume(bytes[i], now);
         }
 
-        if(now - started_ms >= ACQUISITION_TIMEOUT_MS || (have_cycle_fix && now - first_fix_ms >= FIX_HOLD_MS)){
+        if(!test_mode && (now - started_ms >= ACQUISITION_TIMEOUT_MS || (have_cycle_fix && now - first_fix_ms >= FIX_HOLD_MS))){
             stop_acquisition(now);
         }
     }
 
     bool get_fresh_fix(fix_t &fix){
-        if(!latest.valid || millis_now() - latest.updated_ms > FIX_MAX_AGE_MS){
+        if(!gps_enabled || !latest.valid || millis_now() - latest.updated_ms > FIX_MAX_AGE_MS){
             return false;
         }
 
@@ -311,8 +388,7 @@ namespace MIA_M10Q {
     }
 
     void request_fix(){
-        if(!initialized || powered)
-            return;
+        if(!initialized || !gps_enabled || powered) return;
 
         fix_t fix;
 
@@ -326,6 +402,50 @@ namespace MIA_M10Q {
         }
 
         next_cycle_ms = now;
+    }
+
+    void set_test_mode(bool enabled){
+        test_mode = enabled;
+        if(enabled && initialized && !powered) next_cycle_ms = millis_now();
+    }
+
+    void get_status(status_t &status){
+        status = diagnostics;
+        status.initialized = initialized;
+        status.powered = powered;
+    }
+
+    bool is_enabled(){
+        return gps_enabled;
+    }
+
+    esp_err_t set_enabled(bool enabled){
+        if(!initialized) return ESP_ERR_INVALID_STATE;
+        if(gps_enabled == enabled) return ESP_OK;
+
+        nvs_handle_t h;
+        esp_err_t err = nvs_open("meshcore", NVS_READWRITE, &h);
+        if(err != ESP_OK) return err;
+
+        err = nvs_set_u8(h, "gps_enabled", enabled ? 1 : 0);
+        if(err == ESP_OK) err = nvs_commit(h);
+        nvs_close(h);
+        if(err != ESP_OK) return err;
+
+        gps_enabled = enabled;
+        latest = {};
+        sentence_length = 0;
+
+        if(enabled){
+            next_cycle_ms = millis_now();
+            ESP_LOGI(TAG, "GPS enabled by companion app");
+        }else{
+            if(powered) stop_acquisition(millis_now());
+            ESP_LOGI(TAG, "GPS disabled by companion app");
+            if(powered) return ESP_FAIL;
+        }
+
+        return ESP_OK;
     }
 
 }

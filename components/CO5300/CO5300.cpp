@@ -21,6 +21,7 @@ namespace CO5300 {
     static constexpr uint16_t WIDTH = board::hardware::DISPLAY_HEIGHT;
     static constexpr uint16_t HEIGHT = board::hardware::DISPLAY_WIDTH;
     static constexpr uint16_t OFFSET_X = 22;
+    static constexpr uint16_t RECT_CHUNK_ROWS = 8;
     static constexpr spi_host_device_t SPI_HOST = SPI3_HOST;
 
 #if defined(CONFIG_MCW_DISPLAY_SPI_80)
@@ -166,7 +167,7 @@ namespace CO5300 {
         bus_config.data5_io_num = -1;
         bus_config.data6_io_num = -1;
         bus_config.data7_io_num = -1;
-        bus_config.max_transfer_sz = WIDTH * 2 + 8;
+        bus_config.max_transfer_sz = WIDTH * RECT_CHUNK_ROWS * 2 + 8;
         bus_config.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_GPIO_PINS;
 
         err = spi_bus_initialize(SPI_HOST, &bus_config, SPI_DMA_CH_AUTO);
@@ -193,7 +194,7 @@ namespace CO5300 {
             return err;
         }
 
-        line_buffer = static_cast<uint8_t *>(heap_caps_malloc(WIDTH * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
+        line_buffer = static_cast<uint8_t *>(heap_caps_malloc(WIDTH * RECT_CHUNK_ROWS * 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
         if(line_buffer == nullptr){
             ESP_LOGE(TAG, "Unable to allocate display DMA buffer");
             cleanup();
@@ -238,51 +239,91 @@ namespace CO5300 {
         if(err == ESP_OK) ESP_LOGI(TAG, "Display brightness: %u", brightness);
         return err;
     }
-
+    
     esp_err_t fill_rect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color){
         if(!initialized) return ESP_ERR_INVALID_STATE;
         if(width == 0 || height == 0 || static_cast<uint32_t>(x) + width > WIDTH || static_cast<uint32_t>(y) + height > HEIGHT) return ESP_ERR_INVALID_ARG;
 
-        // Fill the DMA buffer with RGB565 in display byte order
-        for(uint16_t i = 0; i < width; i++){
-            line_buffer[i * 2] = color >> 8;
-            line_buffer[i * 2 + 1] = color & 0xFF;
+        // Prepare eight identical pixel rows in the DMA buffer.
+        const uint32_t pixels = static_cast<uint32_t>(width) * RECT_CHUNK_ROWS;
+
+        for(uint32_t i = 0; i < pixels; i++){
+            line_buffer[i * 2] = static_cast<uint8_t>(color >> 8);
+            line_buffer[i * 2 + 1] = static_cast<uint8_t>(color);
         }
 
         esp_err_t err = spi_device_acquire_bus(spi_handle, portMAX_DELAY);
         if(err != ESP_OK) return err;
 
-        err = set_window(x, y, width, height);
+        // Transfer a complete group of rows in one SPI transaction.
+        for(uint16_t row = 0; row < height; row += RECT_CHUNK_ROWS){
+            uint16_t rows = height - row;
+            if(rows > RECT_CHUNK_ROWS) rows = RECT_CHUNK_ROWS;
 
-        if(err == ESP_OK){
+            err = set_window(x, y + row, width, rows);
+            if(err != ESP_OK) break;
+
+            spi_transaction_t transaction = {};
+            transaction.flags = SPI_TRANS_MODE_QIO;
+            transaction.cmd = 0x32;
+            transaction.addr = 0x002C00;
+            transaction.tx_buffer = line_buffer;
+            transaction.length = static_cast<size_t>(width) * rows * 16;
+
             gpio_set_level(board::pins::DISPLAY_CS, 0);
-
-            for(uint16_t row = 0; row < height; row++){
-                spi_transaction_ext_t transaction = {};
-                transaction.base.flags = SPI_TRANS_MODE_QIO;
-
-                if(row == 0){
-                    transaction.base.cmd = 0x32;
-                    transaction.base.addr = 0x002C00;
-                }else{
-                    transaction.base.flags |= SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR | SPI_TRANS_VARIABLE_DUMMY;
-                    transaction.command_bits = 0;
-                    transaction.address_bits = 0;
-                    transaction.dummy_bits = 0;
-                }
-
-                transaction.base.tx_buffer = line_buffer;
-                transaction.base.length = width * 16;
-                err = spi_device_polling_transmit(spi_handle, &transaction.base);
-                if(err != ESP_OK) break;
-            }
-
+            err = spi_device_polling_transmit(spi_handle, &transaction);
             gpio_set_level(board::pins::DISPLAY_CS, 1);
+
+            if(err != ESP_OK) break;
         }
 
         spi_device_release_bus(spi_handle);
 
         if(err != ESP_OK) ESP_LOGE(TAG, "Display drawing failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    esp_err_t draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint16_t *pixels){
+        if(!initialized) return ESP_ERR_INVALID_STATE;
+        if(pixels == nullptr || width == 0 || height == 0) return ESP_ERR_INVALID_ARG;
+        if(static_cast<uint32_t>(x) + width > WIDTH || static_cast<uint32_t>(y) + height > HEIGHT) return ESP_ERR_INVALID_ARG;
+
+        esp_err_t err = spi_device_acquire_bus(spi_handle, portMAX_DELAY);
+        if(err != ESP_OK) return err;
+
+        for(uint16_t row = 0; row < height; row += RECT_CHUNK_ROWS){
+            uint16_t rows = height - row;
+            if(rows > RECT_CHUNK_ROWS) rows = RECT_CHUNK_ROWS;
+
+            size_t pixel_count = static_cast<size_t>(width) * rows;
+            size_t source_offset = static_cast<size_t>(row) * width;
+
+            for(size_t i = 0; i < pixel_count; i++){
+                uint16_t pixel = pixels[source_offset + i];
+                line_buffer[i * 2] = static_cast<uint8_t>(pixel >> 8);
+                line_buffer[i * 2 + 1] = static_cast<uint8_t>(pixel);
+            }
+
+            err = set_window(x, y + row, width, rows);
+            if(err != ESP_OK) break;
+
+            spi_transaction_t transaction = {};
+            transaction.flags = SPI_TRANS_MODE_QIO;
+            transaction.cmd = 0x32;
+            transaction.addr = 0x002C00;
+            transaction.tx_buffer = line_buffer;
+            transaction.length = pixel_count * 16;
+
+            gpio_set_level(board::pins::DISPLAY_CS, 0);
+            err = spi_device_polling_transmit(spi_handle, &transaction);
+            gpio_set_level(board::pins::DISPLAY_CS, 1);
+
+            if(err != ESP_OK) break;
+        }
+
+        spi_device_release_bus(spi_handle);
+
+        if(err != ESP_OK) ESP_LOGE(TAG, "RGB565 bitmap drawing failed: %s", esp_err_to_name(err));
         return err;
     }
 
