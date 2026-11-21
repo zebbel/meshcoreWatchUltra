@@ -1,3 +1,4 @@
+
 #include "WatchContacts.h"
 
 #include <stdio.h>
@@ -90,15 +91,20 @@ namespace watch {
         return true;
     }
 
-    bool WatchContacts::update_from_wire(const uint8_t *f, size_t len, uint32_t now){
+    ContactUpdateResult WatchContacts::update_from_wire(const uint8_t *f, size_t len, uint32_t now){
         constexpr size_t REQUIRED = 1 + PUB_KEY_SIZE + 3 + MAX_PATH_SIZE + 32 + 4;
-        if(f == nullptr || len < REQUIRED || len > WIRE_LENGTH || f[0] != 9) return false;
+        if(f == nullptr || len < REQUIRED || len > WIRE_LENGTH || f[0] != 9){
+            ESP_LOGW(TAG, "Invalid contact frame length=%u", static_cast<unsigned>(len));
+            return ContactUpdateResult::INVALID;
+        }
         size_t i = 1;
         WatchContact c = {};
         memcpy(c.public_key, &f[i], PUB_KEY_SIZE); i += PUB_KEY_SIZE;
         c.type = f[i++]; c.flags = f[i++]; c.path_len = f[i++];
         memcpy(c.path, &f[i], MAX_PATH_SIZE); i += MAX_PATH_SIZE;
         memcpy(c.name, &f[i], sizeof(c.name)); i += sizeof(c.name);
+        // Wire names are fixed-width, not necessarily NUL terminated.
+        c.name[sizeof(c.name) - 1] = 0;
         c.advert_time = read_u32(&f[i]); i += 4;
         if(len >= i + 8){
             c.latitude_micro = static_cast<int32_t>(read_u32(&f[i])); i += 4;
@@ -107,12 +113,14 @@ namespace watch {
         c.lastmod = len >= i + 4 ? read_u32(&f[i]) : now;
         if(c.lastmod == 0) c.lastmod = now ? now : 1;
         c.present = true;
-        if(!record_valid(c)) return false;
+        if(!record_valid(c)) return ContactUpdateResult::INVALID;
         int idx = find_slot(c.public_key, PUB_KEY_SIZE);
         if(idx < 0){
             for(size_t j = 0; j < CAPACITY; j++) if(!contacts_[j].present){ idx = j; break; }
         }
-        return idx >= 0 && save_slot(idx, &c);
+        if(idx < 0) return ContactUpdateResult::FULL;
+        if(!save_slot(idx, &c)) return ContactUpdateResult::STORAGE_ERROR;
+        return ContactUpdateResult::SAVED;
     }
 
     bool WatchContacts::remove(const uint8_t pub[PUB_KEY_SIZE]){

@@ -1,3 +1,4 @@
+
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "bootloader_random.h"
@@ -6,6 +7,7 @@
 
 #include "board.h"
 #include "AXP2101.h"
+#include "MIA_M10Q.h"
 #include "XL9555.h"
 #include "CO5300.h"
 #include "SX1262.h"
@@ -19,6 +21,7 @@
 #include "WatchCompanion.h"
 #include "WatchContacts.h"
 #include "WatchSettings.h"
+#include "WatchTelemetry.h"
 #include "helpers/SimpleMeshTables.h"
 #include "helpers/StaticPoolPacketManager.h"
 
@@ -26,67 +29,85 @@ static const char *TAG = "MeshCoreWatch";
 
 static bool init_hardware(){
     esp_err_t err = board::init();
+
     if(err == ESP_OK) err = AXP2101::init();
     if(err == ESP_OK) err = AXP2101::configure();
     if(err == ESP_OK) err = XL9555::init();
     if(err == ESP_OK) err = XL9555::configure();
     if(err == ESP_OK) err = sx1262::init();
+
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Hardware init failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Hardware init failed: %s",
+                 esp_err_to_name(err));
         return false;
     }
+
     return true;
 }
 
 extern "C" void app_main(void){
-    ESP_LOGI(TAG, "T-Watch Ultra: BLE-only MeshCore companion preview");
+    ESP_LOGI(TAG, "T-Watch Ultra: MeshCore BLE companion");
 
-    // Keep existing NVS contents intact: never erase keys to repair an error.
+    // Keep existing NVS contents intact.
     esp_err_t err = nvs_flash_init();
+
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "NVS unavailable: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "NVS unavailable: %s",
+                 esp_err_to_name(err));
         return;
     }
 
     static watch::WatchRNG rng;
     static mesh::LocalIdentity identity;
 
-    // Enable a true hardware entropy source before generating a private key.
-    // Must be disabled before initializing Bluetooth or other RF hardware.
     bootloader_random_enable();
     err = watch::load_or_create_identity(identity, rng);
     bootloader_random_disable();
+
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Persistent identity unavailable: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Persistent identity unavailable: %s",
+                 esp_err_to_name(err));
         return;
     }
 
     static watch::WatchSettingsStore settings;
+
     err = settings.load();
+
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Stored settings invalid: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Stored settings invalid: %s",
+                 esp_err_to_name(err));
         return;
     }
+
     static watch::WatchContacts contacts;
+
     err = contacts.load();
+
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Contacts unavailable: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Contacts unavailable: %s",
+                 esp_err_to_name(err));
         return;
     }
 
     if(!init_hardware()) return;
 
     const sx1262::config_t config = settings.get().radio();
+
     err = sx1262::configure(config);
+
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Radio configure failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Radio configure failed: %s",
+                 esp_err_to_name(err));
         return;
     }
 
-    // PIN must be visible on the watch itself; do not print it over USB.
+    // PIN must be visible on the watch, not printed over USB.
     err = watch::pairing_display_init();
+
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Cannot display secure BLE pairing code: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Cannot display secure BLE pairing code: %s",
+                 esp_err_to_name(err));
         return;
     }
 
@@ -95,55 +116,95 @@ extern "C" void app_main(void){
     static watch::MeshCoreRadio radio(config);
     static StaticPoolPacketManager packet_manager(24);
     static SimpleMeshTables duplicate_table;
-    static watch::WatchMesh mesh(radio, clock, rng, rtc, packet_manager, duplicate_table);
+
+    static watch::WatchMesh mesh(
+        radio, clock, rng, rtc, packet_manager, duplicate_table);
+
     mesh.self_id = identity;
     mesh.set_contacts(&contacts);
-    mesh.set_tuning(settings.get().rx_delay_milli, settings.get().airtime_factor_milli);
+    mesh.set_tuning(
+        settings.get().rx_delay_milli,
+        settings.get().airtime_factor_milli);
     mesh.set_path_hash_mode(settings.get().path_hash_mode);
     mesh.set_scope_key(settings.get().default_scope_key);
 
     err = mesh.load_channels();
+
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "Failed loading channels: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed loading channels: %s",
+                 esp_err_to_name(err));
         return;
     }
+
     mesh.begin();
+
     if(!radio.isInRecvMode()){
         ESP_LOGE(TAG, "MeshCore radio RX did not start");
         return;
     }
 
-    static watch::WatchBLE ble;
-    static watch::WatchCompanion companion(ble, mesh, radio, settings, contacts, rtc, clock);
-    ble.set_pairing_pin(settings.get().ble_pin);
-    err = ble.begin("MeshCore-Watch");
+    // Initialize GPS as an independent hardware component.
+    // A GPS failure does not prevent BLE or battery telemetry.
+    err = MIA_M10Q::init();
+
     if(err != ESP_OK){
-        ESP_LOGE(TAG, "BLE start failed: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "GPS unavailable: %s",
+                 esp_err_to_name(err));
+    }
+
+    // MeshCorePort only consumes telemetry data.
+    static watch::WatchTelemetry telemetry;
+
+    static watch::WatchBLE ble;
+
+    static watch::WatchCompanion companion(
+        ble, mesh, radio, settings, contacts, rtc, clock, telemetry);
+
+    ble.set_pairing_pin(settings.get().ble_pin);
+
+    err = ble.begin("MeshCore-Watch");
+
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "BLE start failed: %s",
+                 esp_err_to_name(err));
         return;
     }
 
-    ESP_LOGI(TAG, "MeshCore node running; BLE companion only, no USB or Wi-Fi data interface");
-    uint32_t next_log = static_cast<uint32_t>(clock.getMillis()) + 30000;
+    ESP_LOGI(TAG,
+             "MeshCore node running; battery and GPS telemetry enabled");
+
+    uint32_t next_log =
+        static_cast<uint32_t>(clock.getMillis()) + 30000;
 
     while(true){
         uint32_t pin = ble.take_pairing_pin();
+
         if(ble.take_clear_pairing_display()){
             watch::pairing_display_clear();
         }else if(pin != 0){
             watch::pairing_display_show(pin);
         }
 
+        // The GPS component owns the UART and power state.
+        MIA_M10Q::loop();
+
         mesh.loop();
         companion.loop();
 
         uint32_t now = static_cast<uint32_t>(clock.getMillis());
+
         if(static_cast<int32_t>(now - next_log) >= 0){
-            ESP_LOGI(TAG, "BLE paired=%d RX=%lu adverts=%lu pool=%d queued=%d",
-                     ble.connected(), static_cast<unsigned long>(mesh.packetCount()),
+            ESP_LOGI(TAG,
+                     "BLE paired=%d RX=%lu adverts=%lu pool=%d queued=%d",
+                     ble.connected(),
+                     static_cast<unsigned long>(mesh.packetCount()),
                      static_cast<unsigned long>(mesh.validAdvertCount()),
-                     packet_manager.getFreeCount(), packet_manager.getOutboundTotal());
+                     packet_manager.getFreeCount(),
+                     packet_manager.getOutboundTotal());
+
             next_log = now + 30000;
         }
+
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

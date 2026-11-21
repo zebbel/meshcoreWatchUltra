@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <stddef.h>
@@ -32,6 +33,7 @@ namespace watch {
         size_t contact_index_ = 0;
         uint32_t contact_since_ = 0;
         uint32_t last_mod_ = 0;
+        uint32_t reboot_at_ms_ = 0;
 
         static constexpr size_t MESSAGE_QUEUE = 32;
         WatchBLE::Frame messages_[MESSAGE_QUEUE] = {};
@@ -53,7 +55,8 @@ namespace watch {
                               const uint8_t *text, size_t len);
         void on_peer_message(const mesh::Packet *, const uint8_t pub[32], uint8_t type,
                              uint32_t time, const uint8_t *text, size_t len);
-        void on_advert(const mesh::Identity &, uint32_t time, const uint8_t *data, size_t len);
+        void on_advert(const mesh::Identity &, uint32_t time,
+                       const uint8_t *data, size_t len);
         void on_ack(uint32_t code);
         void enqueue(const uint8_t *data, size_t len);
         void pump_contacts();

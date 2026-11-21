@@ -1,9 +1,11 @@
+
 #include "WatchCompanion.h"
 
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
 #include "esp_partition.h"
+#include "esp_system.h"
 #include "nvs.h"
 
 namespace watch {
@@ -16,6 +18,7 @@ namespace watch {
         CMD_SEND_ADVERT=7, CMD_SET_NAME=8, CMD_ADD_CONTACT=9,
         CMD_SYNC_MESSAGE=10, CMD_SET_RADIO=11, CMD_SET_POWER=12,
         CMD_RESET_PATH=13, CMD_SET_LOCATION=14, CMD_REMOVE_CONTACT=15,
+        CMD_SHARE_CONTACT=16, CMD_EXPORT_CONTACT=17, CMD_IMPORT_CONTACT=18,
         CMD_REBOOT=19, CMD_GET_BATT=20, CMD_SET_TUNING=21,
         CMD_DEVICE_QUERY=22, CMD_GET_CONTACT_KEY=30, CMD_GET_CHANNEL=31,
         CMD_SET_CHANNEL=32, CMD_SET_BLE_PIN=37, CMD_SET_OTHER=38,
@@ -28,7 +31,7 @@ namespace watch {
         RESP_CONTACT=3, RESP_CONTACTS_END=4, RESP_SELF=5,
         RESP_SENT=6, RESP_PEER_V3=16, RESP_GROUP_V3=17,
         RESP_PEER_OLD=7, RESP_GROUP_OLD=8, RESP_CURR_TIME=9,
-        RESP_NO_MORE=10, RESP_BATT=12, RESP_DEVICE=13,
+        RESP_NO_MORE=10, RESP_EXPORT_CONTACT=11, RESP_BATT=12, RESP_DEVICE=13,
         RESP_CHANNEL=18, RESP_TUNING=23, RESP_STATS=24,
         RESP_AUTOADD=25, RESP_REPEAT_FREQ=26, RESP_DEFAULT_SCOPE=28,
         PUSH_ADVERT=0x80, PUSH_ACK=0x82, PUSH_MSGS=0x83, PUSH_NEW_ADVERT=0x8A
@@ -175,9 +178,11 @@ namespace watch {
     }
 
     void WatchCompanion::reply_error(uint8_t code){
+        ESP_LOGW(TAG, "Companion command rejected: error=%u", static_cast<unsigned>(code));
         const uint8_t f[2] = {RESP_ERROR, code};
         ble_.send(f, 2);
     }
+
     void WatchCompanion::reply_ok(){
         const uint8_t f[1] = {RESP_OK};
         ble_.send(f, 1);
@@ -193,10 +198,31 @@ namespace watch {
     }
 
     bool WatchCompanion::update_settings(const WatchSettings &next, bool radio_change){
-        if(!next.valid()) return false;
+        if(!next.valid()){
+            ESP_LOGW(TAG, "Invalid settings: freq=%lu kHz BW=%lu Hz SF=%u CR=%u TX=%d dBm",
+                     static_cast<unsigned long>(next.freq_khz),
+                     static_cast<unsigned long>(next.bandwidth_hz),
+                     next.sf, next.cr, next.tx_power_dbm);
+            return false;
+        }
         const WatchSettings before = settings_.get();
-        if(radio_change && mesh_.pendingOutboundCount() != 0) return false;
-        if(radio_change && !radio_.applyConfig(next.radio())) return false;
+        const bool radio_changed = radio_change &&
+            (next.freq_khz != before.freq_khz || next.bandwidth_hz != before.bandwidth_hz ||
+             next.sf != before.sf || next.cr != before.cr ||
+             next.tx_power_dbm != before.tx_power_dbm);
+
+        // The Android app submits the complete form, including unchanged radio values.
+        // Avoid rejecting a no-op because a LoRa packet happens to be queued.
+        if(radio_change && !radio_changed) return true;
+
+        if(radio_changed && mesh_.pendingOutboundCount() != 0){
+            ESP_LOGW(TAG, "Cannot change active radio while outbound packets are queued");
+            return false;
+        }
+        if(radio_changed && !radio_.applyConfig(next.radio())){
+            ESP_LOGW(TAG, "Radio driver rejected requested configuration");
+            return false;
+        }
         if(settings_.save(next) == ESP_OK){
             mesh_.set_tuning(next.rx_delay_milli, next.airtime_factor_milli);
             mesh_.set_path_hash_mode(next.path_hash_mode);
@@ -204,7 +230,8 @@ namespace watch {
             ble_.set_pairing_pin(next.ble_pin);
             return true;
         }
-        if(radio_change && !radio_.applyConfig(before.radio())){
+        ESP_LOGE(TAG, "Unable to persist settings to NVS");
+        if(radio_changed && !radio_.applyConfig(before.radio())){
             ESP_LOGE(TAG, "Failed restoring radio after NVS error");
         }
         return false;
@@ -287,15 +314,18 @@ namespace watch {
         if(cmd == nullptr || len == 0) return;
         ESP_LOGI(TAG, "BLE command=%u length=%u", cmd[0], static_cast<unsigned>(len));
         const auto &before = settings_.get();
+
         switch(cmd[0]){
             case CMD_APP_START:
                 if(len < 8){ reply_error(ERR_ILLEGAL); return; }
                 contact_sync_ = false;
                 handle_app_start(); return;
+
             case CMD_DEVICE_QUERY:
                 if(len < 2){ reply_error(ERR_ILLEGAL); return; }
                 target_version_ = cmd[1];
                 handle_device_query(); return;
+
             case CMD_GET_CONTACTS: {
                 if(contact_sync_){ reply_error(ERR_BAD_STATE); return; }
                 contact_since_ = len >= 5 ? get_u32(&cmd[1]) : 0;
@@ -307,37 +337,121 @@ namespace watch {
                 contact_sync_ = true;
                 return;
             }
+
             case CMD_GET_CONTACT_KEY:
                 if(len != 1 + PUB_KEY_SIZE){ reply_error(ERR_ILLEGAL); return; }
                 if(auto *c = contacts_.find(&cmd[1])) send_contact(*c);
                 else reply_error(ERR_NOT_FOUND);
                 return;
-            case CMD_ADD_CONTACT:
-                if(len < WatchContacts::WIRE_LENGTH - 12 || len > WatchContacts::WIRE_LENGTH){
+
+            case CMD_ADD_CONTACT: {
+                switch(contacts_.update_from_wire(cmd, len, rtc_.getCurrentTime())){
+                    case ContactUpdateResult::SAVED: reply_ok(); return;
+                    case ContactUpdateResult::INVALID: reply_error(ERR_ILLEGAL); return;
+                    case ContactUpdateResult::FULL: reply_error(ERR_FULL); return;
+                    case ContactUpdateResult::STORAGE_ERROR: reply_error(ERR_IO); return;
+                }
+                reply_error(ERR_IO); return;
+            }
+
+            case CMD_IMPORT_CONTACT: {
+                // A meshcore:// business card contains a signed MeshCore advert packet.
+                // Validate the signature before adding anything to persistent contacts.
+                if(len < 1 + 2 + PUB_KEY_SIZE + 4 + SIGNATURE_SIZE + 1){
                     reply_error(ERR_ILLEGAL); return;
                 }
-                if(!contacts_.update_from_wire(cmd, len, rtc_.getCurrentTime())){
-                    reply_error(ERR_FULL); return;
+                mesh::Packet packet;
+                if(!packet.readFrom(&cmd[1], static_cast<uint8_t>(len - 1)) ||
+                   packet.getPayloadType() != PAYLOAD_TYPE_ADVERT ||
+                   packet.payload_len < PUB_KEY_SIZE + 4 + SIGNATURE_SIZE + 1){
+                    reply_error(ERR_ILLEGAL); return;
+                }
+                const uint8_t *payload = packet.payload;
+                const size_t header_len = PUB_KEY_SIZE + 4 + SIGNATURE_SIZE;
+                const size_t advert_len = packet.payload_len - header_len;
+                if(advert_len > MAX_ADVERT_DATA_SIZE){
+                    reply_error(ERR_ILLEGAL); return;
+                }
+                mesh::Identity sender(payload);
+                if(sender.matches(mesh_.self_id)){
+                    reply_error(ERR_ILLEGAL); return;
+                }
+                uint8_t signed_data[PUB_KEY_SIZE + 4 + MAX_ADVERT_DATA_SIZE] = {};
+                memcpy(signed_data, payload, PUB_KEY_SIZE + 4);
+                memcpy(signed_data + PUB_KEY_SIZE + 4, payload + header_len, advert_len);
+                if(!sender.verify(payload + PUB_KEY_SIZE + 4, signed_data,
+                                  static_cast<int>(PUB_KEY_SIZE + 4 + advert_len))){
+                    ESP_LOGW(TAG, "Rejected unsigned or forged contact advert");
+                    reply_error(ERR_ILLEGAL); return;
+                }
+                const uint32_t timestamp = get_u32(payload + PUB_KEY_SIZE);
+                if(!contacts_.observe_advert(sender, timestamp, payload + header_len,
+                                             advert_len, rtc_.getCurrentTime(), true, 0)){
+                    reply_error(contacts_.count() == WatchContacts::CAPACITY ? ERR_FULL : ERR_ILLEGAL);
+                    return;
                 }
                 reply_ok(); return;
+            }
+
+            case CMD_EXPORT_CONTACT: {
+                // Export SELF only. Other contacts require their original signed advert;
+                // it cannot be reconstructed safely from contact metadata.
+                if(len != 1){ reply_error(ERR_UNSUPPORTED); return; }
+                if(rtc_.getCurrentTime() == 0){ reply_error(ERR_BAD_STATE); return; }
+                size_t name_len = strnlen(node_name_, sizeof(node_name_));
+                const bool location = before.advert_loc_policy != 0;
+                const size_t offset = location ? 9 : 1;
+                if(name_len > MAX_ADVERT_DATA_SIZE - offset){
+                    name_len = MAX_ADVERT_DATA_SIZE - offset;
+                    // Avoid truncating a UTF-8 name in the middle of a code point.
+                    while(name_len > 0 && (static_cast<uint8_t>(node_name_[name_len]) & 0xC0) == 0x80){
+                        name_len--;
+                    }
+                }
+                if(name_len == 0){ reply_error(ERR_ILLEGAL); return; }
+                uint8_t app_data[MAX_ADVERT_DATA_SIZE] = {};
+                app_data[0] = location ? 0x91 : 0x81;
+                if(location){
+                    put_u32(&app_data[1], static_cast<uint32_t>(before.latitude_micro));
+                    put_u32(&app_data[5], static_cast<uint32_t>(before.longitude_micro));
+                }
+                memcpy(&app_data[offset], node_name_, name_len);
+                mesh::Packet *packet = mesh_.createAdvert(mesh_.self_id, app_data, offset + name_len);
+                if(packet == nullptr){ reply_error(ERR_FULL); return; }
+                packet->header |= ROUTE_TYPE_FLOOD;
+                uint8_t response[WatchBLE::MAX_FRAME] = {RESP_EXPORT_CONTACT};
+                if(packet->getRawLength() + 1 > static_cast<int>(sizeof(response))){
+                    mesh_.releasePacket(packet);
+                    reply_error(ERR_FULL); return;
+                }
+                const uint8_t packet_len = packet->writeTo(&response[1]);
+                mesh_.releasePacket(packet);
+                if(!ble_.send(response, packet_len + 1)) reply_error(ERR_BAD_STATE);
+                return;
+            }
+
             case CMD_REMOVE_CONTACT:
                 if(len < 1 + PUB_KEY_SIZE){ reply_error(ERR_ILLEGAL); return; }
                 if(!contacts_.remove(&cmd[1])){ reply_error(ERR_NOT_FOUND); return; }
                 reply_ok(); return;
+
             case CMD_RESET_PATH:
                 if(len < 1 + PUB_KEY_SIZE){ reply_error(ERR_ILLEGAL); return; }
                 if(!contacts_.reset_path(&cmd[1])){ reply_error(ERR_NOT_FOUND); return; }
                 reply_ok(); return;
+
             case CMD_GET_TIME: {
                 uint8_t f[5] = {RESP_CURR_TIME};
                 put_u32(&f[1], rtc_.getCurrentTime());
                 ble_.send(f, sizeof(f)); return;
             }
+
             case CMD_SET_TIME:
                 if(len != 5 || get_u32(&cmd[1]) < rtc_.getCurrentTime()){
                     reply_error(ERR_ILLEGAL); return;
                 }
                 rtc_.setCurrentTime(get_u32(&cmd[1])); reply_ok(); return;
+
             case CMD_SET_NAME: {
                 if(len < 2 || len > 32){ reply_error(ERR_ILLEGAL); return; }
                 char new_name[32] = {};
@@ -351,9 +465,11 @@ namespace watch {
                 }
                 reply_ok(); return;
             }
+
             case CMD_GET_CHANNEL:
                 if(len != 2){ reply_error(ERR_ILLEGAL); return; }
                 handle_get_channel(cmd[1]); return;
+
             case CMD_SET_CHANNEL: {
                 if(len != 50){ reply_error(ERR_ILLEGAL); return; }
                 char name[32] = {};
@@ -363,6 +479,7 @@ namespace watch {
                 }
                 reply_ok(); return;
             }
+
             case CMD_SEND_CHANNEL_TXT: {
                 if(len < 8 || cmd[1] != 0){ reply_error(ERR_ILLEGAL); return; }
                 uint32_t ts = get_u32(&cmd[3]);
@@ -372,6 +489,7 @@ namespace watch {
                 }
                 reply_ok(); return;
             }
+
             case CMD_SEND_TXT: {
                 if(len < 14 || cmd[1] != 0){ reply_error(ERR_UNSUPPORTED); return; }
                 const auto *recipient = contacts_.find(&cmd[7], 6);
@@ -388,6 +506,7 @@ namespace watch {
                 put_u32(&f[2], ack); put_u32(&f[6], timeout);
                 ble_.send(f, sizeof(f)); return;
             }
+
             case CMD_SYNC_MESSAGE:
                 if(message_count_ == 0){
                     const uint8_t f[] = {RESP_NO_MORE}; ble_.send(f, 1);
@@ -399,6 +518,7 @@ namespace watch {
                     }
                 }
                 return;
+
             case CMD_SEND_ADVERT:
                 if(rtc_.getCurrentTime() == 0){ reply_error(ERR_BAD_STATE); return; }
                 if(!mesh_.send_self_advert(node_name_, len > 1 && cmd[1] == 1,
@@ -406,6 +526,7 @@ namespace watch {
                     reply_error(ERR_FULL); return;
                 }
                 reply_ok(); return;
+
             case CMD_SET_LOCATION: {
                 if(len != 9 && len != 13){ reply_error(ERR_ILLEGAL); return; }
                 WatchSettings next = before;
@@ -414,6 +535,7 @@ namespace watch {
                 if(!update_settings(next, false)){ reply_error(ERR_ILLEGAL); return; }
                 reply_ok(); return;
             }
+
             case CMD_SET_RADIO: {
                 if(len < 11 || len > 12){ reply_error(ERR_ILLEGAL); return; }
                 if(len == 12 && cmd[11] != 0){
@@ -426,6 +548,7 @@ namespace watch {
                 if(!update_settings(next, true)){ reply_error(ERR_ILLEGAL); return; }
                 reply_ok(); return;
             }
+
             case CMD_SET_POWER: {
                 if(len != 2){ reply_error(ERR_ILLEGAL); return; }
                 WatchSettings next = before;
@@ -433,6 +556,7 @@ namespace watch {
                 if(!update_settings(next, true)){ reply_error(ERR_ILLEGAL); return; }
                 reply_ok(); return;
             }
+
             case CMD_SET_TUNING: {
                 if(len != 9){ reply_error(ERR_ILLEGAL); return; }
                 WatchSettings next = before;
@@ -441,12 +565,14 @@ namespace watch {
                 if(!update_settings(next, false)){ reply_error(ERR_ILLEGAL); return; }
                 reply_ok(); return;
             }
+
             case CMD_GET_TUNING: {
                 uint8_t f[9] = {RESP_TUNING};
                 put_u32(&f[1], before.rx_delay_milli);
                 put_u32(&f[5], before.airtime_factor_milli);
                 ble_.send(f, sizeof(f)); return;
             }
+
             case CMD_SET_OTHER: {
                 if(len < 2 || len > 5){ reply_error(ERR_ILLEGAL); return; }
                 WatchSettings next = before;
@@ -457,6 +583,7 @@ namespace watch {
                 if(!update_settings(next, false)){ reply_error(ERR_ILLEGAL); return; }
                 reply_ok(); return;
             }
+
             case CMD_SET_BLE_PIN: {
                 if(len != 5){ reply_error(ERR_ILLEGAL); return; }
                 WatchSettings next = before;
@@ -465,18 +592,21 @@ namespace watch {
                 // A new code affects future pairing; existing BLE bond is retained.
                 reply_ok(); return;
             }
+
             case CMD_SET_AUTOADD: {
                 if(len < 2 || len > 3){ reply_error(ERR_ILLEGAL); return; }
                 WatchSettings next = before;
                 next.autoadd_config = cmd[1];
-                if(len == 3) next.autoadd_max_hops = cmd[2];
+                if(len == 3) next.autoadd_max_hops = cmd[2] > 64 ? 64 : cmd[2];
                 if(!update_settings(next, false)){ reply_error(ERR_ILLEGAL); return; }
                 reply_ok(); return;
             }
+
             case CMD_GET_AUTOADD: {
                 uint8_t f[3] = {RESP_AUTOADD, before.autoadd_config, before.autoadd_max_hops};
                 ble_.send(f, sizeof(f)); return;
             }
+
             case CMD_SET_HASH_MODE: {
                 if(len != 3 || cmd[1] != 0){ reply_error(ERR_ILLEGAL); return; }
                 WatchSettings next = before;
@@ -484,6 +614,7 @@ namespace watch {
                 if(!update_settings(next, false)){ reply_error(ERR_ILLEGAL); return; }
                 reply_ok(); return;
             }
+
             case CMD_SET_TEMP_SCOPE:
                 if(len < 2){ reply_error(ERR_ILLEGAL); return; }
                 if(cmd[1] == 1){
@@ -494,6 +625,7 @@ namespace watch {
                     else{ reply_error(ERR_ILLEGAL); return; }
                 }else{ reply_error(ERR_ILLEGAL); return; }
                 reply_ok(); return;
+
             case CMD_SET_DEFAULT_SCOPE: {
                 WatchSettings next = before;
                 memset(next.default_scope_name, 0, sizeof(next.default_scope_name));
@@ -507,6 +639,7 @@ namespace watch {
                 if(!update_settings(next, false)){ reply_error(ERR_IO); return; }
                 reply_ok(); return;
             }
+
             case CMD_GET_DEFAULT_SCOPE: {
                 uint8_t f[48] = {RESP_DEFAULT_SCOPE};
                 if(before.default_scope_name[0] != 0){
@@ -516,10 +649,12 @@ namespace watch {
                 }else ble_.send(f, 1);
                 return;
             }
+
             case CMD_GET_REPEAT_FREQ: {
                 const uint8_t f[1] = {RESP_REPEAT_FREQ}; // no repeater frequency ranges
                 ble_.send(f, sizeof(f)); return;
             }
+
             case CMD_GET_BATT: {
                 uint8_t f[11] = {RESP_BATT};
                 // Battery ADC API is not available yet. 0 indicates unknown.
@@ -530,6 +665,7 @@ namespace watch {
                 put_u32(&f[7], total);
                 ble_.send(f, sizeof(f)); return;
             }
+
             case CMD_GET_STATS: {
                 if(len != 2){ reply_error(ERR_ILLEGAL); return; }
                 uint8_t f[32] = {RESP_STATS, cmd[1]};
@@ -556,11 +692,15 @@ namespace watch {
                 }else{ reply_error(ERR_ILLEGAL); return; }
                 ble_.send(f, n); return;
             }
+
             case CMD_REBOOT:
                 if(len != 7 || memcmp(&cmd[1], "reboot", 6) != 0){ reply_error(ERR_ILLEGAL); return; }
-                // No false acknowledgement: a deferred safe reboot is not implemented.
-                reply_error(ERR_UNSUPPORTED);
+                reply_ok();
+                // Leave time for the GATT acknowledgement to be transmitted.
+                reboot_at_ms_ = time_ms(clock_) + 2000;
+                if(reboot_at_ms_ == 0) reboot_at_ms_ = 1;
                 return;
+
             default:
                 ESP_LOGW(TAG, "Unsupported companion command %u (len=%u)",
                          cmd[0], static_cast<unsigned>(len));
@@ -576,5 +716,10 @@ namespace watch {
         if(ble_.connected()) pump_contacts();
         else contact_sync_ = false;
         ble_.loop();
+        if(reboot_at_ms_ != 0 &&
+           static_cast<int32_t>(time_ms(clock_) - reboot_at_ms_) >= 0){
+            ESP_LOGI(TAG, "Reboot requested by paired companion");
+            esp_restart();
+        }
     }
 }

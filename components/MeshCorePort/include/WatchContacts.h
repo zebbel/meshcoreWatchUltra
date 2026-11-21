@@ -1,3 +1,4 @@
+
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -21,6 +22,10 @@ namespace watch {
         bool present = false;
     };
 
+    enum class ContactUpdateResult : uint8_t {
+        SAVED, INVALID, FULL, STORAGE_ERROR
+    };
+
     class WatchContacts {
     public:
         static constexpr size_t CAPACITY = 32;
@@ -29,7 +34,7 @@ namespace watch {
         size_t count() const;
         const WatchContact *at(size_t index) const;
         const WatchContact *find(const uint8_t pub[PUB_KEY_SIZE], size_t prefix_len = PUB_KEY_SIZE) const;
-        bool update_from_wire(const uint8_t *wire, size_t length, uint32_t now);
+        ContactUpdateResult update_from_wire(const uint8_t *wire, size_t length, uint32_t now);
         bool remove(const uint8_t pub[PUB_KEY_SIZE]);
         bool reset_path(const uint8_t pub[PUB_KEY_SIZE]);
         bool observe_advert(const mesh::Identity &id, uint32_t timestamp,

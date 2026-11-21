@@ -1,9 +1,11 @@
+
 set(MESHCORE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../third_party/MeshCore")
 set(MONOCYPHER_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../third_party/Monocypher")
 
 if(NOT EXISTS "${MESHCORE_ROOT}/src/Mesh.cpp")
     message(FATAL_ERROR "MeshCore submodule missing: git submodule update --init --recursive")
 endif()
+
 if(NOT EXISTS "${MONOCYPHER_ROOT}/src/optional/monocypher-ed25519.c")
     message(FATAL_ERROR "Monocypher submodule missing: add third_party/Monocypher at tag 4.0.2")
 endif()
@@ -25,6 +27,7 @@ idf_component_register(
         "${MESHCORE_ROOT}/lib/ed25519/sign.c"
         "${MONOCYPHER_ROOT}/src/monocypher.c"
         "${MONOCYPHER_ROOT}/src/optional/monocypher-ed25519.c"
+
         "MeshCorePlatform.cpp"
         "WatchRouting.cpp"
         "WatchMesh.cpp"
@@ -34,8 +37,10 @@ idf_component_register(
         "WatchCompanion.cpp"
         "WatchContacts.cpp"
         "WatchSettings.cpp"
+        "WatchTelemetry.cpp"
         "MeshCoreRadio.cpp"
         "Ed25519.cpp"
+
     INCLUDE_DIRS
         "include"
         "compat"
@@ -43,7 +48,10 @@ idf_component_register(
         "${MESHCORE_ROOT}/lib/ed25519"
         "${MONOCYPHER_ROOT}/src"
         "${MONOCYPHER_ROOT}/src/optional"
+
     REQUIRES
+        MIA_M10Q
+        AXP2101
         SX1262
         mbedtls
         esp_timer
@@ -57,8 +65,8 @@ idf_component_register(
         freertos
 )
 
-# This warning exists in the pinned upstream Dispatcher.h constructor.
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-error=reorder)
+
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     ED25519_NO_SEED=1
     MESH_DEBUG=0

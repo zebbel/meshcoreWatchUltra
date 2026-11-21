@@ -1,3 +1,4 @@
+
 #include "WatchMesh.h"
 
 #include <stdio.h>
@@ -76,7 +77,8 @@ namespace watch {
         if(memchr(name, 0, 32) == nullptr) return false;
         bool any = false;
         for(int i = 0; i < 16; i++) any |= secret[i] != 0;
-        if(!any) return false;
+        // An all-zero key with an empty name is the standard clear-channel request.
+        if(!any && (index == 0 || name[0] != 0)) return false;
         struct Saved { char name[32]; uint8_t key[16]; } saved = {};
         memcpy(saved.name, name, 32);
         memcpy(saved.key, secret, 16);
