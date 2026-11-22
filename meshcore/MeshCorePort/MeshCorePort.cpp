@@ -19,18 +19,10 @@
 namespace meshcore {
 
     static const char *TAG = "MeshCorePort";
-    // Original MeshCore NUS/GATT UUIDs, in BLE wire byte order.
-    static const hardware::bluetooth::Uuids COMPANION_UUIDS = {
-        {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E},
-        {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E},
-        {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E}
-    };
-
     static bool initialized = false;
     static bool init_attempted = false;
     static meshcore::Node *node = nullptr;
     static meshcore::Companion *companion = nullptr;
-    static hardware::bluetooth::Transport *bluetooth = nullptr;
     static meshcore::SettingsStore *settings_store = nullptr;
 
     esp_err_t init(){
@@ -102,24 +94,14 @@ namespace meshcore {
         }
 
         static meshcore::Telemetry telemetry;
-        static hardware::bluetooth::Transport ble;
+        hardware::bluetooth::Transport &ble = hardware::bluetooth::transport();
         static meshcore::Companion companion_instance(ble, mesh_node, radio, settings, contacts, rtc, clock, telemetry);
-
-        ble.set_pairing_pin(settings.get().ble_pin);
-        err = ble.begin("MeshCore-Watch", COMPANION_UUIDS);
-
-        if(err != ESP_OK){
-            ESP_LOGE(TAG, "BLE start failed: %s", esp_err_to_name(err));
-            return err;
-        }
-
         node = &mesh_node;
         companion = &companion_instance;
-        bluetooth = &ble;
         settings_store = &settings;
         initialized = true;
 
-        ESP_LOGI(TAG, "MeshCore node running; BLE companion and telemetry initialized");
+        ESP_LOGI(TAG, "MeshCore node, companion protocol and telemetry initialized; Bluetooth managed by Main");
         return ESP_OK;
     }
 
@@ -129,12 +111,10 @@ namespace meshcore {
         companion->loop();
     }
 
-    PairingEvent take_pairing_event(){
-        PairingEvent event = {};
-        if(!initialized) return event;
-        event.pin = bluetooth->take_pairing_pin();
-        event.clear = bluetooth->take_clear_pairing_display();
-        return event;
+    // Compatibility only: persisted Settings (VERSION=1) still stores ble_pin.
+    // Main passes this value into Bluetooth before BLE advertising starts.
+    uint32_t legacy_ble_pin(){
+        return settings_store == nullptr ? 0 : settings_store->get().ble_pin;
     }
 
     bool get_position(int32_t &latitude_micro, int32_t &longitude_micro){

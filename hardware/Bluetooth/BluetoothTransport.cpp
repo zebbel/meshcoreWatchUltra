@@ -49,6 +49,12 @@ namespace hardware::bluetooth {
         nimble_port_run();
         nimble_port_freertos_deinit();
     }
+    // Owned by Hardware; the application starts/polls it, clients borrow it.
+    Transport &transport(){
+        static Transport singleton;
+        return singleton;
+    }
+
 
     Transport::Transport(){}
 
@@ -367,6 +373,6 @@ namespace hardware::bluetooth {
     }
 
     uint32_t Transport::take_pairing_pin(){ return pending_pin_.exchange(0); }
-    bool Transport::take_clear_pairing_display(){ return clear_pin_.exchange(false); }
+    bool Transport::take_pairing_clear_event(){ return clear_pin_.exchange(false); }
 
 }

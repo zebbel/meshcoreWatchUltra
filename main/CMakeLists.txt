@@ -8,6 +8,7 @@ idf_component_register(
         "include"
 
     REQUIRES
+        Bluetooth
         Storage
         System
         CO5300

@@ -352,7 +352,6 @@ namespace meshcore {
             mesh_.set_tuning(next.rx_delay_milli, next.airtime_factor_milli);
             mesh_.set_path_hash_mode(next.path_hash_mode);
             mesh_.set_scope_key(next.default_scope_key);
-            ble_.set_pairing_pin(next.ble_pin);
             return true;
         }
 
@@ -1362,9 +1361,6 @@ namespace meshcore {
             pump_contacts();
         else
             contact_sync_ = false;
-
-        ble_.loop();
-
         if(reboot_at_ms_ != 0 && static_cast<int32_t>(time_ms(clock_) - reboot_at_ms_) >= 0){
 
             ESP_LOGI(TAG, "Reboot requested by paired companion");

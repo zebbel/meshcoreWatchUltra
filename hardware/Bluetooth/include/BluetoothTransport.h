@@ -15,6 +15,10 @@ namespace hardware::bluetooth {
     // Exact MeshCore BLE NUS frame: one GATT write or notification = one frame.
     // Does not use USB, Wi-Fi, or length-prefix framing.
     struct Uuids { uint8_t service[16] = {}; uint8_t rx[16] = {}; uint8_t tx[16] = {}; };
+    // One process-wide BLE transport. Main owns lifecycle; MeshCore only uses frames.
+    class Transport;
+    Transport &transport();
+
 
     class Transport {
     public:
@@ -37,7 +41,7 @@ namespace hardware::bluetooth {
         // Events are consumed from the app_main task, never drawing on NimBLE's host thread.
         void set_pairing_pin(uint32_t pin){ configured_pin_.store(pin); }
         uint32_t take_pairing_pin();
-        bool take_clear_pairing_display();
+        bool take_pairing_clear_event();
 
     private:
         friend int bluetooth_gap_callback(struct ble_gap_event *, void *);

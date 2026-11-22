@@ -12,9 +12,16 @@
 #include "GPIO.h"
 #include "LoRa.h"
 #include "GPS.h"
-#include "DeviceUI.h"
+#include "BluetoothTransport.h"
 
 static const char *TAG = "MeshCoreWatch";
+
+    // Original MeshCore NUS/GATT UUIDs, in BLE wire byte order.
+    static const hardware::bluetooth::Uuids COMPANION_UUIDS = {
+        {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E},
+        {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E},
+        {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E}
+    };
 
 static esp_err_t init_hardware(){
     esp_err_t err = hardware::board::init();
@@ -59,12 +66,13 @@ static void synchronize_position(){
     }
 }
 
-static void update_pairing_display(){
-    const meshcore::PairingEvent event = meshcore::take_pairing_event();
-    if(event.clear) app::ui::clear_pairing_code();
-    else if(event.pin != 0) app::ui::show_pairing_code(event.pin);
+static void log_bluetooth_pairing(){
+    auto &bluetooth = hardware::bluetooth::transport();
+    const uint32_t pin = bluetooth.take_pairing_pin();
+    const bool clear = bluetooth.take_pairing_clear_event();
+    if(pin != 0) ESP_LOGI(TAG, "Bluetooth pairing PIN: %06lu", static_cast<unsigned long>(pin));
+    if(clear) ESP_LOGI(TAG, "Bluetooth pairing PIN cleared");
 }
-
 extern "C" void app_main(){
     ESP_LOGI(TAG, "T-Watch Ultra: MeshCore BLE companion");
 
@@ -81,13 +89,6 @@ extern "C" void app_main(){
     }
 
     if(init_hardware() != ESP_OK) return;
-
-    err = app::ui::init();
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "Cannot display secure BLE pairing code: %s", esp_err_to_name(err));
-        return;
-    }
-
     err = hardware::gps::init();
     if(err != ESP_OK) ESP_LOGW(TAG, "MIA_M10Q unavailable: %s", esp_err_to_name(err));
 
@@ -97,11 +98,31 @@ extern "C" void app_main(){
         return;
     }
 
+
+    // Hardware owns the BLE stack and its pairing state. MeshCore uses its frames.
+    // Preserve the legacy fixed-PIN setting until Settings storage is migrated.
+    auto &bluetooth = hardware::bluetooth::transport();
+    uint32_t applied_ble_pin = meshcore::legacy_ble_pin();
+    bluetooth.set_pairing_pin(applied_ble_pin);
+    err = bluetooth.begin("MeshCore-Watch", COMPANION_UUIDS);
+    if(err != ESP_OK){
+        ESP_LOGE(TAG, "Bluetooth initialization failed: %s", esp_err_to_name(err));
+        return;
+    }
+
     while(true){
-        update_pairing_display();
+        log_bluetooth_pairing();
         hardware::gps::loop();
         synchronize_position();
         meshcore::loop();
+        // Android may update the legacy PIN in Settings. Main applies it to Hardware.
+        const uint32_t requested_ble_pin = meshcore::legacy_ble_pin();
+        if(requested_ble_pin != applied_ble_pin){
+            bluetooth.set_pairing_pin(requested_ble_pin);
+            applied_ble_pin = requested_ble_pin;
+            ESP_LOGI(TAG, "Bluetooth pairing configuration updated");
+        }
+        bluetooth.loop();
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
