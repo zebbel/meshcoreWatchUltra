@@ -15,8 +15,11 @@
 #include "GPS.h"
 #include "BluetoothTransport.h"
 #include "SDStorage.h"
+#include "WatchDisplay.h"
 
 static const char *TAG = "MeshCoreWatch";
+
+#include "esp_heap_caps.h"
 
 static esp_err_t init_hardware(){
     esp_err_t err = hardware::board::init();
@@ -77,6 +80,9 @@ extern "C" void app_main(){
     }
 
     if(init_hardware() != ESP_OK) return;
+    // Display errors do not prevent the MeshCore/BLE/GPS services from starting.
+    err = hardware::watch_display::init();
+    if(err != ESP_OK) ESP_LOGW(TAG, "Display foundation unavailable: %s", esp_err_to_name(err));
     // Restore persistent UTC before MeshCore creates its RTC adapter.
     err = hardware::system::initialize_utc_clock();
     if(err != ESP_OK) ESP_LOGW(TAG, "Hardware RTC unavailable: %s", esp_err_to_name(err));

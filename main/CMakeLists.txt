@@ -12,6 +12,7 @@ idf_component_register(
         Storage
         System
         CO5300
+        WatchDisplay
         board
         AXP2101
         MIA_M10Q

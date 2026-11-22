@@ -101,10 +101,13 @@ namespace board {
 
         spi_gate = xSemaphoreCreateMutex();
         if(spi_gate == nullptr){ spi_bus_free(SPI_HOST); return ESP_ERR_NO_MEM; }
+
         spi_initialized = true;
 
         ESP_LOGI(TAG, "SPI bus initialized");
         ESP_LOGI(TAG, "Board initialization complete");
+
+        gpio_install_isr_service(0);
 
         return ESP_OK;
     }

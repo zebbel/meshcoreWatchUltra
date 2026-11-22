@@ -1,0 +1,3 @@
+dependencies:
+  espressif/esp_lvgl_adapter: "0.7.8"
+  lvgl/lvgl: "9.5.0"

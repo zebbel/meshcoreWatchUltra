@@ -408,14 +408,6 @@ namespace sx1262 {
             return err != ESP_OK ? err : ESP_ERR_INVALID_RESPONSE;
         }
 
-        // Install DIO1 rising-edge notification. Do not alter any other pin ISR.
-        err = gpio_install_isr_service(0);
-        if(err != ESP_OK && err != ESP_ERR_INVALID_STATE){
-            ESP_LOGE(TAG, "GPIO ISR service unavailable: %s", esp_err_to_name(err));
-            cleanup();
-            return err;
-        }
-
         err = gpio_set_intr_type(board::pins::LORA_DIO1, GPIO_INTR_POSEDGE);
         if(err == ESP_OK) err = gpio_isr_handler_add(board::pins::LORA_DIO1, dio1_isr, nullptr);
         if(err != ESP_OK){
