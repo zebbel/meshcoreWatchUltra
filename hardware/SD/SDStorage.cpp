@@ -403,10 +403,6 @@ namespace hardware::sd {
             if(err != ESP_OK){ xSemaphoreGive(pending_mutex); return err; }
             p.used = false;
         }
-        // SD_STACK_WATERMARK: report the deferred background writer as well.
-        ESP_LOGI(TAG, "SD flush: task=%s minimum-free-stack=%u bytes",
-                 pcTaskGetName(nullptr),
-                 static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
         xSemaphoreGive(pending_mutex);
         return ESP_OK;
     }
