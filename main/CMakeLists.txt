@@ -1,7 +1,6 @@
 idf_component_register(
     SRCS
         "main.cpp"
-        "DeviceUI.cpp"
 
     INCLUDE_DIRS
         "."

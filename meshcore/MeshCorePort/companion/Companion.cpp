@@ -352,10 +352,10 @@ namespace meshcore {
             return true;
         }
 
-        ESP_LOGE(TAG, "Unable to persist settings to NVS");
+        ESP_LOGE(TAG, "Unable to persist settings to SD Card");
 
         if(radio_changed && !radio_.applyConfig(before.radio())){
-            ESP_LOGE(TAG, "Failed restoring radio after NVS error");
+            ESP_LOGE(TAG, "Failed restoring radio after SD Card error");
         }
 
         return false;
