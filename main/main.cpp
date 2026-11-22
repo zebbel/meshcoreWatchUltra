@@ -1,4 +1,5 @@
 #include "MeshCorePort.h"
+#include "CompanionBluetooth.h"
 
 #include <math.h>
 #include "esp_log.h"
@@ -15,13 +16,6 @@
 #include "BluetoothTransport.h"
 
 static const char *TAG = "MeshCoreWatch";
-
-    // Original MeshCore NUS/GATT UUIDs, in BLE wire byte order.
-    static const hardware::bluetooth::Uuids COMPANION_UUIDS = {
-        {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E},
-        {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E},
-        {0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E}
-    };
 
 static esp_err_t init_hardware(){
     esp_err_t err = hardware::board::init();
@@ -104,7 +98,7 @@ extern "C" void app_main(){
     auto &bluetooth = hardware::bluetooth::transport();
     uint32_t applied_ble_pin = meshcore::legacy_ble_pin();
     bluetooth.set_pairing_pin(applied_ble_pin);
-    err = bluetooth.begin("MeshCore-Watch", COMPANION_UUIDS);
+    err = bluetooth.begin("MeshCore-Watch", meshcore::companion::UUIDS);
     if(err != ESP_OK){
         ESP_LOGE(TAG, "Bluetooth initialization failed: %s", esp_err_to_name(err));
         return;
