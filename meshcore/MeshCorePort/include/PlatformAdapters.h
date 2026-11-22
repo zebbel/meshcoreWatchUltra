@@ -18,9 +18,6 @@ namespace meshcore {
         uint32_t getCurrentTime() override;
         void setCurrentTime(uint32_t unix_seconds) override;
 
-    private:
-        uint32_t base_seconds_ = 0;
-        int64_t base_uptime_us_ = 0;
     };
 
     class RandomAdapter final : public mesh::RNG {

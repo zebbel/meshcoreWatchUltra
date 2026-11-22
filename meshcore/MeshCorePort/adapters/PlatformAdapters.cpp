@@ -1,6 +1,7 @@
 
 #include "PlatformAdapters.h"
 #include "HardwareSystem.h"
+#include "esp_log.h"
 
 
 
@@ -13,14 +14,13 @@ namespace meshcore {
     }
 
     uint32_t RTCAdapter::getCurrentTime(){
-        if(base_seconds_ == 0) return 0;
-
-        return base_seconds_ + static_cast<uint32_t>((hardware::system::micros() - base_uptime_us_) / 1000000LL);
+        return hardware::system::utc_time();
     }
 
     void RTCAdapter::setCurrentTime(uint32_t unix_seconds){
-        base_uptime_us_ = hardware::system::micros();
-        base_seconds_ = unix_seconds;
+        const esp_err_t err = hardware::system::set_utc_time(unix_seconds);
+        if(err != ESP_OK)
+            ESP_LOGW("RTCAdapter", "Companion time was not stored to RTC: %s", esp_err_to_name(err));
     }
 
     void RandomAdapter::random(uint8_t *dest, size_t length){

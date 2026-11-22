@@ -77,6 +77,9 @@ extern "C" void app_main(){
     }
 
     if(init_hardware() != ESP_OK) return;
+    // Restore persistent UTC before MeshCore creates its RTC adapter.
+    err = hardware::system::initialize_utc_clock();
+    if(err != ESP_OK) ESP_LOGW(TAG, "Hardware RTC unavailable: %s", esp_err_to_name(err));
     err = hardware::gps::init();
     if(err != ESP_OK) ESP_LOGW(TAG, "MIA_M10Q unavailable: %s", esp_err_to_name(err));
 

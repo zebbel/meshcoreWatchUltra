@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "Storage.h"
+#include "HardwareSystem.h"
 
 namespace MIA_M10Q {
 
@@ -213,6 +214,72 @@ namespace MIA_M10Q {
         }
     }
 
+    // NMEA RMC contains both UTC date and time; GGA provides only time of day.
+    // A valid status and checksum are required before we trust it as clock input.
+    static bool parse_rmc_utc(const char *input, uint32_t &utc_seconds) {
+        if(input == nullptr || input[0] != '$') return false;
+        const char *star = strchr(input, '*');
+        if(star == nullptr || star[1] == 0 || star[2] == 0 || star[3] != 0) return false;
+        const int hi = hex_digit(star[1]);
+        const int lo = hex_digit(star[2]);
+        if(hi < 0 || lo < 0) return false;
+        uint8_t checksum = 0;
+        for(const char *p = input + 1; p < star; ++p) checksum ^= static_cast<uint8_t>(*p);
+        if(checksum != static_cast<uint8_t>((hi << 4) | lo)) return false;
+
+        const size_t length = static_cast<size_t>(star - input);
+        if(length >= 128) return false;
+        char copy[128] = {};
+        memcpy(copy, input, length);
+        char *fields[16] = {};
+        size_t count = 0;
+        fields[count++] = copy;
+        for(char *p = copy; *p != 0; ++p) {
+            if(*p == ',') {
+                *p = 0;
+                if(count < 16) fields[count++] = p + 1;
+            }
+        }
+        if(count < 10 || strlen(fields[0]) != 6 ||
+           strcmp(fields[0] + 3, "RMC") != 0 || strcmp(fields[2], "A") != 0) return false;
+
+        const char *t = fields[1]; // hhmmss[.sss]
+        const char *d = fields[9]; // ddmmyy
+        if(strlen(t) < 6 || strlen(d) != 6) return false;
+        for(int i = 0; i < 6; ++i) {
+            if(t[i] < '0' || t[i] > '9' || d[i] < '0' || d[i] > '9') return false;
+        }
+        if(t[6] != 0 && t[6] != '.') return false;
+        if(t[6] == '.' && t[7] == 0) return false;
+        if(t[6] == '.') {
+            for(int i = 7; t[i] != 0; ++i) if(t[i] < '0' || t[i] > '9') return false;
+        }
+        const unsigned hh = static_cast<unsigned>((t[0]-'0')*10 + t[1]-'0');
+        const unsigned mm = static_cast<unsigned>((t[2]-'0')*10 + t[3]-'0');
+        const unsigned ss = static_cast<unsigned>((t[4]-'0')*10 + t[5]-'0');
+        const unsigned day = static_cast<unsigned>((d[0]-'0')*10 + d[1]-'0');
+        const unsigned mon = static_cast<unsigned>((d[2]-'0')*10 + d[3]-'0');
+        const unsigned year = 2000U + static_cast<unsigned>((d[4]-'0')*10 + d[5]-'0');
+        if(year < 2020U || year > 2099U || mon < 1U || mon > 12U ||
+           day < 1U || hh > 23U || mm > 59U || ss > 59U) return false;
+        static constexpr unsigned DAYS[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
+        const unsigned leap = (year % 4U == 0U && (year % 100U != 0U || year % 400U == 0U)) ? 1U : 0U;
+        if(day > DAYS[mon - 1U] + (mon == 2U ? leap : 0U)) return false;
+
+        // Calendar to Unix seconds, ignoring the host's local timezone.
+        int y = static_cast<int>(year) - (mon <= 2U);
+        const int era = (y >= 0 ? y : y - 399) / 400;
+        const unsigned yoe = static_cast<unsigned>(y - era * 400);
+        const unsigned mp = mon > 2U ? mon - 3U : mon + 9U;
+        const unsigned doy = (153U * mp + 2U) / 5U + day - 1U;
+        const unsigned ydoe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
+        const int64_t days = static_cast<int64_t>(era) * 146097LL + ydoe - 719468LL;
+        const int64_t epoch = days * 86400LL + hh * 3600LL + mm * 60LL + ss;
+        if(epoch < 1577836800LL || epoch > 4102444799LL) return false;
+        utc_seconds = static_cast<uint32_t>(epoch);
+        return true;
+    }
+
     esp_err_t init(){
         if(initialized) return ESP_OK;
 
@@ -327,6 +394,12 @@ namespace MIA_M10Q {
             // Diagnostic only; does not print private coordinates.
             if(strlen(sentence) >= 6 && strncmp(sentence + 3, "GGA", 3) == 0){
                 parse_gga_diagnostics(sentence, now);
+            }
+
+            uint32_t utc_seconds = 0;
+            if(parse_rmc_utc(sentence, utc_seconds)) {
+                // Throttled in System; never writes RTC on every RMC sentence.
+                (void)hardware::system::sync_gps_utc(utc_seconds);
             }
 
             if(valid_fix){

@@ -730,16 +730,54 @@ namespace meshcore {
                 ble_.send(f, sizeof(f));
                 return;
             }
-
-            case CMD_SET_TIME:
-                if(len != 5 || get_u32(&cmd[1]) < rtc_.getCurrentTime()){
-                    reply_error(ERR_ILLEGAL , cmd, len);
+            
+            case CMD_SET_TIME: {
+                if (len != 5) {
+                    reply_error(ERR_ILLEGAL, cmd, len);
                     return;
                 }
 
-                rtc_.setCurrentTime(get_u32(&cmd[1]));
+                const uint32_t requested = get_u32(&cmd[1]);
+                const uint32_t current = rtc_.getCurrentTime();
+
+                // Reject obviously invalid Unix timestamps.
+                if (requested < 1577836800U ||
+                    requested > 4102444799U) {
+                    reply_error(ERR_ILLEGAL, cmd, len);
+                    return;
+                }
+
+                ESP_LOGI(TAG,
+                        "SET_TIME requested=%lu current=%lu",
+                        static_cast<unsigned long>(requested),
+                        static_cast<unsigned long>(current));
+
+                // Ignore small backward differences to preserve
+                // monotonic message timestamps.
+                if (current != 0 &&
+                    requested < current &&
+                    current - requested <= 30U) {
+                    reply_ok();
+                    return;
+                }
+
+                // The paired companion can correct an RTC that
+                // contains an incorrect time, including backwards.
+                if (current != 0 && requested < current) {
+                    ESP_LOGW(TAG,
+                            "Correcting RTC backwards by %lu seconds",
+                            static_cast<unsigned long>(current - requested));
+                }
+
+                rtc_.setCurrentTime(requested);
+
+                ESP_LOGI(TAG,
+                        "SET_TIME applied=%lu",
+                        static_cast<unsigned long>(rtc_.getCurrentTime()));
+
                 reply_ok();
                 return;
+            }
 
             case CMD_SET_NAME: {
                 if(len < 2 || len > 32){
