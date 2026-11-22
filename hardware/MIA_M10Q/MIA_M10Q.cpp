@@ -19,7 +19,7 @@ namespace MIA_M10Q {
 
     static constexpr uint32_t FIX_MAX_AGE_MS = 120000;
     static constexpr uint32_t ACQUISITION_PERIOD_MS = 15 * 60 * 1000;
-    static constexpr uint32_t ACQUISITION_TIMEOUT_MS = 3 * 60 * 1000;
+    static constexpr uint32_t ACQUISITION_TIMEOUT_MS = 5 * 60 * 1000;
     static constexpr uint32_t FIX_HOLD_MS = 15000;
     static constexpr uint32_t MIN_OFF_MS = 30000;
 
