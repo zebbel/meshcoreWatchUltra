@@ -132,6 +132,10 @@ namespace meshcore {
         companion->loop();
     }
 
+    uint32_t received_packet_count(){
+        return initialized && node != nullptr ? node->packetCount() : 0U;
+    }
+
     bool get_position(int32_t &latitude_micro, int32_t &longitude_micro){
         if(!initialized) return false;
         latitude_micro = settings_store->get().latitude_micro;

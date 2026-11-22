@@ -1,5 +1,6 @@
 #include "WatchDisplay.h"
 #include "DisplayTest.h"
+#include "ClockPage.h"
 
 #include "CO5300Panel.h"
 #include "DisplayPower.h"
@@ -87,7 +88,7 @@ esp_err_t init() {
 
     err = esp_lv_adapter_lock(2000);
     if (err == ESP_OK) {
-        render_test_screen();
+        render_clock_page();
         esp_lv_adapter_unlock();
     } else {
         ESP_LOGE(TAG, "LVGL display lock failed: %s", esp_err_to_name(err));

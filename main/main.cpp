@@ -16,6 +16,7 @@
 #include "BluetoothTransport.h"
 #include "SDStorage.h"
 #include "WatchDisplay.h"
+#include "WatchStatus.h"
 
 static const char *TAG = "MeshCoreWatch";
 
@@ -70,6 +71,30 @@ static void log_bluetooth_pairing(){
     if(pin != 0) ESP_LOGI(TAG, "Bluetooth pairing PIN: %06lu", static_cast<unsigned long>(pin));
     if(clear) ESP_LOGI(TAG, "Bluetooth pairing PIN cleared");
 }
+// GPS and MeshCore are polled by app_main. Copy their state here rather
+// than reading non-atomic firmware structures from the LVGL task.
+static void publish_watchface_status(bool meshcore_enabled) {
+    static uint32_t last_update_ms = 0;
+    const uint32_t now = hardware::system::millis();
+    if (last_update_ms != 0 && now - last_update_ms < 1000U) return;
+    last_update_ms = now;
+
+    ui::watch_display::WatchStatus snapshot{};
+    snapshot.gps_enabled = hardware::gps::is_enabled();
+    hardware::gps::fix_t fix{};
+    snapshot.gps_has_fix = hardware::gps::get_fresh_fix(fix);
+    hardware::gps::status_t gps_info{};
+    hardware::gps::get_status(gps_info);
+    snapshot.gps_acquiring = snapshot.gps_enabled && gps_info.powered;
+    if (snapshot.gps_has_fix) snapshot.gps_satellites = gps_info.satellites;
+
+    snapshot.meshcore_active = meshcore_enabled && hardware::sd::ready();
+    if (snapshot.meshcore_active)
+        snapshot.meshcore_rx_packets = meshcore::received_packet_count();
+    snapshot.ble_connected = hardware::bluetooth::transport().connected();
+    ui::watch_display::publish_watch_status(snapshot);
+}
+
 extern "C" void app_main(){
     ESP_LOGI(TAG, "T-Watch Ultra: MeshCore BLE companion");
 
@@ -118,6 +143,7 @@ extern "C" void app_main(){
         synchronize_position();
         if(meshcore_enabled) meshcore::loop();
         bluetooth.loop();
+        publish_watchface_status(meshcore_enabled);
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
