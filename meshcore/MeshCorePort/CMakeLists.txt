@@ -59,6 +59,7 @@ idf_component_register(
 
     REQUIRES
         Bluetooth
+        SD
         Storage
         System
         MIA_M10Q

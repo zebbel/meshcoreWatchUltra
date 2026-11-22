@@ -3,6 +3,8 @@
 #include "board_pins.h"
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 namespace board {
 
@@ -11,6 +13,7 @@ namespace board {
     static i2c_master_bus_handle_t i2c_handle = nullptr;
     static constexpr spi_host_device_t SPI_HOST = SPI2_HOST;
     static bool spi_initialized = false;
+    static SemaphoreHandle_t spi_gate = nullptr;
 
     esp_err_t init(){
         if(i2c_handle != nullptr && spi_initialized){
@@ -41,11 +44,20 @@ namespace board {
 
         // Deselect all shared SPI devices before initializing the bus
         gpio_set_level(pins::LORA_CS, 1);
+        // GPIO21 belongs to the SDSPI driver while mounted. Leave it
+        // released/pulled up until the first SD mount, rather than reserving
+        // it in board initialization and triggering GPIO ownership warnings.
+        err = gpio_reset_pin(pins::SD_CS);
+        if(err != ESP_OK){
+            i2c_del_master_bus(i2c_handle);
+            i2c_handle = nullptr;
+            return err;
+        }
         gpio_set_level(pins::SD_CS, 1);
         gpio_set_level(pins::NFC_CS, 1);
 
         gpio_config_t cs_config = {};
-        cs_config.pin_bit_mask = (1ULL << pins::LORA_CS) | (1ULL << pins::SD_CS) | (1ULL << pins::NFC_CS);
+        cs_config.pin_bit_mask = (1ULL << pins::LORA_CS) | (1ULL << pins::NFC_CS);
         cs_config.mode = GPIO_MODE_OUTPUT;
         cs_config.pull_up_en = GPIO_PULLUP_DISABLE;
         cs_config.pull_down_en = GPIO_PULLDOWN_DISABLE;
@@ -87,6 +99,8 @@ namespace board {
             return err;
         }
 
+        spi_gate = xSemaphoreCreateMutex();
+        if(spi_gate == nullptr){ spi_bus_free(SPI_HOST); return ESP_ERR_NO_MEM; }
         spi_initialized = true;
 
         ESP_LOGI(TAG, "SPI bus initialized");
@@ -98,6 +112,9 @@ namespace board {
     i2c_master_bus_handle_t i2c_bus(){
         return i2c_handle;
     }
+
+    bool spi_lock(uint32_t timeout_ticks){ return spi_gate != nullptr && xSemaphoreTake(spi_gate, static_cast<TickType_t>(timeout_ticks)) == pdTRUE; }
+    void spi_unlock(){ if(spi_gate != nullptr) xSemaphoreGive(spi_gate); }
 
     spi_host_device_t spi_host(){
         return SPI_HOST;

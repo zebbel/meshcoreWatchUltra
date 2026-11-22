@@ -7,7 +7,8 @@
 #include "esp_log.h"
 #include "HardwareSystem.h"
 
-#include "Storage.h"
+#include "MeshCoreSD.h"
+#include "SDStorage.h"
 
 namespace meshcore {
 
@@ -83,16 +84,21 @@ namespace meshcore {
 
         snprintf(node_name_, sizeof(node_name_), "Watch-%02X%02X%02X%02X", mesh_.self_id.pub_key[0], mesh_.self_id.pub_key[1], mesh_.self_id.pub_key[2], mesh_.self_id.pub_key[3]);
 
-        hardware::storage::Handle h;
-
-        if(hardware::storage::open("meshcore", hardware::storage::Access::read_only, h) == ESP_OK){
-            size_t n = sizeof(node_name_);
-
-            if(hardware::storage::read_string(h, "node_name", node_name_, &n) != ESP_OK){
-                snprintf(node_name_, sizeof(node_name_), "Watch-%02X%02X%02X%02X", mesh_.self_id.pub_key[0], mesh_.self_id.pub_key[1], mesh_.self_id.pub_key[2], mesh_.self_id.pub_key[3]);
+        struct NameRecord { char name[32]; } saved_name = {};
+        const esp_err_t name_result = sdstore::read("/sdcard/meshcore/node.bin", 0x4D434E4DU, saved_name);
+        if(name_result == ESP_OK && memchr(saved_name.name, 0, sizeof(saved_name.name)) != nullptr){
+            snprintf(node_name_, sizeof(node_name_), "%s", saved_name.name);
+        }else if(name_result == ESP_ERR_NOT_FOUND){
+            // First boot: persist the generated name after identity initialization.
+            NameRecord initial = {};
+            snprintf(initial.name, sizeof(initial.name), "%s", node_name_);
+            if(sdstore::write("/sdcard/meshcore/node.bin", 0x4D434E4DU, initial) != ESP_OK){
+                storage_ready_ = false;
+                ESP_LOGW(TAG, "Unable to save initial companion node name");
             }
-
-            hardware::storage::close(h);
+        }else{
+            storage_ready_ = false;
+            ESP_LOGE(TAG, "Invalid or unreadable companion name: %s", esp_err_to_name(name_result));
         }
 
         mesh_.set_contacts(&contacts_);
@@ -310,18 +316,9 @@ namespace meshcore {
     }
 
     bool Companion::save_name(){
-        hardware::storage::Handle h;
-
-        if(hardware::storage::open("meshcore", hardware::storage::Access::read_write, h) != ESP_OK)
-            return false;
-
-        esp_err_t err = hardware::storage::write_string(h, "node_name", node_name_);
-
-        if(err == ESP_OK)
-            err = hardware::storage::commit(h);
-
-        hardware::storage::close(h);
-        return err == ESP_OK;
+        struct NameRecord { char name[32]; } saved = {};
+        snprintf(saved.name, sizeof(saved.name), "%s", node_name_);
+        return sdstore::write("/sdcard/meshcore/node.bin", 0x4D434E4DU, saved) == ESP_OK;
     }
 
     bool Companion::update_settings(const Settings &next, bool radio_change){
@@ -416,7 +413,7 @@ namespace meshcore {
         f[i++] = Contacts::CAPACITY / 2;
         f[i++] = Node::CHANNEL_COUNT;
 
-        put_u32(&f[i], settings_.get().ble_pin);
+        put_u32(&f[i], ble_.pairing_pin());
         i += 4;
 
         snprintf(reinterpret_cast<char *>(&f[i]), 12, "%s", "2026-11-20");
@@ -1017,10 +1014,7 @@ namespace meshcore {
                     return;
                 }
 
-                Settings next = before;
-                next.ble_pin = get_u32(&cmd[1]);
-
-                if(!update_settings(next, false)){
+                if(ble_.set_pairing_pin(get_u32(&cmd[1])) != ESP_OK){
                     reply_error(ERR_ILLEGAL , cmd, len);
                     return;
                 }
@@ -1222,7 +1216,7 @@ namespace meshcore {
 
                 put_u16(&f[1], telemetry_.battery_millivolts());
 
-                uint32_t total = hardware::system::storage_partition_kib();
+                uint32_t total = hardware::sd::capacity_kib();
 
                 put_u32(&f[7], total);
 

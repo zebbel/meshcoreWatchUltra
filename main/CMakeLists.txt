@@ -9,6 +9,7 @@ idf_component_register(
 
     REQUIRES
         Bluetooth
+        SD
         Storage
         System
         CO5300

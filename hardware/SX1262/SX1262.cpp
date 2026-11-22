@@ -134,13 +134,15 @@ namespace sx1262 {
         transaction.tx_buffer = spi_tx;
         transaction.rx_buffer = spi_rx;
 
+        if(!board::spi_lock(portMAX_DELAY)) return ESP_ERR_TIMEOUT;
         err = spi_device_acquire_bus(spi_handle, portMAX_DELAY);
-        if(err != ESP_OK) return err;
+        if(err != ESP_OK){ board::spi_unlock(); return err; }
 
         gpio_set_level(board::pins::LORA_CS, 0);
         err = spi_device_polling_transmit(spi_handle, &transaction);
         gpio_set_level(board::pins::LORA_CS, 1);
         spi_device_release_bus(spi_handle);
+        board::spi_unlock();
 
         if(err != ESP_OK) return err;
 

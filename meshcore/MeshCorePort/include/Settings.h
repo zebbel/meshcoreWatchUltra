@@ -5,13 +5,12 @@
 #include "LoRa.h"
 
 namespace meshcore {
-
-    // Persisted POD layout: only append fields after increasing VERSION.
-    // No private identity or BLE bonds are stored here.
+    // MeshCore only. No Bluetooth or GPS control fields.
+    // Persisted with a checksum/version in /sdcard/meshcore/settings.bin.
     struct Settings {
-        static constexpr uint32_t MAGIC = 0x57434836; // WCH6
-        static constexpr uint16_t VERSION = 1;
-        uint32_t magic = MAGIC;
+        static constexpr uint32_t MAGIC_SETTINGS = 0x57434837U; // WCH7
+        static constexpr uint16_t VERSION = 2;
+        uint32_t magic = MAGIC_SETTINGS;
         uint16_t version = VERSION;
         uint16_t reserved = 0;
         uint32_t freq_khz = 869618;
@@ -20,7 +19,6 @@ namespace meshcore {
         uint32_t airtime_factor_milli = 9000;
         int32_t latitude_micro = 0;
         int32_t longitude_micro = 0;
-        uint32_t ble_pin = 0; // 0 = fresh random display code at every new pairing
         uint8_t sf = 8;
         uint8_t cr = 8;
         int8_t tx_power_dbm = 10;
@@ -34,7 +32,6 @@ namespace meshcore {
         uint8_t reserved2 = 0;
         char default_scope_name[31] = {};
         uint8_t default_scope_key[16] = {};
-
         hardware::lora::config_t radio() const;
         bool valid() const;
     };
@@ -47,5 +44,4 @@ namespace meshcore {
     private:
         Settings current_ = {};
     };
-
 }

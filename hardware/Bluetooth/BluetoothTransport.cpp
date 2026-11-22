@@ -1,4 +1,5 @@
 #include "BluetoothTransport.h"
+#include "Storage.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -57,6 +58,33 @@ namespace hardware::bluetooth {
 
 
     Transport::Transport(){}
+
+    esp_err_t Transport::load_pairing_pin(){
+        hardware::storage::Handle h;
+        esp_err_t err = hardware::storage::open("bluetooth", hardware::storage::Access::read_write, h);
+        if(err != ESP_OK) return err;
+        uint32_t value = 0;
+        size_t length = sizeof(value);
+        err = hardware::storage::read_blob(h, "pin", &value, &length);
+        hardware::storage::close(h);
+        if(hardware::storage::is_not_found(err)) return set_pairing_pin(0);
+        if(err != ESP_OK) return err;
+        if(length != sizeof(value) || (value != 0 && (value < 100000 || value > 999999))) return ESP_ERR_INVALID_CRC;
+        configured_pin_.store(value);
+        return ESP_OK;
+    }
+
+    esp_err_t Transport::set_pairing_pin(uint32_t pin){
+        if(pin != 0 && (pin < 100000 || pin > 999999)) return ESP_ERR_INVALID_ARG;
+        hardware::storage::Handle h;
+        esp_err_t err = hardware::storage::open("bluetooth", hardware::storage::Access::read_write, h);
+        if(err != ESP_OK) return err;
+        err = hardware::storage::write_blob(h, "pin", &pin, sizeof(pin));
+        if(err == ESP_OK) err = hardware::storage::commit(h);
+        hardware::storage::close(h);
+        if(err == ESP_OK) configured_pin_.store(pin);
+        return err;
+    }
 
     esp_err_t Transport::begin(const char *name, const Uuids &uuids){
         if(started_ || instance != nullptr) return ESP_ERR_INVALID_STATE;

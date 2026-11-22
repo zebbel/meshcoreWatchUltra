@@ -4,14 +4,18 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
-#include "Storage.h"
+#include "MeshCoreSD.h"
+#include <dirent.h>
 
 namespace meshcore {
     static const char *TAG = "Contacts";
-    static constexpr char NAMESPACE[] = "meshcontacts";
+    static constexpr const char *DIRECTORY = "/sdcard/meshcore/contacts";
+    static constexpr uint32_t CONTACT_MAGIC = 0x4D434354U;
 
-    static void slot_key(int i, char dest[8]){
-        snprintf(dest, 8, "peer%02d", i);
+    static void file_path(const uint8_t pub[PUB_KEY_SIZE], char path[128]){
+        char hex[PUB_KEY_SIZE * 2 + 1] = {};
+        sdstore::hex_key(pub, PUB_KEY_SIZE, hex);
+        snprintf(path, 128, "%s/%s.bin", DIRECTORY, hex);
     }
 
     static uint32_t read_u32(const uint8_t *p){
@@ -33,42 +37,39 @@ namespace meshcore {
     }
 
     esp_err_t Contacts::load(){
-        hardware::storage::Handle h;
+        hardware::sd::Session session;
+        if(!session.ok()) return session.error();
+        esp_err_t err = hardware::sd::ensure_directory(DIRECTORY);
+        if(err != ESP_OK) return err;
+        DIR *dir = opendir(DIRECTORY);
+        if(dir == nullptr) return ESP_FAIL;
+        struct dirent *entry;
+        size_t loaded = 0;
+        while((entry = readdir(dir)) != nullptr){
+            const size_t n = strnlen(entry->d_name, sizeof(entry->d_name));
+            if(n != 68 && n != 72) continue;
 
-        // Load only from the NEW contacts partition.
-        esp_err_t err = hardware::storage::open_partition("contacts", NAMESPACE, hardware::storage::Access::read_write, h);
-
-        if(err != ESP_OK){
-            ESP_LOGE(TAG, "Cannot open contacts partition: %s", esp_err_to_name(err));
-            return err;
-        }
-
-        for(size_t i = 0; i < CAPACITY; i++){
-            char key[8];
-            slot_key(static_cast<int>(i), key);
-
+            char name[80] = {};
+            memcpy(name, entry->d_name, n + 1);
+            // Backups are also candidates, for power-loss recovery.
+            if(n == 72 && strcmp(name + 68, ".bak") == 0){ name[68] = 0; }
+            else if(n != 68) continue;
+            if(strcmp(name + 64, ".bin") != 0) continue;
+            if(loaded >= CAPACITY){ closedir(dir); return ESP_ERR_NO_MEM; }
+            char path[128] = {};
+            snprintf(path, sizeof(path), "%s/%s", DIRECTORY, name);
             Contact item = {};
-            size_t size = sizeof(item);
-
-            err = hardware::storage::read_blob(h, key, &item, &size);
-
-            if(hardware::storage::is_not_found(err)) continue;
-
-            if(err != ESP_OK || size != sizeof(item) || !record_valid(item)){
-
-                ESP_LOGE(TAG, "Invalid contact record %s", key);
-
-                hardware::storage::close(h);
-                return ESP_ERR_INVALID_CRC;
-            }
-
-            contacts_[i] = item;
+            err = sdstore::read(path, CONTACT_MAGIC, item);
+            if(err != ESP_OK){ closedir(dir); return err; }
+            if(!record_valid(item)){ closedir(dir); return ESP_ERR_INVALID_CRC; }
+            char expected[128] = {};
+            file_path(item.public_key, expected);
+            if(strcmp(path, expected) != 0){ closedir(dir); return ESP_ERR_INVALID_CRC; }
+            if(find_slot(item.public_key, PUB_KEY_SIZE) >= 0) continue;
+            contacts_[loaded++] = item;
         }
-
-        hardware::storage::close(h);
-
-        ESP_LOGI(TAG, "Loaded %u contacts from new NVS", static_cast<unsigned>(count()));
-
+        closedir(dir);
+        ESP_LOGI(TAG, "Loaded %u contacts from SD", static_cast<unsigned>(loaded));
         return ESP_OK;
     }
 
@@ -96,41 +97,32 @@ namespace meshcore {
     }
 
 
-    bool Contacts::save_slot(size_t idx, const Contact *value){
-        if(idx >= CAPACITY)
-            return false;
-
-        char key[8];
-        slot_key(static_cast<int>(idx), key);
-
-        hardware::storage::Handle h;
-
-        // Write only to the NEW contacts partition.
-        esp_err_t err = hardware::storage::open_partition("contacts", NAMESPACE, hardware::storage::Access::read_write, h);
-
-        if(err != ESP_OK){
-            ESP_LOGE(TAG, "Cannot open contacts storage: %s", esp_err_to_name(err));
-            return false;
-        }
-
-        if(value != nullptr){
-            err = hardware::storage::write_blob(h, key, value, sizeof(*value));
+    bool Contacts::save_slot(size_t idx, const Contact *value, bool deferred){
+        if(idx >= CAPACITY || !hardware::sd::writable()) return false;
+        const Contact old = contacts_[idx];
+        if(value != nullptr && !record_valid(*value)) return false;
+        char path[128] = {};
+        file_path(value != nullptr ? value->public_key : old.public_key, path);
+        esp_err_t err = ESP_OK;
+        if(deferred){
+            if(value == nullptr) return false;
+            err = sdstore::write(path, CONTACT_MAGIC, *value, true);
         }else{
-            err = hardware::storage::erase(h, key);
+            // Ensure that a previously queued automatic update cannot resurrect
+            // a deleted or explicitly replaced contact.
+            err = hardware::sd::flush_pending();
+            if(err != ESP_OK) return false;
+            err = hardware::sd::cancel_pending(path);
+            if(err != ESP_OK) return false;
+            err = value == nullptr ? hardware::sd::remove_file(path) : sdstore::write(path, CONTACT_MAGIC, *value);
+            if(err == ESP_OK && old.present && value != nullptr && memcmp(old.public_key, value->public_key, PUB_KEY_SIZE) != 0){
+                char old_path[128] = {};
+                file_path(old.public_key, old_path);
+                err = hardware::sd::remove_file(old_path);
+            }
         }
-
-        if(err == ESP_OK)
-            err = hardware::storage::commit(h);
-
-        hardware::storage::close(h);
-
-        if(err != ESP_OK){
-            ESP_LOGE(TAG, "Contact write failed %s: %s", key, esp_err_to_name(err));
-            return false;
-        }
-
-        contacts_[idx] = value ? *value : Contact{};
-
+        if(err != ESP_OK){ ESP_LOGE(TAG, "Cannot save SD contact: %s", esp_err_to_name(err)); return false; }
+        contacts_[idx] = value != nullptr ? *value : Contact{};
         return true;
     }
 
@@ -216,7 +208,7 @@ namespace meshcore {
         if(existing >= 0 && timestamp == c.advert_time) return true; // avoid repeated flash writes
         c.advert_time = timestamp;
         c.lastmod = now ? now : 1;
-        return save_slot(idx, &c);
+        return save_slot(idx, &c, true);
     }
 
     size_t Contacts::to_wire(uint8_t f[WIRE_LENGTH], const Contact &c) const{

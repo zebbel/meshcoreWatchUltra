@@ -1,77 +1,61 @@
-
 #include "IdentityStore.h"
-
 #include <string.h>
+#include <dirent.h>
 #include "ed_25519.h"
 #include "esp_log.h"
-#include "Storage.h"
+#include "MeshCoreSD.h"
 
 namespace meshcore {
-
     static const char *TAG = "IdentityStore";
+    static constexpr const char *PATH = "/sdcard/meshcore/identity.bin";
+    static constexpr uint32_t MAGIC = 0x4D434944U;
 
     esp_err_t load_or_create_identity(mesh::LocalIdentity &identity, mesh::RNG &rng){
-        hardware::storage::Handle handle;
-        esp_err_t err = hardware::storage::open("meshcore", hardware::storage::Access::read_write, handle);
+        hardware::sd::Session session;
+        if(!session.ok()) return session.error();
+        esp_err_t err = hardware::sd::ensure_directory(sdstore::ROOT);
         if(err != ESP_OK) return err;
-
-        uint8_t keypair[PRV_KEY_SIZE + PUB_KEY_SIZE] = {};
-        size_t size = sizeof(keypair);
-        err = hardware::storage::read_blob(handle, "keypair", keypair, &size);
-
+        struct Keypair { uint8_t bytes[PRV_KEY_SIZE + PUB_KEY_SIZE] = {}; } keypair;
+        err = sdstore::read(PATH, MAGIC, keypair);
         if(err == ESP_OK){
-            if(size != sizeof(keypair)){
-                hardware::storage::close(handle);
-                ESP_LOGE(TAG, "Incorrect stored identity length. Will not overwrite it");
-                return ESP_ERR_INVALID_SIZE;
-            }
-
-            uint8_t derived_pub[PUB_KEY_SIZE] = {};
-            ed25519_derive_pub(derived_pub, keypair);
-            if(memcmp(derived_pub, keypair + PRV_KEY_SIZE, PUB_KEY_SIZE) != 0 || !mesh::LocalIdentity::validatePrivateKey(keypair)){
-                memset(keypair, 0, sizeof(keypair));
-                hardware::storage::close(handle);
-                ESP_LOGE(TAG, "Stored identity is invalid. Will not regenerate automatically");
+            uint8_t derived[PUB_KEY_SIZE] = {};
+            ed25519_derive_pub(derived, keypair.bytes);
+            if(memcmp(derived, keypair.bytes + PRV_KEY_SIZE, PUB_KEY_SIZE) != 0 || !mesh::LocalIdentity::validatePrivateKey(keypair.bytes)){
+                memset(&keypair, 0, sizeof(keypair));
                 return ESP_ERR_INVALID_CRC;
             }
-
-            identity.readFrom(keypair, sizeof(keypair));
-            memset(keypair, 0, sizeof(keypair));
-            hardware::storage::close(handle);
-            ESP_LOGI(TAG, "Restored persistent identity %02X%02X%02X%02X", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
+            identity.readFrom(keypair.bytes, sizeof(keypair.bytes));
+            memset(&keypair, 0, sizeof(keypair));
+            ESP_LOGI(TAG, "Identity restored from SD: %02X%02X%02X%02X", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
             return ESP_OK;
         }
-
-        if(hardware::storage::is_not_found(err)){
-            hardware::storage::close(handle);
+        if(err != ESP_ERR_NOT_FOUND){
+            ESP_LOGE(TAG, "Invalid or unreadable identity; refusing to regenerate: %s", esp_err_to_name(err));
             return err;
         }
-
-        for(int tries = 0; tries < 16; tries++){
+        DIR *dir = opendir(sdstore::ROOT);
+        if(dir == nullptr) return ESP_FAIL;
+        bool empty = true;
+        struct dirent *entry;
+        while((entry = readdir(dir)) != nullptr){
+            if(strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0){ empty = false; break; }
+        }
+        closedir(dir);
+        if(!empty){
+            ESP_LOGE(TAG, "Missing identity on populated SD; refusing to generate a replacement");
+            return ESP_ERR_INVALID_STATE;
+        }
+        for(int tries = 0; tries < 16; ++tries){
             mesh::LocalIdentity candidate(&rng);
-            if(candidate.pub_key[0] == 0x00 || candidate.pub_key[0] == 0xFF) continue;
-
-            if(candidate.writeTo(keypair, sizeof(keypair)) != sizeof(keypair)){
-                hardware::storage::close(handle);
-                return ESP_FAIL;
-            }
-            err = hardware::storage::write_blob(handle, "keypair", keypair, sizeof(keypair));
-            if(err == ESP_OK) err = hardware::storage::commit(handle);
-            memset(keypair, 0, sizeof(keypair));
-
-            if(err != ESP_OK){
-                hardware::storage::close(handle);
-                return err;
-            }
-
+            if(candidate.pub_key[0] == 0 || candidate.pub_key[0] == 0xFF) continue;
+            if(candidate.writeTo(keypair.bytes, sizeof(keypair.bytes)) != sizeof(keypair.bytes)) return ESP_FAIL;
+            err = sdstore::write(PATH, MAGIC, keypair);
+            memset(&keypair, 0, sizeof(keypair));
+            if(err != ESP_OK) return err;
             identity = candidate;
-            hardware::storage::close(handle);
-            ESP_LOGI(TAG, "Generated and saved identity %02X%02X%02X%02X", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
+            ESP_LOGI(TAG, "Identity created on SD: %02X%02X%02X%02X", identity.pub_key[0], identity.pub_key[1], identity.pub_key[2], identity.pub_key[3]);
             return ESP_OK;
         }
-
-        hardware::storage::close(handle);
         return ESP_FAIL;
     }
-
 }

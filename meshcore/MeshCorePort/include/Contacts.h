@@ -41,7 +41,7 @@ namespace meshcore {
         size_t to_wire(uint8_t result[WIRE_LENGTH], const Contact &contact) const;
     private:
         Contact contacts_[CAPACITY] = {};
-        bool save_slot(size_t idx, const Contact *record);
+        bool save_slot(size_t idx, const Contact *record, bool deferred = false);
         int find_slot(const uint8_t *pub, size_t prefix_len) const;
     };
 }

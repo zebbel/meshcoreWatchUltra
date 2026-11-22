@@ -39,7 +39,9 @@ namespace hardware::bluetooth {
         bool can_send(size_t length) const;
 
         // Events are consumed from the app_main task, never drawing on NimBLE's host thread.
-        void set_pairing_pin(uint32_t pin){ configured_pin_.store(pin); }
+        esp_err_t load_pairing_pin();
+        esp_err_t set_pairing_pin(uint32_t pin);
+        uint32_t pairing_pin() const { return configured_pin_.load(); }
         uint32_t take_pairing_pin();
         bool take_pairing_clear_event();
 

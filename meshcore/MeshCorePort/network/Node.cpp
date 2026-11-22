@@ -6,7 +6,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "SHA256.h"
-#include "Storage.h"
+#include "MeshCoreSD.h"
 
 namespace meshcore {
 
@@ -31,28 +31,22 @@ namespace meshcore {
     }
 
     esp_err_t Node::load_channels(){
-        hardware::storage::Handle h;
-        esp_err_t err = hardware::storage::open("meshchannels", hardware::storage::Access::read_write, h);
+        hardware::sd::Session session;
+        if(!session.ok()) return session.error();
+        esp_err_t err = hardware::sd::ensure_directory("/sdcard/meshcore/channels");
         if(err != ESP_OK) return err;
         struct Saved { char name[32]; uint8_t key[16]; };
-        for(int i = 0; i < CHANNEL_COUNT; i++){
+        for(int i = 0; i < CHANNEL_COUNT; ++i){
             Saved saved = {};
-            size_t length = sizeof(saved);
-            char key[10];
-            snprintf(key, sizeof(key), "ch%d", i);
-            err = hardware::storage::read_blob(h, key, &saved, &length);
-            if(hardware::storage::is_not_found(err)){
-                continue;
-            }
-            if(err != ESP_OK || length != sizeof(saved) || memchr(saved.name, 0, sizeof(saved.name)) == nullptr){
-                hardware::storage::close(h);
-                return ESP_ERR_INVALID_CRC;
-            }
+            char path[100] = {};
+            snprintf(path, sizeof(path), "/sdcard/meshcore/channels/ch%d.bin", i);
+            err = sdstore::read(path, 0x4D434348U, saved);
+            if(err == ESP_ERR_NOT_FOUND) continue;
+            if(err != ESP_OK || memchr(saved.name, 0, sizeof(saved.name)) == nullptr) return ESP_ERR_INVALID_CRC;
             memcpy(channels_[i].name, saved.name, sizeof(saved.name));
             memcpy(channels_[i].value.secret, saved.key, sizeof(saved.key));
             mesh::Utils::sha256(channels_[i].value.hash, sizeof(channels_[i].value.hash), saved.key, sizeof(saved.key));
         }
-        hardware::storage::close(h);
         return ESP_OK;
     }
 
@@ -74,13 +68,9 @@ namespace meshcore {
         struct Saved { char name[32]; uint8_t key[16]; } saved = {};
         memcpy(saved.name, name, 32);
         memcpy(saved.key, secret, 16);
-        hardware::storage::Handle h;
-        if(hardware::storage::open("meshchannels", hardware::storage::Access::read_write, h) != ESP_OK) return false;
-        char key[10];
-        snprintf(key, sizeof(key), "ch%d", index);
-        esp_err_t err = hardware::storage::write_blob(h, key, &saved, sizeof(saved));
-        if(err == ESP_OK) err = hardware::storage::commit(h);
-        hardware::storage::close(h);
+        char path[100] = {};
+        snprintf(path, sizeof(path), "/sdcard/meshcore/channels/ch%u.bin", static_cast<unsigned>(index));
+        esp_err_t err = sdstore::write(path, 0x4D434348U, saved);
         if(err != ESP_OK) return false;
         memcpy(channels_[index].name, saved.name, 32);
         memset(channels_[index].value.secret, 0, 32);

@@ -10,7 +10,7 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "nvs.h"
+#include "Storage.h"
 
 namespace MIA_M10Q {
 
@@ -247,11 +247,12 @@ namespace MIA_M10Q {
         next_cycle_ms = millis_now();
 
 
-        nvs_handle_t h;
-        if(nvs_open("meshcore", NVS_READONLY, &h) == ESP_OK){
+        hardware::storage::Handle gps_store;
+        if(hardware::storage::open("gps", hardware::storage::Access::read_only, gps_store) == ESP_OK){
             uint8_t value = 1;
-            if(nvs_get_u8(h, "gps_enabled", &value) == ESP_OK && value <= 1) gps_enabled = value != 0;
-            nvs_close(h);
+            size_t length = sizeof(value);
+            if(hardware::storage::read_blob(gps_store, "enabled", &value, &length) == ESP_OK && length == 1 && value <= 1) gps_enabled = value != 0;
+            hardware::storage::close(gps_store);
         }
 
         ESP_LOGI(TAG, "GPS setting loaded: enabled=%d", gps_enabled);
@@ -418,13 +419,13 @@ namespace MIA_M10Q {
         if(!initialized) return ESP_ERR_INVALID_STATE;
         if(gps_enabled == enabled) return ESP_OK;
 
-        nvs_handle_t h;
-        esp_err_t err = nvs_open("meshcore", NVS_READWRITE, &h);
+        hardware::storage::Handle h;
+        esp_err_t err = hardware::storage::open("gps", hardware::storage::Access::read_write, h);
         if(err != ESP_OK) return err;
-
-        err = nvs_set_u8(h, "gps_enabled", enabled ? 1 : 0);
-        if(err == ESP_OK) err = nvs_commit(h);
-        nvs_close(h);
+        const uint8_t value = enabled ? 1 : 0;
+        err = hardware::storage::write_blob(h, "enabled", &value, sizeof(value));
+        if(err == ESP_OK) err = hardware::storage::commit(h);
+        hardware::storage::close(h);
         if(err != ESP_OK) return err;
 
         gps_enabled = enabled;

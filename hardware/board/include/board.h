@@ -9,5 +9,8 @@
 namespace board {
     esp_err_t init();                                                                                   // Initialize shared hardware buses
     i2c_master_bus_handle_t i2c_bus();                                                                  // Get initialized I2C bus
-    spi_host_device_t spi_host();                                                                       // Get SPI host identifier
+    spi_host_device_t spi_host();
+    // Shared SPI2 exclusion for SD mount / LoRa operations.
+    bool spi_lock(uint32_t timeout_ticks);
+    void spi_unlock();                                                                       // Get SPI host identifier
 }

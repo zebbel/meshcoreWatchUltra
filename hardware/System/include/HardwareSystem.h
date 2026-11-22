@@ -10,5 +10,4 @@ namespace hardware::system {
     void enable_boot_random();
     void disable_boot_random();
     void restart();
-    uint32_t storage_partition_kib();
 }

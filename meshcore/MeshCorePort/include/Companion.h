@@ -19,8 +19,10 @@ namespace meshcore {
         Companion(hardware::bluetooth::Transport &ble, Node &mesh, RadioAdapter &radio, SettingsStore &settings, Contacts &contacts, RTCAdapter &rtc, mesh::MillisecondClock &clock, Telemetry &telemetry);
 
         void loop();
+        bool storage_ready() const { return storage_ready_; }
 
     private:
+        bool storage_ready_ = true;
         hardware::bluetooth::Transport &ble_;
         Node &mesh_;
         RadioAdapter &radio_;

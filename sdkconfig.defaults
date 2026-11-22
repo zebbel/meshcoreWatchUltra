@@ -30,3 +30,9 @@ CONFIG_BT_NIMBLE_NVS_PERSIST=y
 CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
 # CONFIG_BT_NIMBLE_LOG_LEVEL_INFO is not set
 # CONFIG_BT_NIMBLE_LOG_LEVEL_DEBUG is not set
+# Full 64-hex-character public-key filenames for MeshCore contacts.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+
+# SD storage file I/O runs under app_main.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=12288

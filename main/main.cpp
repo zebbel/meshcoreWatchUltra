@@ -14,6 +14,7 @@
 #include "LoRa.h"
 #include "GPS.h"
 #include "BluetoothTransport.h"
+#include "SDStorage.h"
 
 static const char *TAG = "MeshCoreWatch";
 
@@ -23,7 +24,6 @@ static esp_err_t init_hardware(){
     if(err == ESP_OK) err = hardware::power::configure();
     if(err == ESP_OK) err = hardware::gpio::init();
     if(err == ESP_OK) err = hardware::gpio::configure();
-    if(err == ESP_OK) err = hardware::lora::init();
     if(err != ESP_OK) ESP_LOGE(TAG, "Hardware init failed: %s", esp_err_to_name(err));
     return err;
 }
@@ -76,28 +76,27 @@ extern "C" void app_main(){
         return;
     }
 
-    err = hardware::storage::init_partition("contacts");
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "Contact NVS initialization failed: %s", esp_err_to_name(err));
-        return;
-    }
-
     if(init_hardware() != ESP_OK) return;
     err = hardware::gps::init();
     if(err != ESP_OK) ESP_LOGW(TAG, "MIA_M10Q unavailable: %s", esp_err_to_name(err));
 
-    err = meshcore::init();
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "MeshCore initialization failed: %s", esp_err_to_name(err));
-        return;
+    err = hardware::sd::init();
+    if(err != ESP_OK) ESP_LOGE(TAG, "SD subsystem failed: %s", esp_err_to_name(err));
+    bool meshcore_enabled = false;
+    if(err == ESP_OK){
+        // Single mount: preload identity, settings, contacts, channels and
+        // node name, then power off SD BEFORE initializing the LoRa radio.
+        err = meshcore::prepare_storage();
+        if(err == ESP_OK) err = hardware::lora::init();
+        if(err == ESP_OK) err = meshcore::init();
+        if(err == ESP_OK) meshcore_enabled = true;
+        if(err != ESP_OK) ESP_LOGE(TAG, "MeshCore disabled; SD/radio unavailable: %s", esp_err_to_name(err));
     }
 
-
-    // Hardware owns the BLE stack and its pairing state. MeshCore uses its frames.
-    // Preserve the legacy fixed-PIN setting until Settings storage is migrated.
+    // Pairing and bonding operate even without the MeshCore SD card.
     auto &bluetooth = hardware::bluetooth::transport();
-    uint32_t applied_ble_pin = meshcore::legacy_ble_pin();
-    bluetooth.set_pairing_pin(applied_ble_pin);
+    err = bluetooth.load_pairing_pin();
+    if(err != ESP_OK){ ESP_LOGE(TAG, "Bluetooth settings invalid: %s", esp_err_to_name(err)); return; }
     err = bluetooth.begin("MeshCore-Watch", meshcore::companion::UUIDS);
     if(err != ESP_OK){
         ESP_LOGE(TAG, "Bluetooth initialization failed: %s", esp_err_to_name(err));
@@ -108,14 +107,7 @@ extern "C" void app_main(){
         log_bluetooth_pairing();
         hardware::gps::loop();
         synchronize_position();
-        meshcore::loop();
-        // Android may update the legacy PIN in Settings. Main applies it to Hardware.
-        const uint32_t requested_ble_pin = meshcore::legacy_ble_pin();
-        if(requested_ble_pin != applied_ble_pin){
-            bluetooth.set_pairing_pin(requested_ble_pin);
-            applied_ble_pin = requested_ble_pin;
-            ESP_LOGI(TAG, "Bluetooth pairing configuration updated");
-        }
+        if(meshcore_enabled) meshcore::loop();
         bluetooth.loop();
         vTaskDelay(pdMS_TO_TICKS(10));
     }
