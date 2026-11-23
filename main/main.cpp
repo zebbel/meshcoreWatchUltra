@@ -195,7 +195,9 @@ static void update_light_sleep_guard() {
     if (!s_auto_light_sleep || s_sleep_guard == nullptr) return;
     hardware::gps::status_t gps{};
     hardware::gps::get_status(gps);
-    const bool must_stay_awake = ui::watch_display::screen_awake() || gps.powered;
+    // MCW_BLE_PERFORMANCE_V1: pairing and active BLE links need low latency.
+    const bool must_stay_awake = ui::watch_display::screen_awake() ||
+                                 gps.powered || hardware::bluetooth::transport().link_active();
     if (must_stay_awake == s_sleep_guard_held) return;
     const esp_err_t err = must_stay_awake
         ? esp_pm_lock_acquire(s_sleep_guard)
@@ -285,12 +287,13 @@ extern "C" void app_main(){
     // MCW_AUTO_LIGHT_SLEEP_V1: configure wake sources after LoRa, touch and BLE init.
     start_light_sleep(meshcore_enabled);
 
-    // MCW_CPU_LORA_IDLE_V1: DIO1 IRQ wakes app_main for RX/TX events.
-    // MeshCore timers, GPS UART and BLE still run at least every 50 ms.
-    // Registration is optional; the periodic timeout remains the recovery path.
+    // MCW_BLE_PERFORMANCE_V1: shared task notifications from LoRa and NimBLE.
+    // Connected BLE gets a 10 ms fallback; idle MeshCore keeps 50 ms.
     if(meshcore_enabled) hardware::lora::set_wakeup_task(xTaskGetCurrentTaskHandle());
+    bluetooth.set_wakeup_task(xTaskGetCurrentTaskHandle());
     constexpr uint32_t kMainLoopWaitMs = 50;
-    ESP_LOGI(TAG, "IRQ-assisted MeshCore loop: <=50 ms idle wait, LoRa DIO1 wake");
+    constexpr uint32_t kActiveBleWaitMs = 10;
+    ESP_LOGI(TAG, "IRQ-assisted MeshCore loop: BLE event wake and 10/50 ms fallback");
 
     while(true){
         restore_wakeup_pins_if_needed();
@@ -302,7 +305,9 @@ extern "C" void app_main(){
         publish_watchface_status(meshcore_enabled);
         update_light_sleep_guard();
         report_light_sleep_exits();
-        // Incoming LoRa RX/TX IRQ wakes immediately; otherwise sleep briefly.
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(kMainLoopWaitMs));
+        // Incoming BLE writes and LoRa IRQs wake immediately.
+        const uint32_t wait_ms = (bluetooth.link_active() || bluetooth.has_pending_tx())
+            ? kActiveBleWaitMs : kMainLoopWaitMs;
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
     }
 }

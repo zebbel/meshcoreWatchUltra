@@ -6,6 +6,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/task.h"
 
 struct ble_gap_event;
 struct ble_gatt_access_ctxt;
@@ -35,6 +36,12 @@ namespace hardware::bluetooth {
         bool send(const uint8_t *data, size_t length);
         bool send_best_effort(const uint8_t *data, size_t length);
         void loop();
+        // MCW_BLE_PERFORMANCE_V1: wake app_main when new BLE frames arrive.
+        void set_wakeup_task(TaskHandle_t task);
+        bool link_active() const { return connection_handle_.load() != 0xFFFF; }
+        bool has_pending_tx() const {
+            return tx_queue_ != nullptr && uxQueueMessagesWaiting(tx_queue_) != 0;
+        }
         bool connected() const { return authenticated_.load(); }
         bool can_send(size_t length) const;
 
@@ -59,16 +66,23 @@ namespace hardware::bluetooth {
         std::atomic<uint32_t> configured_pin_{0};
         std::atomic<bool> clear_pin_{false};
         std::atomic<uint16_t> connection_handle_{0xFFFF};
+        std::atomic<TaskHandle_t> wakeup_task_{nullptr};
         uint16_t tx_handle_ = 0;
         uint8_t own_addr_type_ = 0;
         uint32_t last_notification_ms_ = 0;
+        uint32_t notification_gap_ms_ = 10;
+        uint32_t last_stats_ms_ = 0;
+        uint32_t tx_sent_ = 0;
+        uint32_t tx_retries_ = 0;
+        uint32_t advertising_started_ms_ = 0;
         char device_name_[32] = {};
         bool started_ = false;
 
         int on_gap_event(struct ble_gap_event *event);
         int on_characteristic(uint16_t connection_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt);
         void sync();
-        void advertise();
+        void advertise(bool fast);
+        void wake_main_task();
         void host_loop();
     };
 

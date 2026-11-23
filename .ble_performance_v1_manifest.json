@@ -1,0 +1,14 @@
+{
+  "hardware/Bluetooth/BluetoothTransport.cpp": {
+    "original_sha256": "0e6689a1808d9a6add461404db1dff5092f35185d2596607aade84b6fcc9e816",
+    "patched_sha256": "6537ff230d6675b736b69996f769d14f5787fd7ea326d1c8e2820c748a8d00aa"
+  },
+  "hardware/Bluetooth/include/BluetoothTransport.h": {
+    "original_sha256": "dad3b776b24ddc6c5b077b4e8d38d6d531dfff0cb78f37cc3403fe2cdd111e90",
+    "patched_sha256": "824b2ca1cb2c2ce4275e9d96fffae673b20242f513d9061c21e09faf36cf48d7"
+  },
+  "main/main.cpp": {
+    "original_sha256": "49c63778ca89d5415fd6762dcf2318ab30fe52fab8483f54f50bf58215d9c85e",
+    "patched_sha256": "5e5a40044653da3285e38450c3731b97458cc3a2e40a1efd1f50d4a4b9f62d9e"
+  }
+}
