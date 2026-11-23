@@ -18,38 +18,51 @@ namespace {
     // MCW_ENERGY_STAGE2_V1: no LVGL tick or render task activity while AMOLED is off.
     bool s_adapter_paused = false;
 
-    // Touch wake is handled by DisplayPower, not by LVGL's auto-sleep state machine.
-    // Never call pause() while holding the LVGL lock; it needs the worker to quiesce.
+    // The adapter worker must be paused before CO5300 deep standby/reset.
+    // Never pause while holding the LVGL lock; pause needs a worker ACK.
     esp_err_t apply_panel_awake(bool awake) {
-        if (awake && s_adapter_paused) {
-            const esp_err_t resume_err = esp_lv_adapter_resume();
-            if (resume_err != ESP_OK) return resume_err;
+        if (!awake) {
+            esp_err_t err = esp_lv_adapter_pause(500);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "LVGL pause failed: %s", esp_err_to_name(err));
+                return err;
+            }
+            s_adapter_paused = true;
+            err = hardware::co5300::set_screen_enabled(false);
+            if (err != ESP_OK) {
+                // Do not stop the UI worker if the panel failed to sleep.
+                (void)hardware::co5300::set_screen_enabled(true);
+                if (esp_lv_adapter_resume() == ESP_OK) {
+                    s_adapter_paused = false;
+                    if (esp_lv_adapter_lock(500) == ESP_OK) {
+                        lv_obj_invalidate(lv_screen_active());
+                        esp_lv_adapter_unlock();
+                    }
+                }
+                ESP_LOGW(TAG, "AMOLED sleep failed: %s", esp_err_to_name(err));
+            }
+            return err;
+        }
+
+        // Reinitialize the panel while LVGL is still paused; otherwise the
+        // worker could render before the controller has exited deep standby.
+        esp_err_t err = hardware::co5300::set_screen_enabled(true);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "AMOLED wake failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        if (s_adapter_paused) {
+            err = esp_lv_adapter_resume();
+            if (err != ESP_OK) return err;
             s_adapter_paused = false;
         }
 
-        esp_err_t err = esp_lv_adapter_lock(500);
+        err = esp_lv_adapter_lock(500);
         if (err != ESP_OK) return err;
-        err = hardware::co5300::set_screen_enabled(awake);
-        if (err == ESP_OK && awake) lv_obj_invalidate(lv_screen_active());
+        // Deep standby loses the panel's GRAM contents: redraw everything.
+        lv_obj_invalidate(lv_screen_active());
         esp_lv_adapter_unlock();
-
-        if (err == ESP_OK && !awake) {
-            err = esp_lv_adapter_pause(500);
-            if (err == ESP_OK) {
-                s_adapter_paused = true;
-            } else {
-                // Failure must not leave the panel blank while the policy says awake.
-                if (esp_lv_adapter_lock(500) == ESP_OK) {
-                    (void)hardware::co5300::set_screen_enabled(true);
-                    lv_obj_invalidate(lv_screen_active());
-                    esp_lv_adapter_unlock();
-                }
-            }
-        }
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "AMOLED/LVGL sleep transition failed: %s", esp_err_to_name(err));
-        }
-        return err;
+        return ESP_OK;
     }
 } // namespace
 

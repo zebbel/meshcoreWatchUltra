@@ -20,4 +20,14 @@ menu "MeshcoreWatch CO5300 Display"
         range 0 255
         default 128
 
+    config MCW_AMOLED_DEEP_STANDBY
+        bool "CO5300 AMOLED deep standby when screen is off"
+        default y
+        help
+            Send the CO5300 sleep-in and deep-standby commands when the
+            watch screen times out. The driver resets and reinitializes
+            the panel on touch wake. ESP32, BLE, LoRa and touch power
+            are not turned off. Disable to keep the previous display-off
+            behavior if panel wake is unreliable on your board.
+
 endmenu

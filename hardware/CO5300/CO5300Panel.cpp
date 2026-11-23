@@ -24,6 +24,9 @@ namespace {
     bool s_spi_ready = false;
     bool s_ready = false;
     bool s_screen_enabled = true;
+    // Deep standby replays the panel init table, including brightness=0.
+    // Keep the last requested brightness for an exact wake restoration.
+    uint8_t s_brightness = kInitialBrightness;
 
     // The working T-Watch Ultra sequence is intentionally sent twice.
     // COLMOD 0x3A / MADCTL 0x36 are provided by the Espressif panel config;
@@ -135,6 +138,7 @@ esp_err_t init(size_t max_transfer_bytes) {
     if (err != ESP_OK) { rollback_hardware(); return err; }
 
     s_screen_enabled = true;
+    s_brightness = kInitialBrightness;
     s_ready = true;
     return ESP_OK;
 }
@@ -142,15 +146,51 @@ esp_err_t init(size_t max_transfer_bytes) {
 esp_err_t set_screen_enabled(bool enabled) {
     if (!s_ready || s_panel == nullptr) return ESP_ERR_INVALID_STATE;
     if (s_screen_enabled == enabled) return ESP_OK;
-    const esp_err_t err = esp_lcd_panel_disp_on_off(s_panel, enabled);
-    if (err == ESP_OK) s_screen_enabled = enabled;
+
+    if (!enabled) {
+        esp_err_t err = esp_lcd_panel_disp_on_off(s_panel, false);
+        if (err != ESP_OK) return err;
+#if defined(CONFIG_MCW_AMOLED_DEEP_STANDBY)
+        // CO5300 driver v2.2.0 sends SLPIN and deep-standby, with the
+        // 120 ms settle delay. Keep ALDO2 and the SPI panel handle alive.
+        err = esp_lcd_panel_disp_sleep(s_panel, true);
+        if (err != ESP_OK) {
+            // Best effort: leave the watch usable if standby failed.
+            (void)esp_lcd_panel_disp_sleep(s_panel, false);
+            (void)esp_lcd_panel_co5300_set_brightness(s_panel, s_brightness);
+            (void)esp_lcd_panel_disp_on_off(s_panel, true);
+            ESP_LOGW(TAG, "AMOLED deep standby failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        ESP_LOGI(TAG, "AMOLED entered CO5300 deep standby");
+#endif
+        s_screen_enabled = false;
+        return ESP_OK;
+    }
+
+#if defined(CONFIG_MCW_AMOLED_DEEP_STANDBY)
+    // The driver resets and reinitializes the panel after deep standby.
+    esp_err_t err = esp_lcd_panel_disp_sleep(s_panel, false);
+    if (err != ESP_OK) return err;
+    err = esp_lcd_panel_co5300_set_brightness(s_panel, s_brightness);
+    if (err != ESP_OK) return err;
+#else
+    esp_err_t err = ESP_OK;
+#endif
+    err = esp_lcd_panel_disp_on_off(s_panel, true);
+    if (err == ESP_OK) {
+        s_screen_enabled = true;
+        ESP_LOGI(TAG, "AMOLED panel awake");
+    }
     return err;
 }
 
 esp_err_t set_brightness(uint8_t percentage) {
     if (!s_ready || s_panel == nullptr) return ESP_ERR_INVALID_STATE;
     if (percentage > 100) return ESP_ERR_INVALID_ARG;
-    return esp_lcd_panel_co5300_set_brightness(s_panel, percentage);
+    const esp_err_t err = esp_lcd_panel_co5300_set_brightness(s_panel, percentage);
+    if (err == ESP_OK) s_brightness = percentage;
+    return err;
 }
 
 bool ready() { return s_ready; }
