@@ -110,8 +110,9 @@ namespace meshcore {
         }else{
             // Ensure that a previously queued automatic update cannot resurrect
             // a deleted or explicitly replaced contact.
-            err = hardware::sd::flush_pending();
-            if(err != ESP_OK) return false;
+            // A manual contact change or a newly discovered contact must be
+            // persisted now. Keep unrelated advert updates queued for their
+            // normal 30-minute flush; cancel only this contact's stale data.
             err = hardware::sd::cancel_pending(path);
             if(err != ESP_OK) return false;
             err = value == nullptr ? hardware::sd::remove_file(path) : sdstore::write(path, CONTACT_MAGIC, *value);
@@ -208,7 +209,10 @@ namespace meshcore {
         if(existing >= 0 && timestamp == c.advert_time) return true; // avoid repeated flash writes
         c.advert_time = timestamp;
         c.lastmod = now ? now : 1;
-        return save_slot(idx, &c, true);
+        // Auto-discovered NEW contacts must be persisted immediately.
+        // Existing contacts only update their queued SD snapshot. A new
+        // advert replaces the previous queued snapshot for that public key.
+        return save_slot(idx, &c, existing >= 0);
     }
 
     size_t Contacts::to_wire(uint8_t f[WIRE_LENGTH], const Contact &c) const{

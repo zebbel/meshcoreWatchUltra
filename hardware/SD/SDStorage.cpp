@@ -32,7 +32,8 @@ namespace hardware::sd {
     static bool storage_fault = false;
     static bool cached_present = false;
     static uint32_t last_detect_ms = 0;
-    static constexpr uint32_t DEFER_MS = 60000;
+    // Automatically learned contact advert updates are coalesced in RAM for 30 minutes.
+    static constexpr uint32_t DEFER_MS = 30U * 60U * 1000U;
     static constexpr size_t MAX_DEFERRED = 64;
 
     struct Deferred {
@@ -180,7 +181,9 @@ namespace hardware::sd {
 
     static void worker(void *){
         while(true){
-            vTaskDelay(pdMS_TO_TICKS(5000));
+            // MCW_ENERGY_STAGE2_V1: 30-second cadence for infrequent SD batches.
+            // Deferred writes still coalesce; explicit writes stay immediate.
+            vTaskDelay(pdMS_TO_TICKS(30000));
             if(pending_mutex == nullptr) continue;
             if(xSemaphoreTake(pending_mutex, pdMS_TO_TICKS(100)) != pdTRUE) continue;
             const uint32_t now = static_cast<uint32_t>(xTaskGetTickCount() * portTICK_PERIOD_MS);

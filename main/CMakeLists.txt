@@ -22,4 +22,7 @@ idf_component_register(
         nvs_flash
         esp_timer
         freertos
+        esp_pm # MCW_ENERGY_STAGE2_V1
+        esp_hw_support # MCW_AUTO_LIGHT_SLEEP_V1
+        esp_driver_gpio
 )

@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "Board.cpp" "board.cpp"
+    SRCS "board.cpp"
     INCLUDE_DIRS "include"
     REQUIRES
         esp_driver_gpio

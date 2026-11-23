@@ -15,16 +15,39 @@ namespace {
     const char *const TAG = "WatchDisplay";
     bool s_adapter_ready = false;
     bool s_ready = false;
+    // MCW_ENERGY_STAGE2_V1: no LVGL tick or render task activity while AMOLED is off.
+    bool s_adapter_paused = false;
 
-    // LVGL owns rendering. Serialize panel on/off with its flush task.
+    // Touch wake is handled by DisplayPower, not by LVGL's auto-sleep state machine.
+    // Never call pause() while holding the LVGL lock; it needs the worker to quiesce.
     esp_err_t apply_panel_awake(bool awake) {
+        if (awake && s_adapter_paused) {
+            const esp_err_t resume_err = esp_lv_adapter_resume();
+            if (resume_err != ESP_OK) return resume_err;
+            s_adapter_paused = false;
+        }
+
         esp_err_t err = esp_lv_adapter_lock(500);
         if (err != ESP_OK) return err;
         err = hardware::co5300::set_screen_enabled(awake);
         if (err == ESP_OK && awake) lv_obj_invalidate(lv_screen_active());
         esp_lv_adapter_unlock();
+
+        if (err == ESP_OK && !awake) {
+            err = esp_lv_adapter_pause(500);
+            if (err == ESP_OK) {
+                s_adapter_paused = true;
+            } else {
+                // Failure must not leave the panel blank while the policy says awake.
+                if (esp_lv_adapter_lock(500) == ESP_OK) {
+                    (void)hardware::co5300::set_screen_enabled(true);
+                    lv_obj_invalidate(lv_screen_active());
+                    esp_lv_adapter_unlock();
+                }
+            }
+        }
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "AMOLED display power command failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "AMOLED/LVGL sleep transition failed: %s", esp_err_to_name(err));
         }
         return err;
     }

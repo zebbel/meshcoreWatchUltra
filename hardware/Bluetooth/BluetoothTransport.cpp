@@ -209,6 +209,10 @@ namespace hardware::bluetooth {
         ble_gap_adv_params params = {};
         params.conn_mode = BLE_GAP_CONN_MODE_UND;
         params.disc_mode = BLE_GAP_DISC_MODE_GEN;
+        // MCW_ENERGY_STAGE2_V1: 500-640 ms advertising (0.625 ms BLE units).
+        // Advertising remains continuous; discovery takes slightly longer.
+        params.itvl_min = 0x0320;
+        params.itvl_max = 0x0400;
         if(rc == 0){
             rc = ble_gap_adv_start(own_addr_type_, nullptr, BLE_HS_FOREVER, &params, bluetooth_gap_callback, nullptr);
         }
@@ -268,6 +272,20 @@ namespace hardware::bluetooth {
                     authenticated_.store(true);
                     clear_pin_.store(true);
                     ESP_LOGI(TAG, "Authenticated BLE bond established");
+                    // MCW_ENERGY_STAGE2_V1: request 100-150 ms idle-friendly
+                    // connection interval (1.25 ms units), no slave latency.
+                    // The phone may reject this. The connection then continues
+                    // with its original parameters, without protocol changes.
+                    ble_gap_upd_params params = {};
+                    params.itvl_min = 80;
+                    params.itvl_max = 120;
+                    params.latency = 0;
+                    params.supervision_timeout = 600; // 6 seconds (10 ms units)
+                    const int update_rc = ble_gap_update_params(
+                        event->enc_change.conn_handle, &params);
+                    if (update_rc != 0) {
+                        ESP_LOGW(TAG, "BLE power-saving interval request rejected: %d", update_rc);
+                    }
                 }else{
                     authenticated_.store(false);
                     ESP_LOGW(TAG, "BLE authentication not established");

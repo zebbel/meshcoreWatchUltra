@@ -2,6 +2,7 @@
 #include "SX1262.h"
 
 #include <string.h>
+#include <atomic>
 
 #include "AXP2101.h"
 #include "XL9555.h"
@@ -88,13 +89,27 @@ namespace sx1262 {
     static TickType_t tx_timeout_ticks = 0;
     static config_t current_config;
 
+    // MCW_CPU_LORA_IDLE_V1: DIO1 wakes the MeshCore main task without doing SPI in ISR.
+    static std::atomic<TaskHandle_t> wakeup_task{nullptr};
+    // Periodic recovery check catches a lost interrupt / DIO1 wiring problem.
+    static TickType_t last_rx_irq_check = 0;
+    static constexpr uint32_t RX_IRQ_RECOVERY_MS = 1000;
+
     static void IRAM_ATTR dio1_isr(void *arg){
         (void)arg;
         if(irq_semaphore == nullptr) return;
 
         BaseType_t higher_priority_task_woken = pdFALSE;
         xSemaphoreGiveFromISR(irq_semaphore, &higher_priority_task_woken);
+        TaskHandle_t main_task = wakeup_task.load(std::memory_order_relaxed);
+        if(main_task != nullptr) {
+            vTaskNotifyGiveFromISR(main_task, &higher_priority_task_woken);
+        }
         if(higher_priority_task_woken) portYIELD_FROM_ISR();
+    }
+
+    void set_wakeup_task(TaskHandle_t task) {
+        wakeup_task.store(task, std::memory_order_relaxed);
     }
 
     static esp_err_t lock_radio(){
@@ -313,6 +328,8 @@ namespace sx1262 {
         esp_err_t err = AXP2101::disable(AXP2101::rail_t::radio);
         if(err != ESP_OK) ESP_LOGW(TAG, "Unable to disable radio power: %s", esp_err_to_name(err));
 
+        wakeup_task.store(nullptr, std::memory_order_relaxed);
+        last_rx_irq_check = 0;
         initialized = false;
         configured = false;
         receiving = false;
@@ -626,6 +643,18 @@ namespace sx1262 {
             return ESP_ERR_INVALID_STATE;
         }
 
+        // DIO1 stays asserted until the mapped SX126x IRQ is cleared.
+        // Avoid an SPI transaction on every idle MeshCore loop iteration.
+        // Check once per second anyway as a lost-interrupt recovery path.
+        const TickType_t now = xTaskGetTickCount();
+        const bool dio1_high = gpio_get_level(board::pins::LORA_DIO1) != 0;
+        if (!dio1_high &&
+            static_cast<TickType_t>(now - last_rx_irq_check) < pdMS_TO_TICKS(RX_IRQ_RECOVERY_MS)) {
+            xSemaphoreGive(radio_mutex);
+            return ESP_OK;
+        }
+        last_rx_irq_check = now;
+
         uint16_t irq = 0;
         err = get_irq(irq);
         if(err != ESP_OK){
@@ -914,6 +943,13 @@ namespace sx1262 {
         }else if(!tx_active){
             err = ESP_ERR_INVALID_STATE;
         }else{
+            // TX_DONE / TIMEOUT are on DIO1 too. Avoid busy SPI polling,
+            // but retain the software TX timeout if the IRQ is lost.
+            if(gpio_get_level(board::pins::LORA_DIO1) == 0 &&
+                static_cast<TickType_t>(xTaskGetTickCount() - tx_started) < tx_timeout_ticks){
+                xSemaphoreGive(radio_mutex);
+                return ESP_OK;
+            }
             uint16_t irq = 0;
             err = get_irq(irq);
             if(err == ESP_OK){

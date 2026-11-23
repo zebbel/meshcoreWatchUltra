@@ -1,6 +1,8 @@
 #include "DisplayPower.h"
 
 #include "CST9217.h"
+#include "board_pins.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -11,7 +13,9 @@
 namespace services::display_power {
 namespace {
     const char *const TAG = "DisplayPower";
-    constexpr uint32_t kWaitPeriodMs = 50;
+    // MCW_CPU_LORA_IDLE_V1: sleep until next real display timeout or touch IRQ.
+    // MCW_AUTO_LIGHT_SLEEP_V1: recover touch edges that happen during light sleep.
+    constexpr uint32_t kScreenOffRecheckMs = 250;
 
     ScreenControl s_screen_control = nullptr;
     TaskHandle_t s_task = nullptr;
@@ -25,8 +29,18 @@ namespace {
     void policy_task(void *) {
         bool touch_communication_ok = true;
         while (true) {
-            const uint32_t events = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(kWaitPeriodMs));
-            if (events > 0) {
+            const uint32_t idle_ms = static_cast<uint32_t>(uptime_ms() - s_last_activity_ms.load());
+            const uint32_t remaining_ms = idle_ms < s_timeout_ms ? s_timeout_ms - idle_ms : 1;
+            // Screen awake: wake at its timeout. Screen off: touch IRQ wakes
+            // immediately; the long fallback also sees external wake requests.
+            const uint32_t wait_ms = s_screen_awake.load() ? remaining_ms : kScreenOffRecheckMs;
+            const TickType_t wait_ticks = pdMS_TO_TICKS(wait_ms) > 0 ? pdMS_TO_TICKS(wait_ms) : 1;
+            const uint32_t events = ulTaskNotifyTake(pdTRUE, wait_ticks);
+            // MCW_AUTO_LIGHT_SLEEP_V1: EXT0 can wake before digital IRQ is
+            // restored. A latched active-low GPIO12 still needs an I2C ACK.
+            const bool pending_touch_level = !s_screen_awake.load() &&
+                gpio_get_level(board::pins::TOUCH_IRQ) == 0;
+            if (events > 0 || pending_touch_level) {
                 hardware::cst9217::TouchPoint point{};
                 const esp_err_t err = hardware::cst9217::read_interrupt(point);
                 if (err != ESP_OK) {

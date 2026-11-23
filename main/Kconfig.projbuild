@@ -1,0 +1,9 @@
+menu "MeshCore Watch power"
+    config MCW_AUTO_LIGHT_SLEEP
+        bool "Automatic light sleep while display and GPS are idle"
+        default y
+        help
+            Allows ESP-IDF tickless idle to use light sleep when LoRa RX,
+            touch IRQ and BLE are available, but screen and GNSS are idle.
+            Turn off to retain Stage 2 dynamic frequency scaling without sleep.
+endmenu

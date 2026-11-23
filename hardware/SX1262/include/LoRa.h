@@ -1,6 +1,8 @@
 #pragma once
 
 #include "SX1262.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h" // TaskHandle_t for IRQ wakeups
 
 namespace hardware::lora {
     using config_t = sx1262::config_t;
@@ -9,6 +11,8 @@ namespace hardware::lora {
     esp_err_t configure(const config_t &config);
     esp_err_t start_receive();
     esp_err_t poll_receive(packet_t &packet, bool &available);
+    // MCW_CPU_LORA_IDLE_V1: optional main-task wakeup via LoRa DIO1 ISR.
+    void set_wakeup_task(TaskHandle_t task);
     esp_err_t channel_busy(bool &busy);
     esp_err_t start_transmit(const uint8_t *data, size_t length, uint32_t timeout_ms = 10000);
     esp_err_t poll_transmit(bool &completed);

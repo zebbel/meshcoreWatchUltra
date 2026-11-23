@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h" // TaskHandle_t for IRQ wakeups
 
 namespace sx1262 {
 
@@ -43,6 +45,8 @@ namespace sx1262 {
     // Nonblocking operations for MeshCore integration
     esp_err_t start_receive();
     esp_err_t poll_receive(packet_t &packet, bool &available);
+    // MCW_CPU_LORA_IDLE_V1: optional main-task wakeup via LoRa DIO1 ISR.
+    void set_wakeup_task(TaskHandle_t task);
 
     // Check LoRa channel activity using SX1262 CAD.
     // busy is true when a signal is detected or the check cannot complete.

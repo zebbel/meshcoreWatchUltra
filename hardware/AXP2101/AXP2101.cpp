@@ -1,5 +1,6 @@
 
 #include "AXP2101.h"
+#include "Storage.h"
 
 #include "board.h"
 #include "board_pins.h"
@@ -23,6 +24,23 @@ namespace AXP2101 {
     static constexpr uint8_t REG_BATTERY_PC = 0xA4;
 
     static constexpr uint8_t CHIP_ID = 0x4A;
+
+    // The original 128-byte battery gauge model supplied by LilyGO for
+    // T-Watch Ultra. Source: LilyGoLib/src/LilyGoWatchUltra.cpp (MIT license).
+    static constexpr uint8_t LILYGO_WATCH_ULTRA_BATTERY_MODEL[128] = {
+        0x01, 0xf5, 0x40, 0x00, 0x1b, 0x1e, 0x28, 0x0f, 0x0c, 0x1e, 0x32, 0x02, 0x14, 0x05, 0x0a, 0x04,
+        0x74, 0xfc, 0xf4, 0x0d, 0x43, 0x10, 0x52, 0xfb, 0xa6, 0x01, 0xea, 0x04, 0x64, 0x06, 0x52, 0x06,
+        0x18, 0x0a, 0xe7, 0x0f, 0x9f, 0x0f, 0x51, 0x09, 0xf7, 0x0e, 0x89, 0x0e, 0x71, 0x04, 0x58, 0x04,
+        0x43, 0x09, 0x32, 0x0e, 0x1c, 0x0e, 0x14, 0x09, 0x04, 0x0d, 0xe9, 0x0d, 0xde, 0x03, 0xc8, 0x03,
+        0xb3, 0x08, 0x9d, 0x0d, 0x79, 0x0d, 0x3a, 0x07, 0xf5, 0x9e, 0x56, 0x47, 0x36, 0x20, 0x24, 0x17,
+        0xc5, 0x98, 0x7e, 0x66, 0x4e, 0x44, 0x38, 0x1a, 0x12, 0x0a, 0xf6, 0x00, 0x00, 0xf6, 0x00, 0xf6,
+        0x00, 0xfb, 0x00, 0x00, 0xfb, 0x00, 0x00, 0xfb, 0x00, 0x00, 0xf6, 0x00, 0x00, 0xf6, 0x00, 0xf6,
+        0x00, 0xfb, 0x00, 0x00, 0xfb, 0x00, 0x00, 0xfb, 0x00, 0x00, 0xf6, 0x00, 0x00, 0xf6, 0x00, 0xf6,
+    };
+    static constexpr uint8_t LILYGO_MODEL_VERSION = 1;
+    static constexpr uint8_t REG_GAUGE_RESET = 0x17;
+    static constexpr uint8_t REG_BATTERY_PARAMETERS = 0xA1;
+    static constexpr uint8_t REG_GAUGE_CONTROL = 0xA2;
 
     static esp_err_t read_register(uint8_t reg, uint8_t *data, size_t len){
         if(pmu_handle == nullptr)
@@ -144,6 +162,106 @@ namespace AXP2101 {
         }
 
         return ESP_OK;
+    }
+
+    // Match the AXP2101 gauge-ROM programming protocol from XPowersLib.
+    // The battery model is written ONCE (after NVS marker check), not at
+    // every boot. The PMU's state is restored even if verification fails.
+    static esp_err_t gauge_control_bit(uint8_t reg, uint8_t bit, bool enabled){
+        uint8_t value = 0;
+        esp_err_t err = read_register(reg, &value, 1);
+        if(err != ESP_OK) return err;
+        const uint8_t mask = static_cast<uint8_t>(1U << bit);
+        value = enabled ? static_cast<uint8_t>(value | mask)
+                        : static_cast<uint8_t>(value & ~mask);
+        return write_axp_register(reg, value);
+    }
+
+    static esp_err_t reset_gauge(){
+        esp_err_t err = gauge_control_bit(REG_GAUGE_RESET, 2, true);
+        if(err != ESP_OK) return err;
+        return gauge_control_bit(REG_GAUGE_RESET, 2, false);
+    }
+
+    static esp_err_t select_gauge_rom(){
+        // The ROM/SRAM selection can survive an earlier firmware session.
+        // Explicitly select ROM before starting the serial model interface.
+        esp_err_t err = gauge_control_bit(REG_GAUGE_CONTROL, 4, false);
+        if(err != ESP_OK) return err;
+        err = gauge_control_bit(REG_GAUGE_CONTROL, 0, false);
+        if(err != ESP_OK) return err;
+        return gauge_control_bit(REG_GAUGE_CONTROL, 0, true);
+    }
+
+    static esp_err_t program_lilygo_battery_model(){
+        esp_err_t err = reset_gauge();
+        if(err != ESP_OK) return err;
+        err = select_gauge_rom();
+        if(err != ESP_OK) goto cleanup;
+
+        for(uint8_t value : LILYGO_WATCH_ULTRA_BATTERY_MODEL){
+            err = write_axp_register(REG_BATTERY_PARAMETERS, value);
+            if(err != ESP_OK) goto cleanup;
+        }
+
+        // XPowers writeGaugeData(): latch the ROM table before readback.
+        err = select_gauge_rom();
+        if(err != ESP_OK) goto cleanup;
+        // XPowers compareGaugeData(): restart ROM read pointer, then read 128.
+        err = select_gauge_rom();
+        if(err != ESP_OK) goto cleanup;
+        for(uint8_t expected : LILYGO_WATCH_ULTRA_BATTERY_MODEL){
+            uint8_t actual = 0;
+            err = read_register(REG_BATTERY_PARAMETERS, &actual, 1);
+            if(err != ESP_OK) goto cleanup;
+            if(actual != expected){
+                ESP_LOGE(TAG, "LilyGO AXP2101 battery model readback mismatch");
+                err = ESP_ERR_INVALID_CRC;
+                goto cleanup;
+            }
+        }
+
+    cleanup:
+        // Exit ROM access and select the normal gauge data interface.
+        // Preserve the first failure, but still attempt every cleanup step.
+        esp_err_t restore = gauge_control_bit(REG_GAUGE_CONTROL, 0, false);
+        if(err == ESP_OK) err = restore;
+        restore = gauge_control_bit(REG_GAUGE_CONTROL, 4, true);
+        if(err == ESP_OK) err = restore;
+        restore = reset_gauge();
+        if(err == ESP_OK) err = restore;
+        return err;
+    }
+
+    static esp_err_t ensure_lilygo_battery_model(){
+        hardware::storage::Handle model_store;
+        esp_err_t err = hardware::storage::open("axp2101", hardware::storage::Access::read_write, model_store);
+        if(err != ESP_OK) return err;
+
+        uint8_t stored_version = 0;
+        size_t length = sizeof(stored_version);
+        err = hardware::storage::read_blob(model_store, "lilygo_gauge", &stored_version, &length);
+        if(err == ESP_OK && length == sizeof(stored_version) && stored_version == LILYGO_MODEL_VERSION){
+            hardware::storage::close(model_store);
+            ESP_LOGI(TAG, "LilyGO T-Watch Ultra battery model already installed");
+            return ESP_OK;
+        }
+        if(err != ESP_OK && !hardware::storage::is_not_found(err)){
+            hardware::storage::close(model_store);
+            return err;
+        }
+
+        ESP_LOGI(TAG, "Installing LilyGO T-Watch Ultra AXP2101 fuel-gauge model");
+        err = program_lilygo_battery_model();
+        if(err == ESP_OK){
+            // Only mark success AFTER the full 128-byte ROM readback passed.
+            err = hardware::storage::write_blob(model_store, "lilygo_gauge",
+                                                 &LILYGO_MODEL_VERSION, sizeof(LILYGO_MODEL_VERSION));
+            if(err == ESP_OK) err = hardware::storage::commit(model_store);
+        }
+        hardware::storage::close(model_store);
+        if(err == ESP_OK) ESP_LOGI(TAG, "LilyGO battery model verified and saved in NVS");
+        return err;
     }
 
     static esp_err_t set_voltage_reg(uint8_t reg, uint16_t millivolts){
@@ -297,6 +415,15 @@ namespace AXP2101 {
         // Enable battery/VBUS ADC measurements.
         err = update_axp_register(0x30, 0x05, 0x05);
         if(err != ESP_OK) return err;
+
+        // Like LilyGO's official firmware, program its battery model once.
+        // An absent/failed calibration does not stop the watch booting; on
+        // failure the next boot may retry, with warning in serial logs.
+        err = ensure_lilygo_battery_model();
+        if(err != ESP_OK){
+            ESP_LOGW(TAG, "LilyGO fuel-gauge setup failed (%s); using existing gauge state",
+                     esp_err_to_name(err));
+        }
 
         static constexpr rail_t rails[] = { rail_t::sd, rail_t::display, rail_t::radio, rail_t::sensor, rail_t::gps, rail_t::speaker, rail_t::nfc };
 

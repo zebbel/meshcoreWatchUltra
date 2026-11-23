@@ -19,7 +19,8 @@ namespace MIA_M10Q {
     static constexpr uart_port_t GPS_UART = UART_NUM_1;
 
     static constexpr uint32_t FIX_MAX_AGE_MS = 120000;
-    static constexpr uint32_t ACQUISITION_PERIOD_MS = 15 * 60 * 1000;
+    static constexpr uint32_t ACQUISITION_PERIOD_MS = 15U * 60U * 1000U;
+    static constexpr uint32_t MAX_RETRY_PERIOD_MS = 120U * 60U * 1000U;
     static constexpr uint32_t ACQUISITION_TIMEOUT_MS = 5 * 60 * 1000;
     static constexpr uint32_t FIX_HOLD_MS = 15000;
     static constexpr uint32_t MIN_OFF_MS = 30000;
@@ -29,6 +30,8 @@ namespace MIA_M10Q {
     static bool powered = false;
     static bool gps_enabled = true;
     static bool have_cycle_fix = false;
+    // RAM-only retry state: restart with the normal interval after reboot.
+    static uint8_t consecutive_misses = 0;
 
     static uint32_t started_ms = 0;
     static uint32_t first_fix_ms = 0;
@@ -366,9 +369,24 @@ namespace MIA_M10Q {
 
         powered = false;
         stopped_ms = now;
-        next_cycle_ms = now + ACQUISITION_PERIOD_MS;
 
-        ESP_LOGI(TAG, "GNSS acquisition finished, fix=%d", have_cycle_fix);
+        // Failed acquisition: 30, 60, then 120 minutes between attempts.
+        // Any valid fix returns the wait to 15 minutes. Disabling GPS
+        // does not count as an acquisition failure.
+        if (have_cycle_fix || !gps_enabled) {
+            consecutive_misses = 0;
+        } else if (consecutive_misses < 3) {
+            ++consecutive_misses;
+        }
+        uint32_t retry_ms = ACQUISITION_PERIOD_MS;
+        for (uint8_t i = 0; i < consecutive_misses; ++i) {
+            retry_ms *= 2U;
+        }
+        if (retry_ms > MAX_RETRY_PERIOD_MS) retry_ms = MAX_RETRY_PERIOD_MS;
+        next_cycle_ms = now + retry_ms;
+
+        ESP_LOGI(TAG, "GNSS acquisition finished, fix=%d, next attempt in %lu min",
+                 have_cycle_fix, static_cast<unsigned long>(retry_ms / 60000U));
     }
 
     static void consume(uint8_t ch, uint32_t now){
@@ -506,6 +524,7 @@ namespace MIA_M10Q {
         sentence_length = 0;
 
         if(enabled){
+            consecutive_misses = 0;
             next_cycle_ms = millis_now();
             ESP_LOGI(TAG, "GPS enabled by companion app");
         }else{
