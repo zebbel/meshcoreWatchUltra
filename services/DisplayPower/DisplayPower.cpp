@@ -5,8 +5,11 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_pm.h"
+#include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 #include <atomic>
 
@@ -23,6 +26,43 @@ namespace {
     std::atomic<bool> s_screen_awake{true};
     std::atomic<uint32_t> s_last_activity_ms{0};
     bool s_started = false;
+
+    // MCW_DISPLAY_WAKE_GUARD_V1: own the PM lock in the display service,
+    // not in the main loop. A touch can wake the panel before app_main
+    // observes the screen-awake flag and reacquires its legacy PM guard.
+    // Serialize screen transitions, including external wake calls.
+    SemaphoreHandle_t s_transition_mutex = nullptr;
+#if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && CONFIG_MCW_AUTO_LIGHT_SLEEP && CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+    esp_pm_lock_handle_t s_display_sleep_lock = nullptr;
+    bool s_display_sleep_lock_held = false; // protected by transition mutex
+
+    esp_err_t display_lock_acquire() {
+        if (s_display_sleep_lock_held) return ESP_OK;
+        const esp_err_t err = esp_pm_lock_acquire(s_display_sleep_lock);
+        if (err == ESP_OK) {
+            s_display_sleep_lock_held = true;
+            ESP_LOGI(TAG, "Display NO_LIGHT_SLEEP lock acquired");
+        } else {
+            ESP_LOGE(TAG, "Display PM lock acquire failed: %s", esp_err_to_name(err));
+        }
+        return err;
+    }
+
+    void display_lock_release() {
+        if (!s_display_sleep_lock_held) return;
+        const esp_err_t err = esp_pm_lock_release(s_display_sleep_lock);
+        if (err == ESP_OK) {
+            s_display_sleep_lock_held = false;
+            ESP_LOGI(TAG, "Display NO_LIGHT_SLEEP lock released");
+        } else {
+            // Keep the held flag: retry on another successful screen-off.
+            ESP_LOGE(TAG, "Display PM lock release failed: %s", esp_err_to_name(err));
+        }
+    }
+#else
+    esp_err_t display_lock_acquire() { return ESP_OK; }
+    void display_lock_release() {}
+#endif
 
     uint32_t uptime_ms() { return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL); }
 
@@ -90,6 +130,28 @@ esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms) {
     esp_err_t err = hardware::cst9217::init();
     if (err != ESP_OK) return err;
 
+    s_transition_mutex = xSemaphoreCreateMutex();
+    if (s_transition_mutex == nullptr) return ESP_ERR_NO_MEM;
+#if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && CONFIG_MCW_AUTO_LIGHT_SLEEP && CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+    // Acquire before the main task enables automatic light sleep.
+    err = esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0,
+                             "amoled-active", &s_display_sleep_lock);
+    if (err != ESP_OK) {
+        vSemaphoreDelete(s_transition_mutex);
+        s_transition_mutex = nullptr;
+        ESP_LOGE(TAG, "Display PM lock creation failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = display_lock_acquire();
+    if (err != ESP_OK) {
+        esp_pm_lock_delete(s_display_sleep_lock);
+        s_display_sleep_lock = nullptr;
+        vSemaphoreDelete(s_transition_mutex);
+        s_transition_mutex = nullptr;
+        return err;
+    }
+#endif
+
     s_screen_control = apply_screen_awake;
     s_timeout_ms = timeout_ms;
     s_last_activity_ms.store(uptime_ms());
@@ -97,6 +159,15 @@ esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms) {
 
     if (xTaskCreate(policy_task, "display_power", 4096, nullptr, 4, &s_task) != pdPASS) {
         s_screen_control = nullptr;
+        display_lock_release();
+#if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && CONFIG_MCW_AUTO_LIGHT_SLEEP && CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+        if (!s_display_sleep_lock_held) {
+            esp_pm_lock_delete(s_display_sleep_lock);
+            s_display_sleep_lock = nullptr;
+        }
+#endif
+        vSemaphoreDelete(s_transition_mutex);
+        s_transition_mutex = nullptr;
         return ESP_ERR_NO_MEM;
     }
     hardware::cst9217::set_notification_task(s_task);
@@ -106,15 +177,34 @@ esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms) {
 }
 
 esp_err_t set_screen_awake(bool awake) {
-    if (s_screen_control == nullptr) return ESP_ERR_INVALID_STATE;
-    if (s_screen_awake.load() == awake) return ESP_OK;
-    const esp_err_t err = s_screen_control(awake);
-    if (err == ESP_OK) {
-        s_screen_awake.store(awake);
-        // Any explicit wake request should restart the idle timeout,
-        // including future button or application wake sources.
-        if (awake) notify_activity();
+    if (s_screen_control == nullptr || s_transition_mutex == nullptr)
+        return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(s_transition_mutex, pdMS_TO_TICKS(3000)) != pdTRUE)
+        return ESP_ERR_TIMEOUT;
+
+    esp_err_t err = ESP_OK;
+    if (s_screen_awake.load() != awake) {
+        if (awake) {
+            // Crucial: acquire BEFORE panel reset, SPI writes or LVGL resume.
+            // Even if app_main is still asleep, auto light sleep is inhibited.
+            err = display_lock_acquire();
+        }
+        if (err == ESP_OK) err = s_screen_control(awake);
+        if (err == ESP_OK) {
+            s_screen_awake.store(awake);
+            if (awake) {
+                notify_activity();
+            } else {
+                // Release only after LVGL has stopped and CO5300 is asleep.
+                display_lock_release();
+            }
+        } else if (awake) {
+            // Fail-safe: a partially reinitialized panel must not go straight
+            // back to CPU light sleep; the next touch can retry the wake.
+            ESP_LOGW(TAG, "AMOLED wake incomplete; keeping CPU light sleep blocked");
+        }
     }
+    xSemaphoreGive(s_transition_mutex);
     return err;
 }
 

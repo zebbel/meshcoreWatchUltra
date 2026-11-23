@@ -7,6 +7,8 @@
 
 #include "esp_lv_adapter.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "lvgl.h"
 
 namespace ui::watch_display {
@@ -28,6 +30,11 @@ namespace {
                 return err;
             }
             s_adapter_paused = true;
+            // MCW_DISPLAY_WAKE_GUARD_V1: LVGL pause ACK stops new frames,
+            // but the SPI QSPI DMA path may still be finishing a stripe.
+            // Give its short transfer queue a settling window while the
+            // display PM guard is still held. This is not a DMA-completion API.
+            vTaskDelay(pdMS_TO_TICKS(30));
             err = hardware::co5300::set_screen_enabled(false);
             if (err != ESP_OK) {
                 // Do not stop the UI worker if the panel failed to sleep.
@@ -57,12 +64,28 @@ namespace {
             s_adapter_paused = false;
         }
 
-        err = esp_lv_adapter_lock(500);
-        if (err != ESP_OK) return err;
-        // Deep standby loses the panel's GRAM contents: redraw everything.
-        lv_obj_invalidate(lv_screen_active());
+        err = esp_lv_adapter_lock(1000);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "LVGL lock after wake failed: %s", esp_err_to_name(err));
+            return err;
+        }
+        // MCW_DISPLAY_WAKE_GUARD_V1: deep standby erases GRAM. Invalidate
+        // the entire visible UI and submit a refresh without waiting for the
+        // periodic LVGL worker; the display PM lock stays held throughout.
+        lv_display_t *disp = lv_display_get_default();
+        if (disp != nullptr) lv_obj_invalidate(lv_screen_active());
         esp_lv_adapter_unlock();
-        return ESP_OK;
+        if (disp == nullptr) {
+            ESP_LOGE(TAG, "AMOLED wake: no LVGL display available");
+            return ESP_ERR_INVALID_STATE;
+        }
+        err = esp_lv_adapter_refresh_now(disp);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "AMOLED forced refresh failed: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGI(TAG, "AMOLED wake: LVGL full refresh submitted");
+        }
+        return err;
     }
 } // namespace
 
