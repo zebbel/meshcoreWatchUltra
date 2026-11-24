@@ -47,18 +47,38 @@ std::atomic<uint32_t> s_rx_packets{0};
 lv_obj_t *s_gps_label = nullptr;
 lv_obj_t *s_meshcore_label = nullptr;
 lv_obj_t *s_ble_label = nullptr;
+// MCW_POWER_OPTIMIZATION_V2: a small diagnostic label above the clock.
+lv_obj_t *s_sleep_label = nullptr;
+std::atomic<uint32_t> s_sleep_state{0}; // enabled bit 8, percent bits 0-7
+std::atomic<uint32_t> s_sleep_entries{0};
 uint32_t s_last_displayed_status = UINT32_MAX;
 uint32_t s_last_displayed_rx = UINT32_MAX;
+uint32_t s_last_displayed_sleep = UINT32_MAX;
+uint32_t s_last_displayed_entries = UINT32_MAX;
 
 void update_status_labels() {
-    if (!s_gps_label || !s_meshcore_label || !s_ble_label) return;
+    if (!s_gps_label || !s_meshcore_label || !s_ble_label || !s_sleep_label) return;
 
     const uint32_t state = s_status_bits.load(std::memory_order_acquire);
     const uint32_t rx = s_rx_packets.load(std::memory_order_relaxed);
-    if (state == s_last_displayed_status && rx == s_last_displayed_rx) return;
+    const uint32_t sleep = s_sleep_state.load(std::memory_order_relaxed);
+    const uint32_t entries = s_sleep_entries.load(std::memory_order_relaxed);
+    if (state == s_last_displayed_status && rx == s_last_displayed_rx &&
+        sleep == s_last_displayed_sleep && entries == s_last_displayed_entries) return;
     s_last_displayed_status = state;
     s_last_displayed_rx = rx;
+    s_last_displayed_sleep = sleep;
+    s_last_displayed_entries = entries;
     char text[40] = {};
+    if (sleep & 0x100U) {
+        std::snprintf(text, sizeof(text), "SLEEP %lu%%  %lux",
+                      static_cast<unsigned long>(sleep & 0xFFU),
+                      static_cast<unsigned long>(entries));
+    } else {
+        std::snprintf(text, sizeof(text), "SLEEP OFF");
+    }
+    if (std::strcmp(lv_label_get_text(s_sleep_label), text) != 0)
+        lv_label_set_text(s_sleep_label, text);
 
     const bool gps_on = (state & kGpsEnabled) != 0;
     const bool has_fix = (state & kGpsFix) != 0;
@@ -164,6 +184,10 @@ void publish_watch_status(const WatchStatus &status) {
     if (status.ble_connected) bits |= kBleLinked;
     bits |= static_cast<uint32_t>(status.gps_satellites) << kSatShift;
     s_rx_packets.store(status.meshcore_rx_packets, std::memory_order_relaxed);
+    s_sleep_state.store((status.pm_enabled ? 0x100U : 0U) |
+                        static_cast<uint32_t>(status.sleep_percent),
+                        std::memory_order_relaxed);
+    s_sleep_entries.store(status.sleep_entries, std::memory_order_relaxed);
     s_status_bits.store(bits, std::memory_order_release);
 }
 
@@ -195,6 +219,15 @@ void render_clock_page() {
     lv_obj_set_style_transform_scale_y(s_battery_label, 512, 0);
 #endif
     lv_obj_align(s_battery_label, LV_ALIGN_TOP_MID, 0, 50);
+
+    // Screen is 410x502. Small sleep stats fit between battery and clock.
+    s_sleep_label = lv_label_create(screen);
+    lv_label_set_text(s_sleep_label, "SLEEP --");
+    lv_obj_set_style_text_color(s_sleep_label, lv_color_hex(0x8291A5), 0);
+#if LV_FONT_MONTSERRAT_28
+    lv_obj_set_style_text_font(s_sleep_label, &lv_font_montserrat_28, 0);
+#endif
+    lv_obj_align(s_sleep_label, LV_ALIGN_TOP_MID, 0, 116);
 
     s_time_label = lv_label_create(screen);
     lv_label_set_text(s_time_label, "--:--");

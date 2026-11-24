@@ -13,7 +13,12 @@ namespace hardware::co5300 {
     constexpr uint16_t x_gap = 22;
 
     esp_err_t init(size_t max_transfer_bytes);
-    esp_err_t set_screen_enabled(bool enabled);
+    // MCW_AMOLED_RENDER_V4: Normal callers keep immediate-on behavior. Wake-time
+    // redraw uses defer_display_on=true to keep the CO5300 output blank.
+    esp_err_t set_screen_enabled(bool enabled, bool defer_display_on = false);
+    // Call only after the full LVGL redraw has been submitted, with LVGL locked.
+    // LCD SPI panel commands drain queued color DMA before being transmitted.
+    esp_err_t reveal_after_full_refresh();
     esp_err_t set_brightness(uint8_t percentage);
     bool ready();
     esp_lcd_panel_handle_t panel();

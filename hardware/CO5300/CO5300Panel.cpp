@@ -24,6 +24,7 @@ namespace {
     bool s_spi_ready = false;
     bool s_ready = false;
     bool s_screen_enabled = true;
+    bool s_output_hidden_for_redraw = false; // MCW_AMOLED_RENDER_V4
     // Deep standby replays the panel init table, including brightness=0.
     // Keep the last requested brightness for an exact wake restoration.
     uint8_t s_brightness = kInitialBrightness;
@@ -110,7 +111,13 @@ esp_err_t init(size_t max_transfer_bytes) {
     io_cfg.dc_gpio_num = GPIO_NUM_NC;
     io_cfg.spi_mode = 0;
     io_cfg.pclk_hz = kSpiClockHz;
-    io_cfg.trans_queue_depth = 10;
+    // MCW_AMOLED_RENDER_V4: LVGL's small draw buffer stays in PSRAM, but
+    // SPI DMA uses bounded internal staging buffers. The earlier V3 full-
+    // frame direct-PSRAM DMA path caused TX underflow on ESP32-S3.
+    // MCW_AMOLED_RENDER_V4_1: only one queued SPI transaction; the LVGL
+    // custom blitter supplies its own persistent internal DMA buffer.
+    io_cfg.trans_queue_depth = 1;
+    io_cfg.flags.psram_dma_direct = false;
     io_cfg.lcd_cmd_bits = 32;
     io_cfg.lcd_param_bits = 8;
     io_cfg.flags.quad_mode = true;
@@ -138,14 +145,20 @@ esp_err_t init(size_t max_transfer_bytes) {
     if (err != ESP_OK) { rollback_hardware(); return err; }
 
     s_screen_enabled = true;
+    s_output_hidden_for_redraw = false;
     s_brightness = kInitialBrightness;
     s_ready = true;
     return ESP_OK;
 }
 
-esp_err_t set_screen_enabled(bool enabled) {
+esp_err_t set_screen_enabled(bool enabled, bool defer_display_on) {
     if (!s_ready || s_panel == nullptr) return ESP_ERR_INVALID_STATE;
-    if (s_screen_enabled == enabled) return ESP_OK;
+    if (s_screen_enabled == enabled) {
+        // A retry of an interrupted wake should not leave the panel blank.
+        if (enabled && !defer_display_on && s_output_hidden_for_redraw)
+            return reveal_after_full_refresh();
+        return ESP_OK;
+    }
 
     if (!enabled) {
         esp_err_t err = esp_lcd_panel_disp_on_off(s_panel, false);
@@ -165,6 +178,7 @@ esp_err_t set_screen_enabled(bool enabled) {
         ESP_LOGI(TAG, "AMOLED entered CO5300 deep standby");
 #endif
         s_screen_enabled = false;
+        s_output_hidden_for_redraw = false;
         return ESP_OK;
     }
 
@@ -172,15 +186,46 @@ esp_err_t set_screen_enabled(bool enabled) {
     // The driver resets and reinitializes the panel after deep standby.
     esp_err_t err = esp_lcd_panel_disp_sleep(s_panel, false);
     if (err != ESP_OK) return err;
-    err = esp_lcd_panel_co5300_set_brightness(s_panel, s_brightness);
-    if (err != ESP_OK) return err;
 #else
     esp_err_t err = ESP_OK;
 #endif
+    if (defer_display_on) {
+        // CO5300's deep-standby init table issues DISPON with brightness=0.
+        // Immediately force output off *before* restoring brightness. No
+        // picture can appear until after the complete LVGL frame DMA drain.
+        err = esp_lcd_panel_disp_on_off(s_panel, false);
+        if (err == ESP_OK) {
+            s_screen_enabled = true;
+            s_output_hidden_for_redraw = true;
+            ESP_LOGI(TAG, "AMOLED initialized, output blank until redraw DMA completes");
+        }
+        return err;
+    }
+    err = esp_lcd_panel_co5300_set_brightness(s_panel, s_brightness);
+    if (err != ESP_OK) return err;
     err = esp_lcd_panel_disp_on_off(s_panel, true);
     if (err == ESP_OK) {
         s_screen_enabled = true;
+        s_output_hidden_for_redraw = false;
         ESP_LOGI(TAG, "AMOLED panel awake");
+    }
+    return err;
+}
+
+esp_err_t reveal_after_full_refresh() {
+    if (!s_ready || s_panel == nullptr || !s_screen_enabled ||
+        !s_output_hidden_for_redraw) return ESP_ERR_INVALID_STATE;
+
+    // Important: ESP-IDF 6.1.1 panel_io_spi_tx_param drains every queued
+    // tx_color DMA before issuing this display-on command. Thus the panel
+    // stays blank until ALL pixel data submitted by lv_refr_now has arrived.
+    // The caller holds the LVGL mutex to prevent another frame interleaving.
+    esp_err_t err = esp_lcd_panel_disp_on_off(s_panel, true);
+    if (err != ESP_OK) return err;
+    err = esp_lcd_panel_co5300_set_brightness(s_panel, s_brightness);
+    if (err == ESP_OK) {
+        s_output_hidden_for_redraw = false;
+        ESP_LOGI(TAG, "AMOLED visible after bounded redraw DMA fence");
     }
     return err;
 }

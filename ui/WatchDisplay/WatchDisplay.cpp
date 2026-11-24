@@ -6,19 +6,90 @@
 #include "DisplayPower.h"
 
 #include "esp_lv_adapter.h"
+#include "esp_lv_adapter_display.h"
+#include "esp_heap_caps.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
+#include <cstring>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl.h"
 
 namespace ui::watch_display {
 namespace {
-    constexpr int kStripeRows = 10; // Working configuration: 8.2 KiB PSRAM stripe.
+    // MCW_AMOLED_RENDER_V4: 32 RGB565 rows (~25.6 KiB) in PSRAM.
+    // Restrict one LVGL render operation to bounded rows so scaled-font
+    // rasterization cannot monopolize CPU0 for a full 410x502 frame.
+    // Keep PARTIAL mode for inexpensive small dirty regions.
+    constexpr int kDrawRows = 32;
     const char *const TAG = "WatchDisplay";
     bool s_adapter_ready = false;
     bool s_ready = false;
     // MCW_ENERGY_STAGE2_V1: no LVGL tick or render task activity while AMOLED is off.
     bool s_adapter_paused = false;
+    uint32_t s_flush_events = 0;
+    // MCW_AMOLED_RENDER_V4_1: Allocate once while internal RAM is plentiful.
+    // Prevent 8KiB per-flush allocations from failing when NimBLE starts.
+    constexpr size_t kDmaStageBytes = 4 * 1024;
+    uint8_t *s_dma_stage = nullptr;
+
+    // LVGL 9 adapter has already compacted the source stride and converted
+    // RGB565 into panel byte order when calling custom_draw_bitmap.
+    // We copy whole rows into a fixed internal DMA-capable buffer, then
+    // explicitly wait for SPI DMA completion before copying the next rows.
+    // MCW_AMOLED_RENDER_V4_2: this callback owns flush completion.
+    // The ESP-IDF LCD done ISR is NOT registered with the LVGL adapter;
+    // otherwise each 4 KiB DMA segment would release an entire LVGL flush.
+    esp_err_t staged_draw_bitmap(lv_display_t *disp, esp_lcd_panel_handle_t panel,
+                                  int x_start, int y_start, int x_end, int y_end,
+                                  const void *color_map, void *) {
+        if (!s_dma_stage || !panel || !color_map || x_end <= x_start || y_end <= y_start) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        const size_t row_bytes = static_cast<size_t>(x_end - x_start) * 2U;
+        if (row_bytes > kDmaStageBytes) return ESP_ERR_INVALID_SIZE;
+        const int max_rows = static_cast<int>(kDmaStageBytes / row_bytes);
+        const uint8_t *src = static_cast<const uint8_t *>(color_map);
+        for (int y = y_start; y < y_end;) {
+            const int remaining = y_end - y;
+            const int rows = remaining < max_rows ? remaining : max_rows;
+            const size_t n = static_cast<size_t>(rows) * row_bytes;
+            std::memcpy(s_dma_stage, src + static_cast<size_t>(y - y_start) * row_bytes, n);
+            esp_err_t err = esp_lcd_panel_draw_bitmap(panel, x_start, y, x_end, y + rows, s_dma_stage);
+            if (err != ESP_OK) return err;
+            // ESP-IDF 6.1.1 SPI panel IO: command=-1, zero parameters
+            // acquires the bus and drains all queued TX transactions.
+            // This is a real DMA fence, not a timing delay.
+            err = esp_lcd_panel_io_tx_param(hardware::co5300::panel_io(), -1, nullptr, 0);
+            if (err != ESP_OK) return err;
+            y += rows;
+        }
+        // Exactly ONE release per original LVGL region, in task context.
+        // No DMA still owns color_map or s_dma_stage when LVGL reuses them.
+        lv_display_flush_ready(disp);
+        return ESP_OK;
+    }
+
+    // MCW_AMOLED_RENDER_V4_3: SPI/LVGL live-update diagnostic.
+    // Force each dirty region to cover full horizontal panel width. LVGL
+    // still splits updates into its existing 32-row partial draw buffer.
+    // This eliminates narrow-window RGB565 stride-compaction and tests
+    // whether transformed/updated labels corrupt partial SPI rectangles.
+    // Do not widen vertically: preserves minimal drawing work and watchdog.
+    void full_width_dirty_area(lv_area_t *area, void *) {
+        if (!area) return;
+        area->x1 = 0;
+        area->x2 = hardware::co5300::width - 1;
+    }
+
+    // LVGL calls this on its rendering task (NOT in a SPI completion ISR).
+    // Large upscaled clock fonts can monopolize CPU0 while drawing. Yield
+    // for one scheduler tick after every fourth PARTIAL flush so IDLE0 can
+    // run and service the watchdog. No effect when display power is off.
+    void on_flush_submitted(lv_event_t *) {
+        if ((++s_flush_events & 3U) == 0U) vTaskDelay(1);
+    }
 
     // The adapter worker must be paused before CO5300 deep standby/reset.
     // Never pause while holding the LVGL lock; pause needs a worker ACK.
@@ -30,11 +101,9 @@ namespace {
                 return err;
             }
             s_adapter_paused = true;
-            // MCW_DISPLAY_WAKE_GUARD_V1: LVGL pause ACK stops new frames,
-            // but the SPI QSPI DMA path may still be finishing a stripe.
-            // Give its short transfer queue a settling window while the
-            // display PM guard is still held. This is not a DMA-completion API.
-            vTaskDelay(pdMS_TO_TICKS(30));
+            // The CO5300 DISPOFF command is an SPI tx_param operation.
+            // ESP-IDF drains queued color DMA before issuing that command,
+            // replacing the earlier unverified 30ms settling delay.
             err = hardware::co5300::set_screen_enabled(false);
             if (err != ESP_OK) {
                 // Do not stop the UI worker if the panel failed to sleep.
@@ -51,39 +120,59 @@ namespace {
             return err;
         }
 
-        // Reinitialize the panel while LVGL is still paused; otherwise the
-        // worker could render before the controller has exited deep standby.
-        esp_err_t err = hardware::co5300::set_screen_enabled(true);
+        // MCW_AMOLED_RENDER_V4: the CO5300 wakes with its output hidden.
+        // The DisplayPower NO_LIGHT_SLEEP lock protects all operations here.
+        esp_err_t err = hardware::co5300::set_screen_enabled(true, true);
         if (err != ESP_OK) {
-            ESP_LOGW(TAG, "AMOLED wake failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "AMOLED hidden wake failed: %s", esp_err_to_name(err));
+            return err;
+        }
+
+        // Lock BEFORE unpausing the worker. This prevents an early worker
+        // flush from competing with the forced redraw below.
+        err = esp_lv_adapter_lock(1000);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "LVGL wake lock failed: %s", esp_err_to_name(err));
+            (void)hardware::co5300::reveal_after_full_refresh();
             return err;
         }
         if (s_adapter_paused) {
             err = esp_lv_adapter_resume();
-            if (err != ESP_OK) return err;
+            if (err != ESP_OK) {
+                esp_lv_adapter_unlock();
+                (void)hardware::co5300::reveal_after_full_refresh();
+                ESP_LOGE(TAG, "LVGL resume failed: %s", esp_err_to_name(err));
+                return err;
+            }
             s_adapter_paused = false;
         }
-
-        err = esp_lv_adapter_lock(1000);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "LVGL lock after wake failed: %s", esp_err_to_name(err));
-            return err;
-        }
-        // MCW_DISPLAY_WAKE_GUARD_V1: deep standby erases GRAM. Invalidate
-        // the entire visible UI and submit a refresh without waiting for the
-        // periodic LVGL worker; the display PM lock stays held throughout.
         lv_display_t *disp = lv_display_get_default();
-        if (disp != nullptr) lv_obj_invalidate(lv_screen_active());
-        esp_lv_adapter_unlock();
         if (disp == nullptr) {
-            ESP_LOGE(TAG, "AMOLED wake: no LVGL display available");
+            esp_lv_adapter_unlock();
+            (void)hardware::co5300::reveal_after_full_refresh();
+            ESP_LOGE(TAG, "AMOLED wake: LVGL display missing");
             return ESP_ERR_INVALID_STATE;
         }
-        err = esp_lv_adapter_refresh_now(disp);
+
+        const uint32_t start_ms = esp_log_timestamp();
+        lv_obj_invalidate(lv_screen_active());
+        // LVGL renders ~16 bounded regions, yielding periodically to avoid
+        // starving IDLE0. The mutex prevents any concurrent LVGL redraw.
+        lv_refr_now(disp);
+        const uint32_t rendered_ms = esp_log_timestamp() - start_ms;
+
+        // IDF 6.1.1 spi_panel_io_tx_param drains queued color DMA before
+        // sending DISPON. The full frame is in panel GRAM before showing it.
+        err = hardware::co5300::reveal_after_full_refresh();
+        const uint32_t full_ms = esp_log_timestamp() - start_ms;
+        esp_lv_adapter_unlock();
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "AMOLED forced refresh failed: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "AMOLED DMA-fenced reveal failed: %s", esp_err_to_name(err));
         } else {
-            ESP_LOGI(TAG, "AMOLED wake: LVGL full refresh submitted");
+            ESP_LOGI(TAG, "AMOLED wake: draw/submit=%lu ms, DMA drain+reveal=%lu ms, total=%lu ms",
+                     static_cast<unsigned long>(rendered_ms),
+                     static_cast<unsigned long>(full_ms - rendered_ms),
+                     static_cast<unsigned long>(full_ms));
         }
         return err;
     }
@@ -94,11 +183,24 @@ esp_err_t init() {
     if (s_adapter_ready) return ESP_ERR_INVALID_STATE;
 
     ESP_LOGI(TAG, "Initializing LVGL 9 display UI");
-    esp_err_t err = hardware::co5300::init(
-        hardware::co5300::width * kStripeRows * 2 + 64);
+    constexpr size_t kDrawBufferBytes =
+        static_cast<size_t>(hardware::co5300::width) * kDrawRows * 2;
+    // The LCD SPI driver splits each 32-row stripe into <=8 KiB DMA
+    // segments, copying PSRAM data to internal DMA-capable RAM as needed.
+    // No direct PSRAM DMA (ESP32-S3 V3 test saw TX underflows).
+    // V4.1: the driver must never queue more than the persistent stage.
+    constexpr size_t kSpiDmaChunkBytes = kDmaStageBytes;
+    esp_err_t err = hardware::co5300::init(kSpiDmaChunkBytes);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "CO5300 panel initialization failed: %s", esp_err_to_name(err));
         return err;
+    }
+    s_dma_stage = static_cast<uint8_t *>(heap_caps_aligned_alloc(
+        64, kDmaStageBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
+    if (s_dma_stage == nullptr) {
+        ESP_LOGE(TAG, "Cannot reserve %zu bytes of internal SPI DMA stage", kDmaStageBytes);
+        hardware::co5300::shutdown_after_failed_ui_start();
+        return ESP_ERR_NO_MEM;
     }
 
     esp_lv_adapter_config_t adapter_cfg = {};
@@ -112,6 +214,8 @@ esp_err_t init() {
     adapter_cfg.auto_sleep.mode = ESP_LV_ADAPTER_AUTO_SLEEP_MODE_DISABLED;
     err = esp_lv_adapter_init(&adapter_cfg);
     if (err != ESP_OK) {
+        heap_caps_free(s_dma_stage);
+        s_dma_stage = nullptr;
         hardware::co5300::shutdown_after_failed_ui_start();
         return err;
     }
@@ -124,22 +228,45 @@ esp_err_t init() {
     display_cfg.profile.rotation = ESP_LV_ADAPTER_ROTATE_0;
     display_cfg.profile.hor_res = hardware::co5300::width;
     display_cfg.profile.ver_res = hardware::co5300::height;
-    display_cfg.profile.buffer_height = kStripeRows;
+    display_cfg.profile.buffer_height = kDrawRows;
     display_cfg.profile.use_psram = true; // Verified on the device.
     display_cfg.profile.enable_ppa_accel = false;
+    // Single 32-row PSRAM draw buffer: LVGL waits for a completed flush
+    // before reusing it; avoid a concurrent second-buffer DMA race.
     display_cfg.profile.require_double_buffer = false;
     display_cfg.profile.mono_layout = ESP_LV_ADAPTER_MONO_LAYOUT_NONE;
     display_cfg.tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE;
 
-    lv_display_t *disp = esp_lv_adapter_register_display(&display_cfg);
+    // Disable adapter IDF LCD ISR-to-LVGL completion forwarding for
+    // this display. The custom synchronous blitter calls flush_ready once
+    // after all SPI transfers finish. Otherwise every 4 KiB segment could
+    // falsely acknowledge a full LVGL region before its last pixels arrive.
+    err = esp_lv_adapter_set_default_display_idf_callback_registration_enabled(false);
+    lv_display_t *disp = (err == ESP_OK) ? esp_lv_adapter_register_display(&display_cfg) : nullptr;
     if (disp == nullptr) {
-        err = ESP_FAIL;
+        if (err == ESP_OK) err = ESP_FAIL;
     } else {
-        err = esp_lv_adapter_start();
+        lv_display_add_event_cb(disp, on_flush_submitted, LV_EVENT_FLUSH_FINISH, nullptr);
+        // MCW_AMOLED_RENDER_V4: cooperative yields between redraw stripes;
+        // event runs on LVGL thread, not from the LCD DMA ISR.
+        lv_display_add_event_cb(disp, on_flush_submitted, LV_EVENT_FLUSH_FINISH, nullptr);
+        // Public adapter hook. The default ISR completion path remains
+        // registered; this function only replaces the pixel transfer.
+        esp_lv_adapter_draw_bitmap_callbacks_t cbs = {};
+        cbs.custom_draw_bitmap = staged_draw_bitmap;
+        err = esp_lv_adapter_set_draw_bitmap_callbacks(disp, &cbs, nullptr);
+        // Register before the LVGL worker starts. The adapter invokes
+        // this callback on LV_EVENT_INVALIDATE_AREA, not from an ISR.
+        if (err == ESP_OK) {
+            err = esp_lv_adapter_set_area_rounder_cb(disp, full_width_dirty_area, nullptr);
+        }
+        if (err == ESP_OK) err = esp_lv_adapter_start();
     }
     if (err != ESP_OK) {
         esp_lv_adapter_deinit();
         s_adapter_ready = false;
+        heap_caps_free(s_dma_stage);
+        s_dma_stage = nullptr;
         hardware::co5300::shutdown_after_failed_ui_start();
         ESP_LOGW(TAG, "LVGL adapter start failed: %s", esp_err_to_name(err));
         return err;
@@ -162,7 +289,12 @@ esp_err_t init() {
         ESP_LOGW(TAG, "Touch wake service unavailable: %s; keeping panel on",
                  esp_err_to_name(touch_err));
     }
-    ESP_LOGI(TAG, "LVGL 9 display active: 410x502, 22px X gap, SPI3 40MHz");
+    ESP_LOGI(TAG, "LVGL 9 display active: %u-row PSRAM buffer (%zu bytes), QSPI 40MHz, max DMA chunk %zu bytes",
+             static_cast<unsigned>(kDrawRows), kDrawBufferBytes, kSpiDmaChunkBytes);
+    ESP_LOGI(TAG, "AMOLED V4.1: persistent %zu-byte internal DMA stage, SPI queue=1",
+             kDmaStageBytes);
+    ESP_LOGI(TAG, "AMOLED V4.2: single LVGL flush ACK after full staged SPI DMA drain");
+    ESP_LOGI(TAG, "AMOLED V4.3: live dirty regions rounded to full 410px width");
     return ESP_OK;
 }
 

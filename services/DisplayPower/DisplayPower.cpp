@@ -22,7 +22,7 @@ namespace {
 
     ScreenControl s_screen_control = nullptr;
     TaskHandle_t s_task = nullptr;
-    uint32_t s_timeout_ms = 5000;
+    uint32_t s_timeout_ms = 10000;
     std::atomic<bool> s_screen_awake{true};
     std::atomic<uint32_t> s_last_activity_ms{0};
     bool s_started = false;

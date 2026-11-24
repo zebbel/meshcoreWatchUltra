@@ -10,6 +10,8 @@
 #include "sdkconfig.h"
 #include "esp_pm.h"  // MCW_ENERGY_STAGE2_V1: dynamic frequency scaling
 #include "esp_sleep.h"
+#include "esp_timer.h"
+#include "esp_attr.h" // Light-sleep exit hook runs from PM critical path
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
 #include "board_pins.h"
@@ -26,6 +28,9 @@
 #include "WatchStatus.h"
 
 static const char *TAG = "MeshCoreWatch";
+// MCW_POWER_OPTIMIZATION_V2: computed by app_main, shown on the watchface
+// after battery-only operation without requiring a USB console.
+static void publish_sleep_diagnostics(ui::watch_display::WatchStatus &snapshot);
 
 #include "esp_heap_caps.h"
 
@@ -99,10 +104,17 @@ static void publish_watchface_status(bool meshcore_enabled) {
     if (snapshot.meshcore_active)
         snapshot.meshcore_rx_packets = meshcore::received_packet_count();
     snapshot.ble_connected = hardware::bluetooth::transport().connected();
+    publish_sleep_diagnostics(snapshot);
     ui::watch_display::publish_watch_status(snapshot);
 }
 
 #if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && CONFIG_MCW_AUTO_LIGHT_SLEEP && CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+// Kconfig booleans set to 'n' are undefined; use a real compile-time bool.
+#if defined(CONFIG_MCW_CONNECTED_BLE_LIGHT_SLEEP)
+static constexpr bool kConnectedBleLightSleep = true;
+#else
+static constexpr bool kConnectedBleLightSleep = false;
+#endif
 // MCW_AUTO_LIGHT_SLEEP_V1: keep GPS UART, LVGL/panel traffic awake;
 // allow tickless idle only when screen and GNSS are both inactive.
 static esp_pm_lock_handle_t s_sleep_guard = nullptr;
@@ -110,12 +122,26 @@ static bool s_sleep_guard_held = false;
 static bool s_auto_light_sleep = false;
 static std::atomic<bool> s_restore_wake_pins{false};
 static std::atomic<uint32_t> s_light_sleep_exits{0};
+// Cumulative statistics are RAM-only, reset on reboot, and do not write flash.
+// 32-bit milliseconds cover ~49 days; enough for unattended battery trials.
+static std::atomic<uint32_t> s_sleep_total_ms{0};
+static std::atomic<uint32_t> s_sleep_entries{0};
+static std::atomic<uint32_t> s_sleep_longest_ms{0};
+static std::atomic<uint32_t> s_sleep_stats_start_ms{0};
 
-// Called on the FreeRTOS idle task path. Never perform I2C, SPI, GPIO
-// reconfiguration or log output in this callback.
-static esp_err_t on_light_sleep_exit(int64_t, void *) {
+// PM callbacks run in a critical path: no logs, allocations, I2C or SPI.
+// The callback argument is the *actual* sleep duration in microseconds.
+static esp_err_t IRAM_ATTR on_light_sleep_exit(int64_t slept_us, void *) {
     s_restore_wake_pins.store(true, std::memory_order_release);
-    s_light_sleep_exits.fetch_add(1, std::memory_order_relaxed);
+    if (slept_us > 0) {
+        const uint32_t ms = static_cast<uint32_t>(slept_us / 1000);
+        s_light_sleep_exits.fetch_add(1, std::memory_order_relaxed);
+        s_sleep_total_ms.fetch_add(ms, std::memory_order_relaxed);
+        s_sleep_entries.fetch_add(1, std::memory_order_relaxed);
+        uint32_t old = s_sleep_longest_ms.load(std::memory_order_relaxed);
+        while (ms > old && !s_sleep_longest_ms.compare_exchange_weak(
+                   old, ms, std::memory_order_relaxed)) {}
+    }
     return ESP_OK;
 }
 static esp_pm_sleep_cbs_register_config_t s_sleep_callbacks = {
@@ -172,7 +198,11 @@ static void start_light_sleep(bool meshcore_enabled) {
     err = esp_pm_configure(&cfg);
     if (err != ESP_OK) { disable_light_sleep("esp_pm_configure failed", err); return; }
     s_auto_light_sleep = true;
-    ESP_LOGI(TAG, "Auto light sleep configured (CPU power-down disabled): touch EXT0 low, LoRa DIO1 EXT1 high; display/GPS guarded");
+    s_sleep_stats_start_ms.store(static_cast<uint32_t>(esp_timer_get_time() / 1000ULL),
+                                 std::memory_order_relaxed);
+    ESP_LOGI(TAG, "Auto light sleep enabled; touch/LoRa wake and display/GPS guards; "
+                  "connected BLE light sleep %s",
+             kConnectedBleLightSleep ? "allowed" : "blocked");
 }
 
 // RTC pads used for EXT0/EXT1 must return to digital GPIO mode after sleep.
@@ -195,9 +225,14 @@ static void update_light_sleep_guard() {
     if (!s_auto_light_sleep || s_sleep_guard == nullptr) return;
     hardware::gps::status_t gps{};
     hardware::gps::get_status(gps);
-    // MCW_BLE_PERFORMANCE_V1: pairing and active BLE links need low latency.
+    // MCW_POWER_OPTIMIZATION_V2: the BLE controller owns its own PM
+    // locks during connection events. Do not keep an app-wide NO_LIGHT_SLEEP
+    // lock for the whole BLE link. The display service has a separate lock
+    // held throughout panel reset, LVGL redraw and active display time.
+    const bool ble_guard = !kConnectedBleLightSleep &&
+                           hardware::bluetooth::transport().link_active();
     const bool must_stay_awake = ui::watch_display::screen_awake() ||
-                                 gps.powered || hardware::bluetooth::transport().link_active();
+                                 gps.powered || ble_guard;
     if (must_stay_awake == s_sleep_guard_held) return;
     const esp_err_t err = must_stay_awake
         ? esp_pm_lock_acquire(s_sleep_guard)
@@ -209,14 +244,29 @@ static void update_light_sleep_guard() {
 static void report_light_sleep_exits() {
     if (!s_auto_light_sleep) return;
     static uint32_t last_report = 0;
-    const uint32_t now = hardware::system::millis();
+    const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
     if (last_report == 0) { last_report = now; return; }
     if (static_cast<uint32_t>(now - last_report) < 60000U) return;
     last_report = now;
     const uint32_t exits = s_light_sleep_exits.exchange(0, std::memory_order_relaxed);
-    ESP_LOGI(TAG, "Auto light sleep exits / 60 s: %lu%s",
-             static_cast<unsigned long>(exits),
-             exits == 0 ? " (check BLE/USB and other PM locks)" : "");
+    const uint32_t total = s_sleep_total_ms.load(std::memory_order_relaxed);
+    const uint32_t entries = s_sleep_entries.load(std::memory_order_relaxed);
+    const uint32_t longest = s_sleep_longest_ms.load(std::memory_order_relaxed);
+    const uint32_t elapsed = now - s_sleep_stats_start_ms.load(std::memory_order_relaxed);
+    const uint32_t percent = elapsed ?
+        static_cast<uint32_t>((static_cast<uint64_t>(total) * 100U) / elapsed) : 0;
+    ESP_LOGI(TAG, "PM/60s exits=%lu; total=%lums/%lums (%lu%%), entries=%lu, "
+                  "avg=%lums, longest=%lums; disp=%d gps=%d BLE=%d",
+             static_cast<unsigned long>(exits), static_cast<unsigned long>(total),
+             static_cast<unsigned long>(elapsed),
+             static_cast<unsigned long>(percent > 100 ? 100 : percent),
+             static_cast<unsigned long>(entries),
+             static_cast<unsigned long>(entries ? total / entries : 0),
+             static_cast<unsigned long>(longest),
+             ui::watch_display::screen_awake(),
+             []{ hardware::gps::status_t gps{}; hardware::gps::get_status(gps); return gps.powered; }(),
+             hardware::bluetooth::transport().link_active());
+    if (entries == 0) ESP_LOGW(TAG, "No successful light sleep; check USB serial and other PM locks");
 }
 #else
 static void start_light_sleep(bool) {
@@ -226,6 +276,23 @@ static void restore_wakeup_pins_if_needed() {}
 static void update_light_sleep_guard() {}
 static void report_light_sleep_exits() {}
 #endif
+
+static void publish_sleep_diagnostics(ui::watch_display::WatchStatus &snapshot) {
+#if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && CONFIG_MCW_AUTO_LIGHT_SLEEP && CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+    snapshot.pm_enabled = s_auto_light_sleep;
+    if (s_auto_light_sleep) {
+        const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
+        const uint32_t elapsed = now - s_sleep_stats_start_ms.load(std::memory_order_relaxed);
+        const uint32_t total = s_sleep_total_ms.load(std::memory_order_relaxed);
+        const uint32_t percent = elapsed ?
+            static_cast<uint32_t>((static_cast<uint64_t>(total) * 100U) / elapsed) : 0;
+        snapshot.sleep_percent = static_cast<uint8_t>(percent > 100 ? 100 : percent);
+        snapshot.sleep_entries = s_sleep_entries.load(std::memory_order_relaxed);
+    }
+#else
+    (void)snapshot;
+#endif
+}
 
 extern "C" void app_main(){
     ESP_LOGI(TAG, "T-Watch Ultra: MeshCore BLE companion");
@@ -287,13 +354,13 @@ extern "C" void app_main(){
     // MCW_AUTO_LIGHT_SLEEP_V1: configure wake sources after LoRa, touch and BLE init.
     start_light_sleep(meshcore_enabled);
 
-    // MCW_BLE_PERFORMANCE_V1: shared task notifications from LoRa and NimBLE.
-    // Connected BLE gets a 10 ms fallback; idle MeshCore keeps 50 ms.
+    // MCW_POWER_OPTIMIZATION_V2: shared LoRa/BLE event wakeups.
+    // Idle connected BLE no longer forces a 10-ms CPU polling loop.
     if(meshcore_enabled) hardware::lora::set_wakeup_task(xTaskGetCurrentTaskHandle());
     bluetooth.set_wakeup_task(xTaskGetCurrentTaskHandle());
     constexpr uint32_t kMainLoopWaitMs = 50;
     constexpr uint32_t kActiveBleWaitMs = 10;
-    ESP_LOGI(TAG, "IRQ-assisted MeshCore loop: BLE event wake and 10/50 ms fallback");
+    ESP_LOGI(TAG, "IRQ-assisted MeshCore loop: 50 ms idle, 10 ms BLE traffic; BLE event wake");
 
     while(true){
         restore_wakeup_pins_if_needed();
@@ -306,7 +373,7 @@ extern "C" void app_main(){
         update_light_sleep_guard();
         report_light_sleep_exits();
         // Incoming BLE writes and LoRa IRQs wake immediately.
-        const uint32_t wait_ms = (bluetooth.link_active() || bluetooth.has_pending_tx())
+        const uint32_t wait_ms = (bluetooth.has_pending_tx() || bluetooth.recent_activity())
             ? kActiveBleWaitMs : kMainLoopWaitMs;
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
     }

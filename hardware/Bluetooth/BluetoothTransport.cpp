@@ -379,7 +379,10 @@ namespace hardware::bluetooth {
             if(xQueueSend(rx_queue_, &frame, 0) != pdTRUE){
                 return BLE_ATT_ERR_INSUFFICIENT_RES;
             }
-            // Wake app_main immediately instead of waiting up to 50 ms.
+            // MCW_POWER_OPTIMIZATION_V2: fast-poll only during active
+            // traffic; do not poll every 10 ms for the whole connection.
+            last_activity_ms_.store(static_cast<uint32_t>(esp_timer_get_time() / 1000ULL),
+                                    std::memory_order_relaxed);
             wake_main_task();
             return 0;
         }
@@ -399,7 +402,11 @@ namespace hardware::bluetooth {
         Frame frame;
         frame.length = length;
         memcpy(frame.data, data, length);
-        return xQueueSend(tx_queue_, &frame, 0) == pdTRUE;
+        const bool queued = xQueueSend(tx_queue_, &frame, 0) == pdTRUE;
+        if (queued) last_activity_ms_.store(
+            static_cast<uint32_t>(esp_timer_get_time() / 1000ULL),
+            std::memory_order_relaxed);
+        return queued;
     }
 
     bool Transport::send_best_effort(const uint8_t *data, size_t length){
@@ -435,6 +442,14 @@ namespace hardware::bluetooth {
         uint16_t conn = connection_handle_.load();
         if(conn == 0xFFFF || ble_gap_conn_find(conn, &desc) != 0) return false;
         return desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded && ble_att_mtu(conn) >= length + 3;
+    }
+
+    bool Transport::recent_activity() const {
+        if (!link_active()) return false;
+        const uint32_t last = last_activity_ms_.load(std::memory_order_relaxed);
+        if (last == 0) return false;
+        const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
+        return static_cast<uint32_t>(now - last) < 500U;
     }
 
     void Transport::set_wakeup_task(TaskHandle_t task){

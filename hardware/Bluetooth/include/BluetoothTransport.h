@@ -39,6 +39,8 @@ namespace hardware::bluetooth {
         // MCW_BLE_PERFORMANCE_V1: wake app_main when new BLE frames arrive.
         void set_wakeup_task(TaskHandle_t task);
         bool link_active() const { return connection_handle_.load() != 0xFFFF; }
+        // MCW_POWER_OPTIMIZATION_V2: short fast-poll burst after RX/TX only.
+        bool recent_activity() const;
         bool has_pending_tx() const {
             return tx_queue_ != nullptr && uxQueueMessagesWaiting(tx_queue_) != 0;
         }
@@ -67,6 +69,7 @@ namespace hardware::bluetooth {
         std::atomic<bool> clear_pin_{false};
         std::atomic<uint16_t> connection_handle_{0xFFFF};
         std::atomic<TaskHandle_t> wakeup_task_{nullptr};
+        std::atomic<uint32_t> last_activity_ms_{0};
         uint16_t tx_handle_ = 0;
         uint8_t own_addr_type_ = 0;
         uint32_t last_notification_ms_ = 0;
