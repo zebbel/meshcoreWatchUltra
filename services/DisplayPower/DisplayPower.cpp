@@ -1,6 +1,7 @@
 #include "DisplayPower.h"
 
 #include "CST9217.h"
+#include "Power.h"
 #include "board_pins.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -20,7 +21,11 @@ namespace {
     // recover touch edges that happen during light sleep.
     constexpr uint32_t kScreenOffRecheckMs = 250;
 
+    constexpr uint32_t kChargerPollMs = 1000;
     ScreenControl s_screen_control = nullptr;
+    ChargingDisplayControl s_charging_display = nullptr;
+    std::atomic<bool> s_charging{false};
+    bool s_charging_display_applied = false; // protected by transition mutex
     TaskHandle_t s_task = nullptr;
     uint32_t s_timeout_ms = 10000;
     std::atomic<bool> s_screen_awake{true};
@@ -68,12 +73,35 @@ namespace {
 
     void policy_task(void *) {
         bool touch_communication_ok = true;
+        uint32_t last_charger_poll = uptime_ms() - kChargerPollMs;
+        unsigned charger_read_failures = 0;
         while (true) {
+            const uint32_t poll_now = uptime_ms();
+            if (s_charging_display && poll_now - last_charger_poll >= kChargerPollMs) {
+                last_charger_poll = poll_now;
+                bool charging = false;
+                if (hardware::power::read_charging(charging) == ESP_OK) {
+                    charger_read_failures = 0;
+                    s_charging.store(charging);
+                } else if (++charger_read_failures >= 3) {
+                    // Do not keep the display on indefinitely with unknown charger state.
+                    charger_read_failures = 3;
+                    s_charging.store(false);
+                }
+                // Reconcile the mode under the existing transition mutex. Retry
+                // transient wake/brightness failures on the next poll.
+                if (s_charging.load() || s_screen_awake.load()) {
+                    (void)set_screen_awake(true);
+                }
+            }
             const uint32_t idle_ms = static_cast<uint32_t>(uptime_ms() - s_last_activity_ms.load());
             const uint32_t remaining_ms = idle_ms < s_timeout_ms ? s_timeout_ms - idle_ms : 1;
             // Screen awake: wake at its timeout. Screen off: touch IRQ wakes
             // immediately; the long fallback also sees external wake requests.
-            const uint32_t wait_ms = s_screen_awake.load() ? remaining_ms : kScreenOffRecheckMs;
+            uint32_t wait_ms = s_screen_awake.load()
+                ? (s_charging.load() ? kChargerPollMs : remaining_ms)
+                : kScreenOffRecheckMs;
+            if (s_charging_display && wait_ms > kChargerPollMs) wait_ms = kChargerPollMs;
             const TickType_t wait_ticks = pdMS_TO_TICKS(wait_ms) > 0 ? pdMS_TO_TICKS(wait_ms) : 1;
             const uint32_t events = ulTaskNotifyTake(pdTRUE, wait_ticks);
             // EXT0 can wake before digital IRQ is
@@ -112,7 +140,7 @@ namespace {
             // Take the clock snapshot only after all touch processing.
             const uint32_t now = uptime_ms();
             // Fail safe: keep AMOLED on if touch ACK isn't reliable.
-            if (s_screen_awake.load() && touch_communication_ok &&
+            if (s_screen_awake.load() && !s_charging.load() && touch_communication_ok &&
                 static_cast<uint32_t>(now - s_last_activity_ms.load()) >= s_timeout_ms) {
                 if (set_screen_awake(false) == ESP_OK) {
                     ESP_LOGD(TAG, "AMOLED off after %lu ms idle",
@@ -123,7 +151,8 @@ namespace {
     }
 } // namespace
 
-esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms) {
+esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms,
+                ChargingDisplayControl charging_display) {
     if (s_started) return ESP_OK;
     if (apply_screen_awake == nullptr || timeout_ms == 0) return ESP_ERR_INVALID_ARG;
 
@@ -153,6 +182,7 @@ esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms) {
 #endif
 
     s_screen_control = apply_screen_awake;
+    s_charging_display = charging_display;
     s_timeout_ms = timeout_ms;
     s_last_activity_ms.store(uptime_ms());
     s_screen_awake.store(true);
@@ -183,7 +213,20 @@ esp_err_t set_screen_awake(bool awake) {
         return ESP_ERR_TIMEOUT;
 
     esp_err_t err = ESP_OK;
-    if (s_screen_awake.load() != awake) {
+    const bool charging = s_charging.load();
+    // Refuse inactivity/manual screen-off requests while charging is active.
+    if (!awake && charging) {
+        xSemaphoreGive(s_transition_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (awake && s_screen_awake.load() && s_charging_display &&
+        s_charging_display_applied != charging) {
+        err = s_charging_display(charging);
+        if (err == ESP_OK) {
+            s_charging_display_applied = charging;
+            notify_activity(); // Restore a fresh normal timeout at charge completion.
+        }
+    } else if (s_screen_awake.load() != awake) {
         if (awake) {
             // Crucial: acquire BEFORE panel reset, SPI writes or LVGL resume.
             // Even if app_main is still asleep, auto light sleep is inhibited.
@@ -193,6 +236,8 @@ esp_err_t set_screen_awake(bool awake) {
         if (err == ESP_OK) {
             s_screen_awake.store(awake);
             if (awake) {
+                // The wake callback renders the requested mode before revealing.
+                s_charging_display_applied = charging;
                 notify_activity();
             } else {
                 // Release only after LVGL has stopped and CO5300 is asleep.
@@ -209,5 +254,6 @@ esp_err_t set_screen_awake(bool awake) {
 }
 
 bool is_screen_awake() { return s_screen_awake.load(); }
+bool is_charging() { return s_charging.load(); }
 void notify_activity() { s_last_activity_ms.store(uptime_ms()); }
 } // namespace services::display_power

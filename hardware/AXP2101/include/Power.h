@@ -7,4 +7,6 @@ namespace hardware::power {
     esp_err_t init();
     esp_err_t configure();
     esp_err_t read_battery(battery_info_t &out);
+    // True only while battery charging is active, not when charge is complete.
+    esp_err_t read_charging(bool &charging);
 }

@@ -27,6 +27,8 @@ namespace AXP2101 {
     esp_err_t configure();
 
     esp_err_t read_battery(battery_info_t &out);
+    // True only while battery charging is active, not when charge is complete.
+    esp_err_t read_charging(bool &charging);
 
     esp_err_t set_enabled(rail_t rail, bool enabled);
     esp_err_t enable(rail_t rail);

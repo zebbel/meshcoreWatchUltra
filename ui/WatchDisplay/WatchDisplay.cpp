@@ -23,6 +23,9 @@ namespace {
     bool s_ready = false;
     // no LVGL tick or render task activity while AMOLED is off.
     bool s_adapter_paused = false;
+    constexpr uint8_t kChargingBrightness = 10;
+    uint8_t s_normal_brightness = 25;
+    bool s_charging_mode = false; // protected by the LVGL lock
     uint32_t s_flush_events = 0;
     // LVGL supplies packed RGB565 in panel byte order. The hardware driver
     // owns DMA staging and returns after every segment has completed.
@@ -50,6 +53,30 @@ namespace {
     // run and service the watchdog. No effect when display power is off.
     void on_flush_submitted(lv_event_t *) {
         if ((++s_flush_events & 1U) == 0U) vTaskDelay(1);
+    }
+
+    // Caller owns the LVGL lock and the panel is awake (possibly hidden).
+    esp_err_t apply_charging_mode_locked(bool charging) {
+        if (s_charging_mode != charging) {
+            const esp_err_t err = hardware::co5300::set_brightness(
+                charging ? kChargingBrightness : s_normal_brightness);
+            if (err != ESP_OK) return err;
+            s_charging_mode = charging;
+        }
+        set_clock_charging_mode(charging);
+        return ESP_OK;
+    }
+
+    esp_err_t apply_charging_display(bool charging) {
+        esp_err_t err = esp_lv_adapter_lock(1000);
+        if (err != ESP_OK) return err;
+        err = apply_charging_mode_locked(charging);
+        if (err == ESP_OK) {
+            lv_obj_invalidate(lv_screen_active());
+            lv_refr_now(lv_display_get_default());
+        }
+        esp_lv_adapter_unlock();
+        return err;
     }
 
     // The adapter worker must be paused before CO5300 deep standby/reset.
@@ -116,6 +143,13 @@ namespace {
         }
 
         const uint32_t start_ms = esp_log_timestamp();
+        // Select the charging presentation before revealing the panel.
+        err = apply_charging_mode_locked(services::display_power::is_charging());
+        if (err != ESP_OK) {
+            esp_lv_adapter_unlock();
+            (void)hardware::co5300::reveal_after_full_refresh();
+            return err;
+        }
         lv_obj_invalidate(lv_screen_active());
         // LVGL renders ~16 bounded regions, yielding periodically to avoid
         // starving IDLE0. The mutex prevents any concurrent LVGL redraw.
@@ -227,7 +261,7 @@ esp_err_t init() {
 
     s_ready = true;
     // Failure of CST9217/service must not leave the watch with a black screen.
-    const esp_err_t touch_err = services::display_power::start(apply_panel_awake, 5000);
+    const esp_err_t touch_err = services::display_power::start(apply_panel_awake, 5000, apply_charging_display);
     if (touch_err != ESP_OK) {
         ESP_LOGW(TAG, "Touch wake service unavailable: %s; keeping panel on",
                  esp_err_to_name(touch_err));
@@ -238,7 +272,14 @@ esp_err_t init() {
 }
 
 esp_err_t set_brightness(uint8_t percentage) {
-    return hardware::co5300::set_brightness(percentage);
+    if (percentage > 100) return ESP_ERR_INVALID_ARG;
+    if (!s_ready) return ESP_ERR_INVALID_STATE;
+    esp_err_t err = esp_lv_adapter_lock(1000);
+    if (err != ESP_OK) return err;
+    if (!s_charging_mode) err = hardware::co5300::set_brightness(percentage);
+    if (err == ESP_OK) s_normal_brightness = percentage;
+    esp_lv_adapter_unlock();
+    return err;
 }
 
 esp_err_t set_screen_awake(bool awake) {

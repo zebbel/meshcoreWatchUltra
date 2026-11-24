@@ -49,6 +49,19 @@ namespace AXP2101 {
         return i2c_master_transmit_receive(pmu_handle, &reg, 1, data, len, 1000);
     }
 
+    esp_err_t read_charging(bool &charging){
+        // PMU status2: bits 6:5 indicate battery current direction;
+        // bits 2:0 identify the charger phase (0-3 active, 4 done, 5 idle).
+        uint8_t status = 0;
+        charging = false;
+        const esp_err_t err = read_register(REG_STATUS2, &status, 1);
+        if(err != ESP_OK) return err;
+        const uint8_t direction = (status >> 5) & 0x03U;
+        const uint8_t phase = status & 0x07U;
+        charging = direction == 1U && phase <= 3U;
+        return ESP_OK;
+    }
+
     esp_err_t read_battery(battery_info_t &out){
         out = battery_info_t{};
 

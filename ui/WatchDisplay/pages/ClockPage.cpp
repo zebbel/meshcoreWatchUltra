@@ -22,10 +22,13 @@
 namespace ui::watch_display {
 namespace {
 constexpr uint32_t kBatteryRefreshMs = 60000;
+constexpr uint32_t kChargingBatteryRefreshMs = 10000;
 constexpr time_t kEarliestTrustedTime = 1577836800; // 2020-01-01 UTC
 
 lv_obj_t *s_time_label = nullptr;
 lv_obj_t *s_battery_label = nullptr;
+lv_obj_t *s_charge_label = nullptr;
+bool s_charging = false;
 lv_timer_t *s_update_timer = nullptr;
 uint32_t s_last_battery_ms = 0;
 bool s_battery_sampled = false;
@@ -140,6 +143,92 @@ void update_time() {
     }
 }
 
+// LVGL scale factors use 256 for 1x. Keep native fonts where available.
+#if LV_FONT_MONTSERRAT_48
+constexpr int kChargingPercentScale = 512; // 48px -> approximately 96px
+#elif LV_FONT_MONTSERRAT_36
+constexpr int kChargingPercentScale = 640; // 36px -> approximately 90px
+#elif LV_FONT_MONTSERRAT_28
+constexpr int kChargingPercentScale = 768; // 28px -> approximately 84px
+#else
+constexpr int kChargingPercentScale = 512;
+#endif
+#if LV_FONT_MONTSERRAT_40 || LV_FONT_MONTSERRAT_48 || LV_FONT_MONTSERRAT_36
+constexpr int kChargingIconScale = 256;
+#else
+constexpr int kChargingIconScale = 512;
+#endif
+
+void set_label_scale(lv_obj_t *label, int scale) {
+    lv_obj_set_style_transform_pivot_x(label, LV_PCT(50), 0);
+    lv_obj_set_style_transform_pivot_y(label, LV_PCT(50), 0);
+    lv_obj_set_style_transform_scale_x(label, scale, 0);
+    lv_obj_set_style_transform_scale_y(label, scale, 0);
+}
+
+void set_battery_presentation(bool charging) {
+    if (charging) {
+#if LV_FONT_MONTSERRAT_48
+        lv_obj_set_style_text_font(s_battery_label, &lv_font_montserrat_48, 0);
+#elif LV_FONT_MONTSERRAT_36
+        lv_obj_set_style_text_font(s_battery_label, &lv_font_montserrat_36, 0);
+#elif LV_FONT_MONTSERRAT_28
+        lv_obj_set_style_text_font(s_battery_label, &lv_font_montserrat_28, 0);
+#else
+        lv_obj_set_style_text_font(s_battery_label, LV_FONT_DEFAULT, 0);
+#endif
+#if LV_FONT_MONTSERRAT_40
+        lv_obj_set_style_text_font(s_charge_label, &lv_font_montserrat_40, 0);
+#elif LV_FONT_MONTSERRAT_48
+        lv_obj_set_style_text_font(s_charge_label, &lv_font_montserrat_48, 0);
+#elif LV_FONT_MONTSERRAT_36
+        lv_obj_set_style_text_font(s_charge_label, &lv_font_montserrat_36, 0);
+#elif LV_FONT_MONTSERRAT_28
+        lv_obj_set_style_text_font(s_charge_label, &lv_font_montserrat_28, 0);
+#else
+        lv_obj_set_style_text_font(s_charge_label, LV_FONT_DEFAULT, 0);
+#endif
+        set_label_scale(s_battery_label, kChargingPercentScale);
+        set_label_scale(s_charge_label, kChargingIconScale);
+    } else {
+#if LV_FONT_MONTSERRAT_28
+        lv_obj_set_style_text_font(s_battery_label, &lv_font_montserrat_28, 0);
+        set_label_scale(s_battery_label, 256);
+#else
+        lv_obj_set_style_text_font(s_battery_label, LV_FONT_DEFAULT, 0);
+        set_label_scale(s_battery_label, 512);
+#endif
+#if LV_FONT_MONTSERRAT_14
+        lv_obj_set_style_text_font(s_charge_label, &lv_font_montserrat_14, 0);
+#else
+        lv_obj_set_style_text_font(s_charge_label, LV_FONT_DEFAULT, 0);
+#endif
+        set_label_scale(s_charge_label, 256);
+    }
+}
+
+void align_charge_icon() {
+    if (!s_charge_label || !s_battery_label || !s_charging) return;
+    lv_obj_update_layout(s_battery_label);
+    lv_obj_update_layout(s_charge_label);
+    // Center the entire visual group, not just the percentage's unscaled box.
+    // Cap the percentage scale if a custom font would make the group too wide.
+    constexpr int gap = 12;
+    const int icon_width = (lv_obj_get_width(s_charge_label) * kChargingIconScale + 255) / 256;
+    const int text_width = lv_obj_get_width(s_battery_label);
+    if (text_width <= 0) return;
+    const int available = lv_obj_get_width(lv_screen_active()) - 40 - gap - icon_width;
+    const int fit_scale = available > 0 ? available * 256 / text_width : 256;
+    const int scale = fit_scale < kChargingPercentScale ? fit_scale : kChargingPercentScale;
+    if (scale <= 0) return;
+    if (lv_obj_get_style_transform_scale_x(s_battery_label, LV_PART_MAIN) != scale) {
+        set_label_scale(s_battery_label, scale);
+    }
+    const int battery_width = (text_width * scale + 255) / 256;
+    lv_obj_align(s_battery_label, LV_ALIGN_CENTER, -(icon_width + gap) / 2, 0);
+    lv_obj_align(s_charge_label, LV_ALIGN_CENTER, (battery_width + gap) / 2, 0);
+}
+
 void update_battery() {
     if (!s_battery_label) return;
     hardware::power::battery_info_t battery{};
@@ -156,6 +245,7 @@ void update_battery() {
     if (std::strcmp(text, s_last_battery) != 0) {
         lv_label_set_text(s_battery_label, text);
         std::strcpy(s_last_battery, text);
+        align_charge_icon();
     }
 }
 
@@ -164,16 +254,51 @@ void timer_cb(lv_timer_t *) {
     // The active screen is invalidated by WatchDisplay on the next wake-up.
     if (!services::display_power::is_screen_awake()) return;
 
-    update_status_labels();
-    update_time();
+    if (!s_charging) {
+        update_status_labels();
+        update_time();
+    }
     const uint32_t now = lv_tick_get();
-    if (!s_battery_sampled || static_cast<uint32_t>(now - s_last_battery_ms) >= kBatteryRefreshMs) {
+    const uint32_t interval = s_charging ? kChargingBatteryRefreshMs : kBatteryRefreshMs;
+    if (!s_battery_sampled || static_cast<uint32_t>(now - s_last_battery_ms) >= interval) {
         s_battery_sampled = true;
         s_last_battery_ms = now;
         update_battery();
     }
 }
 } // namespace
+
+void refresh_clock_battery() {
+    update_battery();
+    s_battery_sampled = true;
+    s_last_battery_ms = lv_tick_get();
+}
+
+void set_clock_charging_mode(bool charging) {
+    if (!s_battery_label || !s_charge_label) return;
+    if (s_charging != charging) {
+        s_charging = charging;
+        lv_obj_t *normal_labels[] = {s_time_label, s_sleep_label, s_gps_label,
+                                     s_meshcore_label, s_ble_label};
+        for (auto *label : normal_labels) {
+            if (!label) continue;
+            if (charging) lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_remove_flag(label, LV_OBJ_FLAG_HIDDEN);
+        }
+        set_battery_presentation(charging);
+        if (charging) {
+            lv_obj_align(s_battery_label, LV_ALIGN_CENTER, 0, 0);
+            lv_obj_remove_flag(s_charge_label, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_charge_label, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_align(s_battery_label, LV_ALIGN_TOP_MID, 0, 50);
+            update_status_labels();
+            update_time();
+        }
+    }
+    refresh_clock_battery();
+    align_charge_icon();
+}
 
 void publish_watch_status(const watch::WatchStatus &status) {
     uint32_t bits = 0;
@@ -219,6 +344,17 @@ void render_clock_page() {
     lv_obj_set_style_transform_scale_y(s_battery_label, 512, 0);
 #endif
     lv_obj_align(s_battery_label, LV_ALIGN_TOP_MID, 0, 50);
+
+    // Keep the percentage centered; the small bolt sits to its right.
+    s_charge_label = lv_label_create(screen);
+    lv_label_set_text(s_charge_label, LV_SYMBOL_CHARGE);
+    lv_obj_set_style_text_color(s_charge_label, lv_color_hex(0xEBC36D), 0);
+#if LV_FONT_MONTSERRAT_14
+    lv_obj_set_style_text_font(s_charge_label, &lv_font_montserrat_14, 0);
+#else
+    lv_obj_set_style_text_font(s_charge_label, LV_FONT_DEFAULT, 0);
+#endif
+    lv_obj_add_flag(s_charge_label, LV_OBJ_FLAG_HIDDEN);
 
     // Screen is 410x502. Small sleep stats fit between battery and clock.
     s_sleep_label = lv_label_create(screen);
