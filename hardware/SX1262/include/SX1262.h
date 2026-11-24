@@ -45,7 +45,7 @@ namespace sx1262 {
     // Nonblocking operations for MeshCore integration
     esp_err_t start_receive();
     esp_err_t poll_receive(packet_t &packet, bool &available);
-    // MCW_CPU_LORA_IDLE_V1: optional main-task wakeup via LoRa DIO1 ISR.
+    // optional main-task wakeup via LoRa DIO1 ISR.
     void set_wakeup_task(TaskHandle_t task);
 
     // Check LoRa channel activity using SX1262 CAD.

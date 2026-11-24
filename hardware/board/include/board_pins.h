@@ -121,7 +121,7 @@ namespace board {
         constexpr uint32_t FLASH_SIZE = 16 * 1024 * 1024;
         constexpr uint32_t PSRAM_SIZE = 8 * 1024 * 1024;
 
-        // CO5300 AMOLED display
+        // Native landscape dimensions; CO5300Panel exposes 410x502 portrait.
         constexpr uint16_t DISPLAY_WIDTH  = 502;
         constexpr uint16_t DISPLAY_HEIGHT = 410;
 

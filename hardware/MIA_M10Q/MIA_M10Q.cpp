@@ -11,9 +11,10 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "Storage.h"
-#include "HardwareSystem.h"
 
 namespace MIA_M10Q {
+    static UtcCallback s_utc_callback = nullptr;
+    void set_utc_callback(UtcCallback callback) { s_utc_callback = callback; }
 
     static const char *TAG = "MIA_M10Q";
     static constexpr uart_port_t GPS_UART = UART_NUM_1;
@@ -353,7 +354,7 @@ namespace MIA_M10Q {
         first_fix_ms = 0;
         started_ms = now;
 
-        ESP_LOGI(TAG, "GNSS acquisition started");
+        ESP_LOGD(TAG, "GNSS acquisition started");
     }
 
     static void stop_acquisition(uint32_t now){
@@ -385,7 +386,7 @@ namespace MIA_M10Q {
         if (retry_ms > MAX_RETRY_PERIOD_MS) retry_ms = MAX_RETRY_PERIOD_MS;
         next_cycle_ms = now + retry_ms;
 
-        ESP_LOGI(TAG, "GNSS acquisition finished, fix=%d, next attempt in %lu min",
+        ESP_LOGD(TAG, "GNSS acquisition finished, fix=%d, next attempt in %lu min",
                  have_cycle_fix, static_cast<unsigned long>(retry_ms / 60000U));
     }
 
@@ -417,7 +418,7 @@ namespace MIA_M10Q {
             uint32_t utc_seconds = 0;
             if(parse_rmc_utc(sentence, utc_seconds)) {
                 // Throttled in System; never writes RTC on every RMC sentence.
-                (void)hardware::system::sync_gps_utc(utc_seconds);
+                if (s_utc_callback) (void)s_utc_callback(utc_seconds);
             }
 
             if(valid_fix){
@@ -526,10 +527,10 @@ namespace MIA_M10Q {
         if(enabled){
             consecutive_misses = 0;
             next_cycle_ms = millis_now();
-            ESP_LOGI(TAG, "GPS enabled by companion app");
+            ESP_LOGI(TAG, "GPS enabled");
         }else{
             if(powered) stop_acquisition(millis_now());
-            ESP_LOGI(TAG, "GPS disabled by companion app");
+            ESP_LOGI(TAG, "GPS disabled");
             if(powered) return ESP_FAIL;
         }
 

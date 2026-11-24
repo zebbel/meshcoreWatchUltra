@@ -89,7 +89,7 @@ namespace sx1262 {
     static TickType_t tx_timeout_ticks = 0;
     static config_t current_config;
 
-    // MCW_CPU_LORA_IDLE_V1: DIO1 wakes the MeshCore main task without doing SPI in ISR.
+    // DIO1 wakes the MeshCore main task without doing SPI in ISR.
     static std::atomic<TaskHandle_t> wakeup_task{nullptr};
     // Periodic recovery check catches a lost interrupt / DIO1 wiring problem.
     static TickType_t last_rx_irq_check = 0;
@@ -266,7 +266,7 @@ namespace sx1262 {
     }
 
     static esp_err_t configure_oscillator(){
-        ESP_LOGI(TAG, "Configuring SX1262 oscillator");
+        ESP_LOGD(TAG, "Configuring SX1262 oscillator");
 
         uint8_t standby_rc[] = {CMD_SET_STANDBY, 0x00};
         esp_err_t err = command(standby_rc, sizeof(standby_rc));
@@ -289,7 +289,7 @@ namespace sx1262 {
         err = command(standby_xosc, sizeof(standby_xosc));
         if(err != ESP_OK) return err;
 
-        ESP_LOGI(TAG, "SX1262 oscillator configuration complete");
+        ESP_LOGD(TAG, "SX1262 oscillator configuration complete");
         return ESP_OK;
     }
 
@@ -435,9 +435,9 @@ namespace sx1262 {
         irq_registered = true;
 
         initialized = true;
-        ESP_LOGI(TAG, "SX126x detected: %s, status=0x%02X, SPI=%d MHz", version, status.raw, SPI_CLOCK_HZ / 1000000);
-        ESP_LOGI(TAG, "SX1262 oscillator test passed, device errors=0x%04X", status.device_errors);
-        ESP_LOGI(TAG, "SX1262 hardware initialization complete (no RF transmission)");
+        ESP_LOGD(TAG, "SX126x version register: %s, status=0x%02X, SPI=%d MHz", version, status.raw, SPI_CLOCK_HZ / 1000000);
+        ESP_LOGD(TAG, "SX1262 oscillator test passed, device errors=0x%04X", status.device_errors);
+        ESP_LOGI(TAG, "LoRa radio initialized");
         return ESP_OK;
     }
 
@@ -1020,7 +1020,7 @@ namespace sx1262 {
             if(err == ESP_OK) err = rx_err;
         }
 
-        if(err == ESP_OK) ESP_LOGI(TAG, "LoRa TX complete: %u bytes", static_cast<unsigned>(length));
+        if(err == ESP_OK) ESP_LOGD(TAG, "LoRa TX complete: %u bytes", static_cast<unsigned>(length));
         else ESP_LOGE(TAG, "LoRa TX failed: %s", esp_err_to_name(err));
         return err;
     }

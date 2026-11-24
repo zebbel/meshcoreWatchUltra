@@ -26,6 +26,9 @@ namespace MIA_M10Q {
         char utc[7] = {};
     };
 
+    // Invoked on the existing GPS polling task for valid RMC UTC.
+    using UtcCallback = esp_err_t (*)(uint32_t);
+    void set_utc_callback(UtcCallback callback);
     bool is_enabled();
     esp_err_t set_enabled(bool enabled);
 

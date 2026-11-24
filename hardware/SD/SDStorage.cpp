@@ -181,7 +181,7 @@ namespace hardware::sd {
 
     static void worker(void *){
         while(true){
-            // MCW_ENERGY_STAGE2_V1: 30-second cadence for infrequent SD batches.
+            // 30-second cadence for infrequent SD batches.
             // Deferred writes still coalesce; explicit writes stay immediate.
             vTaskDelay(pdMS_TO_TICKS(30000));
             if(pending_mutex == nullptr) continue;

@@ -33,7 +33,7 @@ namespace hardware::bluetooth {
     static ble_uuid128_t service_uuid = {};
     static ble_uuid128_t rx_uuid = {};
     static ble_uuid128_t tx_uuid = {};
-    // MCW_BLE_PERFORMANCE_V1: low-latency BLE with fast initial discovery.
+    // low-latency BLE with fast initial discovery.
     static constexpr uint32_t kFastAdvDurationMs = 30000;
     static constexpr uint32_t kNotificationGapMs = 10;
     static constexpr uint32_t kNotifyRetryGapMs = 30;
@@ -158,7 +158,7 @@ namespace hardware::bluetooth {
 
         int store_rc = ble_store_util_count(BLE_STORE_OBJ_TYPE_PEER_SEC, &bond_count);
 
-        ESP_LOGI(TAG, "BLE bond storage: rc=%d stored_bonds=%d", store_rc, bond_count);
+        ESP_LOGD(TAG, "BLE bond storage: rc=%d stored_bonds=%d", store_rc, bond_count);
         ble_att_set_preferred_mtu(517);
         started_ = true;
         nimble_port_freertos_init(host_task);
@@ -186,7 +186,7 @@ namespace hardware::bluetooth {
         rc = ble_hs_id_copy_addr(own_addr_type_, address, nullptr);
 
         if(rc == 0){
-            ESP_LOGI(TAG, "BLE identity type=%u address=%02X:%02X:%02X:%02X:%02X:%02X", static_cast<unsigned>(own_addr_type_), address[5], address[4], address[3], address[2], address[1], address[0]);
+            ESP_LOGD(TAG, "BLE identity type=%u address=%02X:%02X:%02X:%02X:%02X:%02X", static_cast<unsigned>(own_addr_type_), address[5], address[4], address[3], address[2], address[1], address[0]);
         }
 
         if(own_addr_type_ != BLE_OWN_ADDR_PUBLIC){
@@ -224,7 +224,7 @@ namespace hardware::bluetooth {
         }
         if(rc == 0){
             advertising_started_ms_ = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
-            ESP_LOGI(TAG, "BLE %s advertising: %u-%u ms", fast ? "fast" : "idle",
+            ESP_LOGD(TAG, "BLE %s advertising: %u-%u ms", fast ? "fast" : "idle",
                      fast ? 100U : 250U, fast ? 150U : 350U);
         }else{
             ESP_LOGE(TAG, "Advertising failed: %d", rc);
@@ -266,7 +266,7 @@ namespace hardware::bluetooth {
                 ble_gap_conn_desc desc = {};
                 if (event->conn_update.status == 0 &&
                     ble_gap_conn_find(event->conn_update.conn_handle, &desc) == 0) {
-                    ESP_LOGI(TAG, "BLE negotiated: interval=%lu us latency=%u supervision=%u ms",
+                    ESP_LOGD(TAG, "BLE negotiated: interval=%lu us latency=%u supervision=%u ms",
                              static_cast<unsigned long>(desc.conn_itvl) * 1250UL,
                              static_cast<unsigned>(desc.conn_latency),
                              static_cast<unsigned>(desc.supervision_timeout) * 10U);
@@ -277,7 +277,7 @@ namespace hardware::bluetooth {
                 break;
             }
             case BLE_GAP_EVENT_MTU:
-                ESP_LOGI(TAG, "BLE negotiated ATT MTU=%u",
+                ESP_LOGD(TAG, "BLE negotiated ATT MTU=%u",
                          static_cast<unsigned>(event->mtu.value));
                 break;
             case BLE_GAP_EVENT_SUBSCRIBE:
@@ -302,7 +302,7 @@ namespace hardware::bluetooth {
 
                 int find_rc = ble_gap_conn_find(event->enc_change.conn_handle, &security_desc);
 
-                ESP_LOGI(TAG, "BLE security: status=%d lookup=%d encrypted=%d authenticated=%d bonded=%d", event->enc_change.status, find_rc, find_rc == 0 ? security_desc.sec_state.encrypted : 0, find_rc == 0 ? security_desc.sec_state.authenticated : 0, find_rc == 0 ? security_desc.sec_state.bonded : 0);
+                ESP_LOGD(TAG, "BLE security: status=%d lookup=%d encrypted=%d authenticated=%d bonded=%d", event->enc_change.status, find_rc, find_rc == 0 ? security_desc.sec_state.encrypted : 0, find_rc == 0 ? security_desc.sec_state.authenticated : 0, find_rc == 0 ? security_desc.sec_state.bonded : 0);
                 ble_gap_conn_desc desc = {};
                 if(event->enc_change.status == 0 && ble_gap_conn_find(event->enc_change.conn_handle, &desc) == 0 && desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded){
                     authenticated_.store(true);
@@ -379,7 +379,7 @@ namespace hardware::bluetooth {
             if(xQueueSend(rx_queue_, &frame, 0) != pdTRUE){
                 return BLE_ATT_ERR_INSUFFICIENT_RES;
             }
-            // MCW_POWER_OPTIMIZATION_V2: fast-poll only during active
+            // fast-poll only during active
             // traffic; do not poll every 10 ms for the whole connection.
             last_activity_ms_.store(static_cast<uint32_t>(esp_timer_get_time() / 1000ULL),
                                     std::memory_order_relaxed);
@@ -467,7 +467,7 @@ namespace hardware::bluetooth {
         const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
         if(last_stats_ms_ == 0) last_stats_ms_ = now;
         if(static_cast<uint32_t>(now - last_stats_ms_) >= 30000U){
-            ESP_LOGI(TAG, "BLE TX/30s: sent=%lu retries=%lu pending=%u/%d MTU=%u",
+            ESP_LOGD(TAG, "BLE TX/30s: sent=%lu retries=%lu pending=%u/%d MTU=%u",
                      static_cast<unsigned long>(tx_sent_),
                      static_cast<unsigned long>(tx_retries_),
                      static_cast<unsigned>(uxQueueMessagesWaiting(tx_queue_)),

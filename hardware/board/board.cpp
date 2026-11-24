@@ -20,7 +20,7 @@ namespace board {
             return ESP_OK;
         }
 
-        ESP_LOGI(TAG, "Initializing board");
+        ESP_LOGD(TAG, "Initializing board");
 
         // Initialize I2C bus
         i2c_master_bus_config_t i2c_config = {};
@@ -39,7 +39,7 @@ namespace board {
             return err;
         }
 
-        ESP_LOGI(TAG, "I2C bus initialized");
+        ESP_LOGD(TAG, "I2C bus initialized");
 
 
         // Deselect all shared SPI devices before initializing the bus
@@ -72,7 +72,7 @@ namespace board {
             return err;
         }
 
-        ESP_LOGI(TAG, "Shared SPI devices deselected");
+        ESP_LOGD(TAG, "Shared SPI devices deselected");
 
 
         // Initialize shared SPI bus
@@ -104,7 +104,7 @@ namespace board {
 
         spi_initialized = true;
 
-        ESP_LOGI(TAG, "SPI bus initialized");
+        ESP_LOGD(TAG, "SPI bus initialized");
         ESP_LOGI(TAG, "Board initialization complete");
 
         gpio_install_isr_service(0);

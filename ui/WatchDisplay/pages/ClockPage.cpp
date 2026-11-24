@@ -2,7 +2,7 @@
 
 #include "Power.h"
 #include "DisplayPower.h"
-#include "WatchStatus.h"
+#include "WatchDisplay.h"
 
 #include "lvgl.h"
 #include "sdkconfig.h"
@@ -47,7 +47,7 @@ std::atomic<uint32_t> s_rx_packets{0};
 lv_obj_t *s_gps_label = nullptr;
 lv_obj_t *s_meshcore_label = nullptr;
 lv_obj_t *s_ble_label = nullptr;
-// MCW_POWER_OPTIMIZATION_V2: a small diagnostic label above the clock.
+// a small diagnostic label above the clock.
 lv_obj_t *s_sleep_label = nullptr;
 std::atomic<uint32_t> s_sleep_state{0}; // enabled bit 8, percent bits 0-7
 std::atomic<uint32_t> s_sleep_entries{0};
@@ -175,7 +175,7 @@ void timer_cb(lv_timer_t *) {
 }
 } // namespace
 
-void publish_watch_status(const WatchStatus &status) {
+void publish_watch_status(const watch::WatchStatus &status) {
     uint32_t bits = 0;
     if (status.gps_enabled) bits |= kGpsEnabled;
     if (status.gps_has_fix) bits |= kGpsFix;

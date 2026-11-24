@@ -94,7 +94,7 @@ namespace AXP2101 {
             return ESP_ERR_INVALID_STATE;
         }
 
-        ESP_LOGI(TAG, "Initializing AXP2101");
+        ESP_LOGD(TAG, "Initializing AXP2101");
 
         i2c_device_config_t config = {};
         config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
@@ -243,7 +243,7 @@ namespace AXP2101 {
         err = hardware::storage::read_blob(model_store, "lilygo_gauge", &stored_version, &length);
         if(err == ESP_OK && length == sizeof(stored_version) && stored_version == LILYGO_MODEL_VERSION){
             hardware::storage::close(model_store);
-            ESP_LOGI(TAG, "LilyGO T-Watch Ultra battery model already installed");
+            ESP_LOGD(TAG, "LilyGO T-Watch Ultra battery model already installed");
             return ESP_OK;
         }
         if(err != ESP_OK && !hardware::storage::is_not_found(err)){
@@ -289,7 +289,7 @@ namespace AXP2101 {
             return err;
         }
 
-        ESP_LOGI(TAG, "Power rail %u: %s", bit, enabled ? "On" : "Off");
+        ESP_LOGD(TAG, "Power rail %u: %s", bit, enabled ? "On" : "Off");
 
         return ESP_OK;
     }
@@ -319,7 +319,7 @@ namespace AXP2101 {
             }
         }
 
-        ESP_LOGI(TAG, "Peripheral regulator voltages configured");
+        ESP_LOGD(TAG, "Peripheral regulator voltages configured");
         return ESP_OK;
     }
 
@@ -397,7 +397,7 @@ namespace AXP2101 {
         if(pmu_handle == nullptr)
             return ESP_ERR_INVALID_STATE;
 
-        ESP_LOGI(TAG, "Configuring AXP2101");
+        ESP_LOGD(TAG, "Configuring AXP2101");
 
         esp_err_t err = configure_voltages();
         if(err != ESP_OK) return err;

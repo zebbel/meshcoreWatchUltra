@@ -117,7 +117,7 @@ namespace meshcore {
             return ESP_FAIL;
         }
         initialized = true;
-        ESP_LOGI(TAG, "MeshCore node, companion protocol and telemetry initialized; Bluetooth managed by Main");
+        ESP_LOGI(TAG, "MeshCore node, companion protocol and telemetry initialized");
         return ESP_OK;
     }
 

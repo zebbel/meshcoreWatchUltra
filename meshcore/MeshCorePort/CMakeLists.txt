@@ -62,6 +62,7 @@ idf_component_register(
         SD
         Storage
         System
+        TimeService
         MIA_M10Q
         AXP2101
         SX1262
@@ -72,7 +73,6 @@ idf_component_register(
         nvs_flash
         esp_partition
         bt
-        CO5300
         bootloader_support
         freertos
 )

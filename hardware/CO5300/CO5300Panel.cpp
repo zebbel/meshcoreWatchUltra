@@ -9,6 +9,9 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_co5300.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "sdkconfig.h"
+#include <cstring>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -17,6 +20,8 @@ namespace {
     constexpr auto kSpiHost = SPI3_HOST; // SPI2 belongs to LoRa/SD/NFC.
     constexpr int kSpiClockHz = 40 * 1000 * 1000;
     constexpr uint8_t kInitialBrightness = 25;
+    constexpr size_t kDmaStageBytes = 4096;
+    uint8_t *s_dma_stage = nullptr;
 
     const char *const TAG = "CO5300Panel";
     esp_lcd_panel_io_handle_t s_io = nullptr;
@@ -24,7 +29,7 @@ namespace {
     bool s_spi_ready = false;
     bool s_ready = false;
     bool s_screen_enabled = true;
-    bool s_output_hidden_for_redraw = false; // MCW_AMOLED_RENDER_V4
+    bool s_output_hidden_for_redraw = false;
     // Deep standby replays the panel init table, including brightness=0.
     // Keep the last requested brightness for an exact wake restoration.
     uint8_t s_brightness = kInitialBrightness;
@@ -73,15 +78,16 @@ namespace {
             spi_bus_free(kSpiHost);
             s_spi_ready = false;
         }
+        heap_caps_free(s_dma_stage);
+        s_dma_stage = nullptr;
         XL9555::set_display_enabled(false);
         AXP2101::disable(AXP2101::rail_t::display);
     }
 } // namespace
 
-esp_err_t init(size_t max_transfer_bytes) {
+esp_err_t init() {
     if (s_ready) return ESP_OK;
-    if (max_transfer_bytes == 0) return ESP_ERR_INVALID_ARG;
-    ESP_LOGI(TAG, "Initializing CO5300 hardware: 410x502, SPI3 QSPI 40MHz");
+    ESP_LOGD(TAG, "Initializing CO5300 hardware: 410x502, SPI3 QSPI 40MHz");
     esp_err_t err = AXP2101::enable(AXP2101::rail_t::display);
     if (err != ESP_OK) return err;
     vTaskDelay(pdMS_TO_TICKS(20));
@@ -100,7 +106,7 @@ esp_err_t init(size_t max_transfer_bytes) {
     bus_cfg.data5_io_num = -1;
     bus_cfg.data6_io_num = -1;
     bus_cfg.data7_io_num = -1;
-    bus_cfg.max_transfer_sz = max_transfer_bytes;
+    bus_cfg.max_transfer_sz = kDmaStageBytes;
 
     err = spi_bus_initialize(kSpiHost, &bus_cfg, SPI_DMA_CH_AUTO);
     if (err != ESP_OK) { rollback_hardware(); return err; }
@@ -111,11 +117,7 @@ esp_err_t init(size_t max_transfer_bytes) {
     io_cfg.dc_gpio_num = GPIO_NUM_NC;
     io_cfg.spi_mode = 0;
     io_cfg.pclk_hz = kSpiClockHz;
-    // MCW_AMOLED_RENDER_V4: LVGL's small draw buffer stays in PSRAM, but
-    // SPI DMA uses bounded internal staging buffers. The earlier V3 full-
-    // frame direct-PSRAM DMA path caused TX underflow on ESP32-S3.
-    // MCW_AMOLED_RENDER_V4_1: only one queued SPI transaction; the LVGL
-    // custom blitter supplies its own persistent internal DMA buffer.
+    // Single queued transfer; use internal DMA RAM, never direct PSRAM DMA.
     io_cfg.trans_queue_depth = 1;
     io_cfg.flags.psram_dma_direct = false;
     io_cfg.lcd_cmd_bits = 32;
@@ -147,7 +149,17 @@ esp_err_t init(size_t max_transfer_bytes) {
     s_screen_enabled = true;
     s_output_hidden_for_redraw = false;
     s_brightness = kInitialBrightness;
+    s_dma_stage = static_cast<uint8_t *>(heap_caps_aligned_alloc(
+        64, kDmaStageBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
+    if (!s_dma_stage) {
+        ESP_LOGE(TAG, "Unable to reserve internal display DMA buffer");
+        rollback_hardware();
+        return ESP_ERR_NO_MEM;
+    }
     s_ready = true;
+    ESP_LOGI(TAG, "Panel ready: %ux%u portrait, QSPI %d MHz, %zu-byte DMA stage",
+             static_cast<unsigned>(width), static_cast<unsigned>(height),
+             kSpiClockHz / 1000000, kDmaStageBytes);
     return ESP_OK;
 }
 
@@ -175,7 +187,7 @@ esp_err_t set_screen_enabled(bool enabled, bool defer_display_on) {
             ESP_LOGW(TAG, "AMOLED deep standby failed: %s", esp_err_to_name(err));
             return err;
         }
-        ESP_LOGI(TAG, "AMOLED entered CO5300 deep standby");
+        ESP_LOGD(TAG, "AMOLED entered CO5300 deep standby");
 #endif
         s_screen_enabled = false;
         s_output_hidden_for_redraw = false;
@@ -197,7 +209,7 @@ esp_err_t set_screen_enabled(bool enabled, bool defer_display_on) {
         if (err == ESP_OK) {
             s_screen_enabled = true;
             s_output_hidden_for_redraw = true;
-            ESP_LOGI(TAG, "AMOLED initialized, output blank until redraw DMA completes");
+            ESP_LOGD(TAG, "AMOLED initialized, output blank until redraw DMA completes");
         }
         return err;
     }
@@ -207,7 +219,7 @@ esp_err_t set_screen_enabled(bool enabled, bool defer_display_on) {
     if (err == ESP_OK) {
         s_screen_enabled = true;
         s_output_hidden_for_redraw = false;
-        ESP_LOGI(TAG, "AMOLED panel awake");
+        ESP_LOGD(TAG, "AMOLED panel awake");
     }
     return err;
 }
@@ -225,9 +237,41 @@ esp_err_t reveal_after_full_refresh() {
     err = esp_lcd_panel_co5300_set_brightness(s_panel, s_brightness);
     if (err == ESP_OK) {
         s_output_hidden_for_redraw = false;
-        ESP_LOGI(TAG, "AMOLED visible after bounded redraw DMA fence");
+        ESP_LOGD(TAG, "AMOLED visible after bounded redraw DMA fence");
     }
     return err;
+}
+
+esp_err_t draw_rgb565(int x_start, int y_start, int x_end, int y_end,
+                      const void *color_map) {
+    // Source is packed RGB565 in panel byte order; caller serializes drawing.
+    if (x_start < 0 || y_start < 0 || x_end > width || y_end > height)
+        return ESP_ERR_INVALID_ARG;
+    if (!s_dma_stage || !s_panel || !color_map || x_end <= x_start || y_end <= y_start) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const size_t row_bytes = static_cast<size_t>(x_end - x_start) * 2U;
+    if (row_bytes > kDmaStageBytes) return ESP_ERR_INVALID_SIZE;
+    const int max_rows = static_cast<int>(kDmaStageBytes / row_bytes);
+    const uint8_t *src = static_cast<const uint8_t *>(color_map);
+    for (int y = y_start; y < y_end;) {
+        const int remaining = y_end - y;
+        const int rows = remaining < max_rows ? remaining : max_rows;
+        const size_t n = static_cast<size_t>(rows) * row_bytes;
+        std::memcpy(s_dma_stage, src + static_cast<size_t>(y - y_start) * row_bytes, n);
+        esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel, x_start, y, x_end, y + rows, s_dma_stage);
+        if (err != ESP_OK) {
+            (void)esp_lcd_panel_io_tx_param(s_io, -1, nullptr, 0);
+            return err;
+        }
+        // ESP-IDF 6.1.1 SPI panel IO: command=-1, zero parameters
+        // acquires the bus and drains all queued TX transactions.
+        // This is a real DMA fence, not a timing delay.
+        err = esp_lcd_panel_io_tx_param(s_io, -1, nullptr, 0);
+        if (err != ESP_OK) return err;
+        y += rows;
+    }
+    return ESP_OK;
 }
 
 esp_err_t set_brightness(uint8_t percentage) {
@@ -242,8 +286,8 @@ bool ready() { return s_ready; }
 esp_lcd_panel_handle_t panel() { return s_panel; }
 esp_lcd_panel_io_handle_t panel_io() { return s_io; }
 
-// Only for rollback before LVGL starts. Never free a panel with active LVGL flushes.
-void shutdown_after_failed_ui_start() {
+// Caller must stop all rendering before shutdown.
+void shutdown() {
     rollback_hardware();
 }
 } // namespace hardware::co5300

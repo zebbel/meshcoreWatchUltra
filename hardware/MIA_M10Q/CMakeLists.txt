@@ -12,5 +12,4 @@ idf_component_register(
         esp_driver_uart
         esp_timer
         Storage
-        System
 )

@@ -1,6 +1,7 @@
 
 #include "PlatformAdapters.h"
 #include "HardwareSystem.h"
+#include "TimeService.h"
 #include "esp_log.h"
 
 
@@ -14,11 +15,11 @@ namespace meshcore {
     }
 
     uint32_t RTCAdapter::getCurrentTime(){
-        return hardware::system::utc_time();
+        return services::time_service::utc_time();
     }
 
     void RTCAdapter::setCurrentTime(uint32_t unix_seconds){
-        const esp_err_t err = hardware::system::set_utc_time(unix_seconds);
+        const esp_err_t err = services::time_service::set_utc_time(unix_seconds);
         if(err != ESP_OK)
             ESP_LOGW("RTCAdapter", "Companion time was not stored to RTC: %s", esp_err_to_name(err));
     }

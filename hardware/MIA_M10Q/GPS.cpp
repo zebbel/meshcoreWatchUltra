@@ -1,6 +1,7 @@
 #include "GPS.h"
 
 namespace hardware::gps {
+    void set_utc_callback(UtcCallback callback) { MIA_M10Q::set_utc_callback(callback); }
     esp_err_t init(){ return MIA_M10Q::init(); }
     void loop(){ MIA_M10Q::loop(); }
     bool get_fresh_fix(fix_t &fix){ return MIA_M10Q::get_fresh_fix(fix); }

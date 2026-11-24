@@ -266,7 +266,6 @@ namespace meshcore {
 
     void Node::logRx(mesh::Packet *packet, int length, float score){
         packets_received_++;
-        //ESP_LOGI(TAG, "RX #%lu type=%u route=%u len=%d payload=%u SNR=%.1f score=%.2f", static_cast<unsigned long>(packets_received_), static_cast<unsigned>(packet->getPayloadType()), static_cast<unsigned>(packet->getRouteType()), length, static_cast<unsigned>(packet->payload_len), packet->getSNR(), score);
     }
 
     void Node::logRxRaw(float snr, float rssi, const uint8_t raw[], int length){

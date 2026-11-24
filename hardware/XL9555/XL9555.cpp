@@ -89,7 +89,7 @@ namespace XL9555 {
             return ESP_ERR_INVALID_STATE;
         }
 
-        ESP_LOGI(TAG, "Initializing XL9555");
+        ESP_LOGD(TAG, "Initializing XL9555");
 
         i2c_device_config_t config = {};
         config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
@@ -227,7 +227,7 @@ namespace XL9555 {
             return err;
         }
 
-        ESP_LOGI(TAG, "Haptic driver: %s", enabled ? "Enabled" : "Disabled");
+        ESP_LOGD(TAG, "Haptic driver: %s", enabled ? "Enabled" : "Disabled");
         return ESP_OK;
     }
 
@@ -240,7 +240,7 @@ namespace XL9555 {
             return err;
         }
 
-        ESP_LOGI(TAG, "Display enable: %s", enabled ? "On" : "Off");
+        ESP_LOGD(TAG, "Display enable: %s", enabled ? "On" : "Off");
         return ESP_OK;
     }
 
@@ -253,7 +253,7 @@ namespace XL9555 {
             return err;
         }
 
-        ESP_LOGI(TAG, "Touch reset: %s", released ? "Released" : "Asserted");
+        ESP_LOGD(TAG, "Touch reset: %s", released ? "Released" : "Asserted");
         return ESP_OK;
     }
 
@@ -297,7 +297,7 @@ namespace XL9555 {
             return ESP_ERR_INVALID_STATE;
         }
 
-        ESP_LOGI(TAG, "Configuring XL9555");
+        ESP_LOGD(TAG, "Configuring XL9555");
 
         // Disable haptic driver at startup
         esp_err_t err = set_haptic_enabled(false);
@@ -307,7 +307,7 @@ namespace XL9555 {
         err = set_input(board::expander::SD_DETECT);
         if(err != ESP_OK) return err;
 
-        ESP_LOGI(TAG, "SD card detection configured as input");
+        ESP_LOGD(TAG, "SD card detection configured as input");
         ESP_LOGI(TAG, "XL9555 configuration complete");
         return ESP_OK;
     }

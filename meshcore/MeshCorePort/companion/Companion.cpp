@@ -303,7 +303,7 @@ namespace meshcore {
     }
 
     void Companion::reply_error(uint8_t code, const uint8_t *cmd, size_t len){
-        ESP_LOGI(TAG, "BLE command=%u length=%u", cmd[0], static_cast<unsigned>(len));
+        ESP_LOGD(TAG, "BLE command=%u length=%u", cmd[0], static_cast<unsigned>(len));
         ESP_LOGW(TAG, "Companion command rejected: error=%u", static_cast<unsigned>(code));
 
         const uint8_t f[2] = {RESP_ERROR, code};
@@ -747,7 +747,7 @@ namespace meshcore {
                     return;
                 }
 
-                ESP_LOGI(TAG,
+                ESP_LOGD(TAG,
                         "SET_TIME requested=%lu current=%lu",
                         static_cast<unsigned long>(requested),
                         static_cast<unsigned long>(current));
@@ -771,7 +771,7 @@ namespace meshcore {
 
                 rtc_.setCurrentTime(requested);
 
-                ESP_LOGI(TAG,
+                ESP_LOGD(TAG,
                         "SET_TIME applied=%lu",
                         static_cast<unsigned long>(rtc_.getCurrentTime()));
 
@@ -1240,7 +1240,7 @@ namespace meshcore {
 
                 size_t bytes = telemetry_.encode(TELEM_BASE | TELEM_LOCATION, &f[8], sizeof(f) - 8);
 
-                ESP_LOGI(TAG, "BLE telemetry: payload_bytes=%u gps_included=%d", static_cast<unsigned>(bytes), bytes >= 11 ? 1 : 0);
+                ESP_LOGD(TAG, "BLE telemetry: payload_bytes=%u gps_included=%d", static_cast<unsigned>(bytes), bytes >= 11 ? 1 : 0);
 
                 if(!ble_.send(f, 8 + bytes)){
                     reply_error(ERR_BAD_STATE, cmd, len);

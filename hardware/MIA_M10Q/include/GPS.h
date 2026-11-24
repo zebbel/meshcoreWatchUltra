@@ -5,6 +5,8 @@
 namespace hardware::gps {
     using fix_t = MIA_M10Q::fix_t;
     using status_t = MIA_M10Q::status_t;
+    using UtcCallback = MIA_M10Q::UtcCallback;
+    void set_utc_callback(UtcCallback callback);
     esp_err_t init();
     void loop();
     bool get_fresh_fix(fix_t &fix);

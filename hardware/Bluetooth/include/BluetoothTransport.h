@@ -36,10 +36,10 @@ namespace hardware::bluetooth {
         bool send(const uint8_t *data, size_t length);
         bool send_best_effort(const uint8_t *data, size_t length);
         void loop();
-        // MCW_BLE_PERFORMANCE_V1: wake app_main when new BLE frames arrive.
+        // wake app_main when new BLE frames arrive.
         void set_wakeup_task(TaskHandle_t task);
         bool link_active() const { return connection_handle_.load() != 0xFFFF; }
-        // MCW_POWER_OPTIMIZATION_V2: short fast-poll burst after RX/TX only.
+        // short fast-poll burst after RX/TX only.
         bool recent_activity() const;
         bool has_pending_tx() const {
             return tx_queue_ != nullptr && uxQueueMessagesWaiting(tx_queue_) != 0;

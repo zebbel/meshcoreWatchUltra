@@ -16,8 +16,8 @@
 namespace services::display_power {
 namespace {
     const char *const TAG = "DisplayPower";
-    // MCW_CPU_LORA_IDLE_V1: sleep until next real display timeout or touch IRQ.
-    // MCW_AUTO_LIGHT_SLEEP_V1: recover touch edges that happen during light sleep.
+    // sleep until next real display timeout or touch IRQ.
+    // recover touch edges that happen during light sleep.
     constexpr uint32_t kScreenOffRecheckMs = 250;
 
     ScreenControl s_screen_control = nullptr;
@@ -27,7 +27,7 @@ namespace {
     std::atomic<uint32_t> s_last_activity_ms{0};
     bool s_started = false;
 
-    // MCW_DISPLAY_WAKE_GUARD_V1: own the PM lock in the display service,
+    // own the PM lock in the display service,
     // not in the main loop. A touch can wake the panel before app_main
     // observes the screen-awake flag and reacquires its legacy PM guard.
     // Serialize screen transitions, including external wake calls.
@@ -41,7 +41,7 @@ namespace {
         const esp_err_t err = esp_pm_lock_acquire(s_display_sleep_lock);
         if (err == ESP_OK) {
             s_display_sleep_lock_held = true;
-            ESP_LOGI(TAG, "Display NO_LIGHT_SLEEP lock acquired");
+            ESP_LOGD(TAG, "Display NO_LIGHT_SLEEP lock acquired");
         } else {
             ESP_LOGE(TAG, "Display PM lock acquire failed: %s", esp_err_to_name(err));
         }
@@ -53,7 +53,7 @@ namespace {
         const esp_err_t err = esp_pm_lock_release(s_display_sleep_lock);
         if (err == ESP_OK) {
             s_display_sleep_lock_held = false;
-            ESP_LOGI(TAG, "Display NO_LIGHT_SLEEP lock released");
+            ESP_LOGD(TAG, "Display NO_LIGHT_SLEEP lock released");
         } else {
             // Keep the held flag: retry on another successful screen-off.
             ESP_LOGE(TAG, "Display PM lock release failed: %s", esp_err_to_name(err));
@@ -76,7 +76,7 @@ namespace {
             const uint32_t wait_ms = s_screen_awake.load() ? remaining_ms : kScreenOffRecheckMs;
             const TickType_t wait_ticks = pdMS_TO_TICKS(wait_ms) > 0 ? pdMS_TO_TICKS(wait_ms) : 1;
             const uint32_t events = ulTaskNotifyTake(pdTRUE, wait_ticks);
-            // MCW_AUTO_LIGHT_SLEEP_V1: EXT0 can wake before digital IRQ is
+            // EXT0 can wake before digital IRQ is
             // restored. A latched active-low GPIO12 still needs an I2C ACK.
             const bool pending_touch_level = !s_screen_awake.load() &&
                 gpio_get_level(board::pins::TOUCH_IRQ) == 0;
@@ -99,7 +99,7 @@ namespace {
                 // future LVGL input adapter; no new UI actions in this refactor.
                 if (!s_screen_awake.load()) {
                     if (set_screen_awake(true) == ESP_OK) {
-                        ESP_LOGI(TAG, "AMOLED woke on touch");
+                        ESP_LOGD(TAG, "AMOLED woke on touch");
                     }
                 }
                 // Start a fresh five-second period after the wake command
@@ -115,7 +115,7 @@ namespace {
             if (s_screen_awake.load() && touch_communication_ok &&
                 static_cast<uint32_t>(now - s_last_activity_ms.load()) >= s_timeout_ms) {
                 if (set_screen_awake(false) == ESP_OK) {
-                    ESP_LOGI(TAG, "AMOLED off after %lu ms idle",
+                    ESP_LOGD(TAG, "AMOLED off after %lu ms idle",
                              static_cast<unsigned long>(s_timeout_ms));
                 }
             }
@@ -172,7 +172,7 @@ esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms) {
     }
     hardware::cst9217::set_notification_task(s_task);
     s_started = true;
-    ESP_LOGI(TAG, "5-second display timeout and touch wake active (GPIO12 IRQ)");
+    ESP_LOGI(TAG, "Display timeout %lu ms; touch wake enabled", static_cast<unsigned long>(s_timeout_ms));
     return ESP_OK;
 }
 
