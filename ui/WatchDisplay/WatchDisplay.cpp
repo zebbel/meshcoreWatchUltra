@@ -63,6 +63,7 @@ namespace {
             if (err != ESP_OK) return err;
             s_charging_mode = charging;
         }
+        publish_ui_brightness(charging ? kChargingBrightness : s_normal_brightness);
         set_clock_charging_mode(charging);
         return ESP_OK;
     }
@@ -251,8 +252,12 @@ esp_err_t init() {
 
     err = esp_lv_adapter_lock(2000);
     if (err == ESP_OK) {
-        render_clock_page();
+        err = render_clock_page();
         esp_lv_adapter_unlock();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "EEZ UI initialization failed: %s", esp_err_to_name(err));
+            return err;
+        }
     } else {
         ESP_LOGE(TAG, "LVGL display lock failed: %s", esp_err_to_name(err));
         // Preserve existing behavior: don't destroy a running LVGL task.
@@ -277,7 +282,10 @@ esp_err_t set_brightness(uint8_t percentage) {
     esp_err_t err = esp_lv_adapter_lock(1000);
     if (err != ESP_OK) return err;
     if (!s_charging_mode) err = hardware::co5300::set_brightness(percentage);
-    if (err == ESP_OK) s_normal_brightness = percentage;
+    if (err == ESP_OK) {
+        s_normal_brightness = percentage;
+        publish_ui_brightness(s_charging_mode ? kChargingBrightness : s_normal_brightness);
+    }
     esp_lv_adapter_unlock();
     return err;
 }
