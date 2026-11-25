@@ -26,6 +26,8 @@ extern const char *get_var_clock_time();
 extern void set_var_clock_time(const char *value);
 extern int32_t get_var_brightness();
 extern void set_var_brightness(int32_t value);
+extern bool get_var_ble_connected();
+extern void set_var_ble_connected(bool value);
 
 #ifdef __cplusplus
 }

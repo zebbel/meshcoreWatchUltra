@@ -142,6 +142,14 @@
         "defaultValue": "25",
         "persistent": false,
         "native": true
+      },
+      {
+        "objID": "edc329a9-29de-4de8-eb43-105162716ff1",
+        "name": "ble_connected",
+        "type": "boolean",
+        "defaultValue": "false",
+        "persistent": false,
+        "native": true
       }
     ],
     "structures": [],
@@ -184,10 +192,10 @@
             {
               "objID": "20030e94-cf9c-4105-e7bd-d7dba8fb8f08",
               "type": "LVGLLabelWidget",
-              "left": 0,
+              "left": 183,
               "top": 50,
-              "width": 410,
-              "height": 40,
+              "width": 73,
+              "height": 30,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -291,12 +299,80 @@
               "useStaticText": true
             },
             {
+              "objID": "94c6fcec-b925-44fb-ac73-dfb8d3fa9b1d",
+              "type": "LVGLBarWidget",
+              "left": 190,
+              "top": 13,
+              "width": 60,
+              "height": 30,
+              "customInputs": [],
+              "customOutputs": [],
+              "style": {
+                "objID": "5003eb01-d8e0-44cd-d0a5-9671a9bd534c",
+                "useStyle": "default",
+                "conditionalStyles": [],
+                "childStyles": []
+              },
+              "timeline": [],
+              "eventHandlers": [],
+              "identifier": "battery_bar",
+              "leftUnit": "px",
+              "topUnit": "px",
+              "widthUnit": "px",
+              "heightUnit": "px",
+              "children": [],
+              "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
+              "hiddenFlagType": "literal",
+              "clickableFlag": true,
+              "clickableFlagType": "literal",
+              "flagScrollbarMode": "",
+              "flagScrollDirection": "",
+              "scrollSnapX": "",
+              "scrollSnapY": "",
+              "checkedStateType": "literal",
+              "disabledStateType": "literal",
+              "states": "",
+              "localStyles": {
+                "objID": "6a405113-2f4f-4b62-fd95-aa98b6405bea",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "line_color": "#000000",
+                      "radius": 2,
+                      "outline_width": 2,
+                      "outline_color": "#F7F7F7"
+                    }
+                  },
+                  "INDICATOR": {
+                    "DEFAULT": {
+                      "bg_color": "#00FD41",
+                      "radius": 2
+                    }
+                  }
+                }
+              },
+              "group": "",
+              "groupIndex": 0,
+              "min": 0,
+              "minType": "literal",
+              "max": 100,
+              "maxType": "literal",
+              "mode": "NORMAL",
+              "value": "battery_percent",
+              "valueType": "expression",
+              "previewValue": "75",
+              "valueStart": 0,
+              "valueStartType": "literal",
+              "previewValueStart": "0",
+              "enableAnimation": false
+            },
+            {
               "objID": "403b4e6c-ada4-4750-8a7c-982e33ecb411",
               "type": "LVGLLabelWidget",
-              "left": 223,
-              "top": 51,
-              "width": 60,
-              "height": 33,
+              "left": 213,
+              "top": 17,
+              "width": 13,
+              "height": 22,
               "customInputs": [],
               "customOutputs": [],
               "style": {
@@ -310,7 +386,7 @@
               "identifier": "charge_lightning_icon_1",
               "leftUnit": "px",
               "topUnit": "px",
-              "widthUnit": "px",
+              "widthUnit": "content",
               "heightUnit": "content",
               "children": [],
               "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
@@ -328,7 +404,7 @@
                 "definition": {
                   "MAIN": {
                     "DEFAULT": {
-                      "text_font": "MONTSERRAT_30",
+                      "text_font": "MONTSERRAT_20",
                       "text_color": "#EBC36D",
                       "text_align": "CENTER"
                     }
@@ -342,6 +418,59 @@
               "longMode": "WRAP",
               "recolor": false,
               "previewValue": "",
+              "useStaticText": true
+            },
+            {
+              "objID": "115bc5dd-4e6f-4907-f146-98b99a74c71b",
+              "type": "LVGLLabelWidget",
+              "left": 154,
+              "top": 12,
+              "width": 26,
+              "height": 33,
+              "customInputs": [],
+              "customOutputs": [],
+              "style": {
+                "objID": "a25d5a0c-00b6-4262-e0ae-3776e5eade28",
+                "useStyle": "default",
+                "conditionalStyles": [],
+                "childStyles": []
+              },
+              "timeline": [],
+              "eventHandlers": [],
+              "identifier": "bluetooth_icon",
+              "leftUnit": "px",
+              "topUnit": "px",
+              "widthUnit": "content",
+              "heightUnit": "content",
+              "children": [],
+              "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
+              "hiddenFlagType": "literal",
+              "clickableFlagType": "literal",
+              "flagScrollbarMode": "",
+              "flagScrollDirection": "",
+              "scrollSnapX": "",
+              "scrollSnapY": "",
+              "checkedStateType": "literal",
+              "disabledStateType": "literal",
+              "states": "",
+              "localStyles": {
+                "objID": "108aae39-649f-4113-f764-7b342df81cc9",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "text_font": "MONTSERRAT_30",
+                      "text_color": "#3399FF"
+                    }
+                  }
+                }
+              },
+              "group": "",
+              "groupIndex": 0,
+              "text": "",
+              "textType": "literal",
+              "longMode": "WRAP",
+              "recolor": false,
+              "previewValue": "",
               "useStaticText": true
             }
           ],
@@ -460,6 +589,80 @@
               "value": "25"
             }
           ]
+        },
+        {
+          "objID": "0bf57c9c-6831-4c0a-d7d1-88b8a1590063",
+          "type": "WatchVariableActionComponent",
+          "left": 184,
+          "top": 631,
+          "width": 154,
+          "height": 53,
+          "customInputs": [],
+          "customOutputs": [],
+          "variable": "ble_connected"
+        },
+        {
+          "objID": "f63efc7f-f60d-4fed-e6f6-e119b57de9cd",
+          "type": "IsTrueActionComponent",
+          "left": 457,
+          "top": 624,
+          "width": 128,
+          "height": 68,
+          "customInputs": [],
+          "customOutputs": [],
+          "value": "ble_connected"
+        },
+        {
+          "objID": "55bb43fe-8f6f-4451-e612-d5f5a5dce3bd",
+          "type": "LVGLActionComponent",
+          "left": 706,
+          "top": 624,
+          "width": 347,
+          "height": 53,
+          "customInputs": [],
+          "customOutputs": [],
+          "actions": [
+            {
+              "objID": "1d43d11e-d697-49cb-a012-23ee791c2637",
+              "action": "objStyleSetProperty",
+              "object": "bluetooth_icon",
+              "objectType": "literal",
+              "property": "text_color",
+              "propertyType": "literal",
+              "value": "#3399FF",
+              "valueType": "literal",
+              "part": "MAIN",
+              "partType": "literal",
+              "state": "DEFAULT",
+              "stateType": "literal"
+            }
+          ]
+        },
+        {
+          "objID": "f711567d-24c1-433f-bb5f-01767b124a0a",
+          "type": "LVGLActionComponent",
+          "left": 706,
+          "top": 684,
+          "width": 347,
+          "height": 53,
+          "customInputs": [],
+          "customOutputs": [],
+          "actions": [
+            {
+              "objID": "125ec0df-0a08-4ad4-fe4b-e11ff833ea64",
+              "action": "objStyleSetProperty",
+              "object": "bluetooth_icon",
+              "objectType": "literal",
+              "property": "text_color",
+              "propertyType": "literal",
+              "value": "#555555",
+              "valueType": "literal",
+              "part": "MAIN",
+              "partType": "literal",
+              "state": "DEFAULT",
+              "stateType": "literal"
+            }
+          ]
         }
       ],
       "connectionLines": [
@@ -510,6 +713,34 @@
           "source": "f90b60d0-0665-1f2d-d7bb-8672ca4b6e2e",
           "output": "SCREEN_LOADED",
           "target": "876e5780-a639-4a32-8c84-711863655734",
+          "input": "@seqin"
+        },
+        {
+          "objID": "76b2f62b-2ed8-448e-fd92-dd2cf985dba0",
+          "source": "2f6524fa-f46a-46de-ba45-1bcf9afd85d7",
+          "output": "@seqout",
+          "target": "0bf57c9c-6831-4c0a-d7d1-88b8a1590063",
+          "input": "@seqin"
+        },
+        {
+          "objID": "08e38252-9ccd-4b56-8d3f-2051c7dcc6f4",
+          "source": "0bf57c9c-6831-4c0a-d7d1-88b8a1590063",
+          "output": "variable",
+          "target": "f63efc7f-f60d-4fed-e6f6-e119b57de9cd",
+          "input": "@seqin"
+        },
+        {
+          "objID": "5da3ab27-2ad5-4e40-a9ce-a1321faeaedd",
+          "source": "f63efc7f-f60d-4fed-e6f6-e119b57de9cd",
+          "output": "True",
+          "target": "55bb43fe-8f6f-4451-e612-d5f5a5dce3bd",
+          "input": "@seqin"
+        },
+        {
+          "objID": "491c4134-77e3-4051-eaaa-3d3059f705e2",
+          "source": "f63efc7f-f60d-4fed-e6f6-e119b57de9cd",
+          "output": "False",
+          "target": "f711567d-24c1-433f-bb5f-01767b124a0a",
           "input": "@seqin"
         }
       ],
