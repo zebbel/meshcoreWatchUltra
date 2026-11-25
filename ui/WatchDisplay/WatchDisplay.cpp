@@ -1,5 +1,5 @@
 #include "WatchDisplay.h"
-#include "pages/ClockPage.h"
+#include "FlowBridge.h"
 
 #include "CO5300Panel.h"
 #include "DisplayPower.h"
@@ -24,7 +24,6 @@ namespace {
     // no LVGL tick or render task activity while AMOLED is off.
     bool s_adapter_paused = false;
     uint32_t s_flush_events = 0;
-    lv_indev_t *s_touch_indev = nullptr;
 
     // LVGL task only. The DisplayPower service remains the sole owner of
     // touch IRQ reads/ACKs. No I2C access or LVGL calls from the producer.
@@ -42,7 +41,7 @@ namespace {
     }
 
     void init_touch_input(lv_display_t *disp) {
-        s_touch_indev = lv_indev_create();
+        lv_indev_t *s_touch_indev = lv_indev_create();
         if (!s_touch_indev) {
             ESP_LOGW(TAG, "LVGL touch input allocation failed; touch wake still available");
             return;
@@ -80,23 +79,14 @@ namespace {
         if ((++s_flush_events & 1U) == 0U) vTaskDelay(1);
     }
 
-    // Caller owns the LVGL lock and the panel is awake (possibly hidden).
-    esp_err_t apply_charging_mode_locked(bool charging) {
-        // Publish the charging state only. EEZ Flow owns brightness and navigation.
-        set_clock_charging_mode(charging);
-        return ESP_OK;
-    }
-
     esp_err_t apply_charging_display(bool charging) {
         esp_err_t err = esp_lv_adapter_lock(1000);
         if (err != ESP_OK) return err;
-        err = apply_charging_mode_locked(charging);
-        if (err == ESP_OK) {
-            lv_obj_invalidate(lv_screen_active());
-            lv_refr_now(lv_display_get_default());
-        }
+        refresh_flow(charging);
+        lv_obj_invalidate(lv_screen_active());
+        lv_refr_now(lv_display_get_default());
         esp_lv_adapter_unlock();
-        return err;
+        return ESP_OK;
     }
 
     // The adapter worker must be paused before CO5300 deep standby/reset.
@@ -162,32 +152,19 @@ namespace {
             return ESP_ERR_INVALID_STATE;
         }
 
-        const uint32_t start_ms = esp_log_timestamp();
-        // Select the charging presentation before revealing the panel.
-        err = apply_charging_mode_locked(services::display_power::is_charging());
-        if (err != ESP_OK) {
-            esp_lv_adapter_unlock();
-            (void)hardware::co5300::reveal_after_full_refresh();
-            return err;
-        }
+        // Refresh native state before the hidden full-frame redraw.
+        refresh_flow(services::display_power::is_charging());
         lv_obj_invalidate(lv_screen_active());
         // LVGL renders ~16 bounded regions, yielding periodically to avoid
         // starving IDLE0. The mutex prevents any concurrent LVGL redraw.
         lv_refr_now(disp);
-        const uint32_t rendered_ms = esp_log_timestamp() - start_ms;
 
         // IDF 6.1.1 spi_panel_io_tx_param drains queued color DMA before
         // sending DISPON. The full frame is in panel GRAM before showing it.
         err = hardware::co5300::reveal_after_full_refresh();
-        const uint32_t full_ms = esp_log_timestamp() - start_ms;
         esp_lv_adapter_unlock();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "AMOLED DMA-fenced reveal failed: %s", esp_err_to_name(err));
-        } else {
-            ESP_LOGD(TAG, "AMOLED wake: draw/submit=%lu ms, DMA drain+reveal=%lu ms, total=%lu ms",
-                     static_cast<unsigned long>(rendered_ms),
-                     static_cast<unsigned long>(full_ms - rendered_ms),
-                     static_cast<unsigned long>(full_ms));
         }
         return err;
     }
@@ -197,7 +174,6 @@ esp_err_t init() {
     if (s_ready) return ESP_OK;
     if (s_adapter_ready) return ESP_ERR_INVALID_STATE;
 
-    ESP_LOGD(TAG, "Initializing LVGL 9 display UI");
     constexpr size_t kDrawBufferBytes =
         static_cast<size_t>(hardware::co5300::width) * kDrawRows * 2;
     esp_err_t err = hardware::co5300::init();
@@ -271,7 +247,7 @@ esp_err_t init() {
 
     err = esp_lv_adapter_lock(2000);
     if (err == ESP_OK) {
-        err = render_clock_page();
+        err = init_flow();
         if (err == ESP_OK) init_touch_input(disp);
         esp_lv_adapter_unlock();
         if (err != ESP_OK) {
@@ -295,19 +271,6 @@ esp_err_t init() {
              static_cast<unsigned>(kDrawRows), kDrawBufferBytes);
     return ESP_OK;
 }
-
-esp_err_t set_ui_brightness_locked(uint8_t percentage) {
-    if (percentage < 1 || percentage > 100) return ESP_ERR_INVALID_ARG;
-    // ui_init() may invoke a setter before s_ready becomes true; the panel
-    // and adapter have already been initialized in that case.
-    if (!s_adapter_ready) return ESP_ERR_INVALID_STATE;
-    const esp_err_t err = hardware::co5300::set_brightness(percentage);
-    if (err == ESP_OK) {
-        publish_ui_brightness(percentage);
-    }
-    return err;
-}
-
 
 esp_err_t set_screen_awake(bool awake) {
     return services::display_power::set_screen_awake(awake);

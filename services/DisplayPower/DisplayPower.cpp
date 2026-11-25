@@ -79,7 +79,6 @@ namespace {
         const esp_err_t err = esp_pm_lock_acquire(s_display_sleep_lock);
         if (err == ESP_OK) {
             s_display_sleep_lock_held = true;
-            ESP_LOGD(TAG, "Display NO_LIGHT_SLEEP lock acquired");
         } else {
             ESP_LOGE(TAG, "Display PM lock acquire failed: %s", esp_err_to_name(err));
         }
@@ -91,7 +90,6 @@ namespace {
         const esp_err_t err = esp_pm_lock_release(s_display_sleep_lock);
         if (err == ESP_OK) {
             s_display_sleep_lock_held = false;
-            ESP_LOGD(TAG, "Display NO_LIGHT_SLEEP lock released");
         } else {
             // Keep the held flag: retry on another successful screen-off.
             ESP_LOGE(TAG, "Display PM lock release failed: %s", esp_err_to_name(err));
@@ -163,7 +161,6 @@ namespace {
                 const bool wake_contact = !s_screen_awake.load();
                 if (wake_contact) {
                     if (set_screen_awake(true) == ESP_OK) {
-                        ESP_LOGD(TAG, "AMOLED woke on touch");
                         touch_report(point, err, true, uptime_ms());
                     }
                 } else {
@@ -182,10 +179,7 @@ namespace {
             // Fail safe: keep AMOLED on if touch ACK isn't reliable.
             if (s_screen_awake.load() && !s_charging.load() && touch_communication_ok &&
                 static_cast<uint32_t>(now - s_last_activity_ms.load()) >= s_timeout_ms) {
-                if (set_screen_awake(false) == ESP_OK) {
-                    ESP_LOGD(TAG, "AMOLED off after %lu ms idle",
-                             static_cast<unsigned long>(s_timeout_ms));
-                }
+                (void)set_screen_awake(false);
             }
         }
     }
@@ -278,8 +272,8 @@ esp_err_t set_screen_awake(bool awake) {
         if (err == ESP_OK) err = s_screen_control(awake);
         if (err == ESP_OK) {
             s_screen_awake.store(awake);
-            if (awake) touch_set_awake(true);
             if (awake) {
+                touch_set_awake(true);
                 // The wake callback renders the requested mode before revealing.
                 s_charging_display_applied = charging;
                 notify_activity();

@@ -21,7 +21,6 @@
 namespace hardware::sd {
     static const char *TAG = "SDStorage";
     static SemaphoreHandle_t mutex = nullptr;
-    static SemaphoreHandle_t pending_mutex = nullptr;
     static sdmmc_card_t *card = nullptr;
     static bool initialized = false;
     static bool mounted = false;
@@ -32,20 +31,6 @@ namespace hardware::sd {
     static bool storage_fault = false;
     static bool cached_present = false;
     static uint32_t last_detect_ms = 0;
-    // Automatically learned contact advert updates are coalesced in RAM for 30 minutes.
-    static constexpr uint32_t DEFER_MS = 30U * 60U * 1000U;
-    static constexpr size_t MAX_DEFERRED = 64;
-
-    struct Deferred {
-        bool used = false;
-        uint32_t queued_ms = 0;
-        char path[MAX_PATH] = {};
-        size_t length = 0;
-        uint8_t bytes[MAX_DEFERRED_BYTES] = {};
-    };
-    static Deferred pending[MAX_DEFERRED] = {};
-    static uint32_t last_flush_attempt = 0;
-
     static bool valid_path(const char *path){
         return path != nullptr && strncmp(path, "/sdcard/", 8) == 0 && strlen(path) < MAX_PATH && strstr(path, "..") == nullptr;
     }
@@ -179,35 +164,11 @@ namespace hardware::sd {
         if(power_off() != ESP_OK) storage_fault = true;
     }
 
-    static void worker(void *){
-        while(true){
-            // 30-second cadence for infrequent SD batches.
-            // Deferred writes still coalesce; explicit writes stay immediate.
-            vTaskDelay(pdMS_TO_TICKS(30000));
-            if(pending_mutex == nullptr) continue;
-            if(xSemaphoreTake(pending_mutex, pdMS_TO_TICKS(100)) != pdTRUE) continue;
-            const uint32_t now = static_cast<uint32_t>(xTaskGetTickCount() * portTICK_PERIOD_MS);
-            bool due = false;
-            for(const auto &p : pending){
-                if(p.used && static_cast<uint32_t>(now - p.queued_ms) >= DEFER_MS) due = true;
-            }
-            xSemaphoreGive(pending_mutex);
-            if(due && static_cast<uint32_t>(now - last_flush_attempt) >= 5000){
-                last_flush_attempt = now;
-                esp_err_t err = flush_pending();
-                if(err != ESP_OK) ESP_LOGW(TAG, "Deferred save pending: %s", esp_err_to_name(err));
-            }
-        }
-    }
-
     esp_err_t init(){
         if(initialized) return ESP_OK;
         mutex = xSemaphoreCreateRecursiveMutex();
-        pending_mutex = xSemaphoreCreateMutex();
-        if(mutex == nullptr || pending_mutex == nullptr) return ESP_ERR_NO_MEM;
+        if(mutex == nullptr) return ESP_ERR_NO_MEM;
         cached_present = card_present();
-        const BaseType_t rc = xTaskCreate(worker, "sd-saver", 12288, nullptr, 3, nullptr);
-        if(rc != pdPASS) return ESP_ERR_NO_MEM;
         initialized = true;
         // Do not switch on ALDO1 here; startup storage session will mount.
         return ESP_OK;
@@ -361,60 +322,5 @@ namespace hardware::sd {
         unlink(bak);
         if(unlink(path) == 0 || errno == ENOENT) return ESP_OK;
         return ESP_FAIL;
-    }
-
-    bool has_pending_writes(){
-        if(pending_mutex == nullptr || xSemaphoreTake(pending_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
-        bool any = false;
-        for(const auto &p : pending) if(p.used){ any = true; break; }
-        xSemaphoreGive(pending_mutex);
-        return any;
-    }
-
-    esp_err_t defer_write(const char *path, const void *data, size_t length){
-        if(!valid_path(path) || data == nullptr || length == 0 || length > MAX_DEFERRED_BYTES) return ESP_ERR_INVALID_ARG;
-        if(!ready()) return ESP_ERR_INVALID_STATE;
-        if(xSemaphoreTake(pending_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) return ESP_ERR_TIMEOUT;
-        Deferred *slot = nullptr;
-        for(auto &p : pending) if(p.used && strcmp(p.path, path) == 0){ slot = &p; break; }
-        if(slot == nullptr) for(auto &p : pending) if(!p.used){ slot = &p; break; }
-        if(slot == nullptr){ xSemaphoreGive(pending_mutex); return ESP_ERR_NO_MEM; }
-        if(!slot->used){
-            slot->queued_ms = static_cast<uint32_t>(xTaskGetTickCount() * portTICK_PERIOD_MS);
-            snprintf(slot->path, sizeof(slot->path), "%s", path);
-        }
-        memcpy(slot->bytes, data, length);
-        slot->length = length;
-        slot->used = true;
-        xSemaphoreGive(pending_mutex);
-        return ESP_OK;
-    }
-
-    esp_err_t flush_pending(){
-        if(pending_mutex == nullptr || xSemaphoreTake(pending_mutex, pdMS_TO_TICKS(10000)) != pdTRUE) return ESP_ERR_TIMEOUT;
-        bool any = false;
-        for(const auto &p : pending) if(p.used) any = true;
-        if(!any){ xSemaphoreGive(pending_mutex); return ESP_OK; }
-        Session session;
-        if(!session.ok()){
-            xSemaphoreGive(pending_mutex);
-            return session.error();
-        }
-        for(auto &p : pending){
-            if(!p.used) continue;
-            esp_err_t err = write_raw(p.path, p.bytes, p.length);
-            if(err != ESP_OK){ xSemaphoreGive(pending_mutex); return err; }
-            p.used = false;
-        }
-        xSemaphoreGive(pending_mutex);
-        return ESP_OK;
-    }
-
-    esp_err_t cancel_pending(const char *path){
-        if(pending_mutex == nullptr) return ESP_ERR_INVALID_STATE;
-        if(xSemaphoreTake(pending_mutex, pdMS_TO_TICKS(10000)) != pdTRUE) return ESP_ERR_TIMEOUT;
-        for(auto &p : pending) if(p.used && strcmp(p.path, path) == 0) p.used = false;
-        xSemaphoreGive(pending_mutex);
-        return ESP_OK;
     }
 }

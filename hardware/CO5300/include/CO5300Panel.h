@@ -23,6 +23,8 @@ namespace hardware::co5300 {
     // Call after the complete redraw; caller must serialize panel access.
     esp_err_t reveal_after_full_refresh();
     esp_err_t set_brightness(uint8_t percentage);
+    // Last successfully requested brightness; caller serializes panel access.
+    uint8_t brightness();
     bool ready();
     esp_lcd_panel_handle_t panel();
     esp_lcd_panel_io_handle_t panel_io();

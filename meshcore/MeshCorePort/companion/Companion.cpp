@@ -303,8 +303,9 @@ namespace meshcore {
     }
 
     void Companion::reply_error(uint8_t code, const uint8_t *cmd, size_t len){
-        ESP_LOGD(TAG, "BLE command=%u length=%u", cmd[0], static_cast<unsigned>(len));
-        ESP_LOGW(TAG, "Companion command rejected: error=%u", static_cast<unsigned>(code));
+        ESP_LOGW(TAG, "Companion command rejected: cmd=%u len=%u error=%u",
+                 static_cast<unsigned>(len && cmd ? cmd[0] : 0),
+                 static_cast<unsigned>(len), static_cast<unsigned>(code));
 
         const uint8_t f[2] = {RESP_ERROR, code};
         ble_.send(f, 2);

@@ -6,14 +6,12 @@
 
 namespace hardware::sd {
     constexpr size_t MAX_PATH = 160;
-    constexpr size_t MAX_DEFERRED_BYTES = 384;
 
     // Call once after board, PMU and GPIO expander initialization.
     esp_err_t init();
     bool card_present();
     bool ready();
     bool writable();
-    bool has_pending_writes();
     uint32_t capacity_kib(); // Last mounted card capacity; does not power up SD.
 
     // Scope owns the SD power rail and the shared SPI2 gate. Nested scopes on
@@ -40,10 +38,4 @@ namespace hardware::sd {
     esp_err_t remove_file(const char *path);
     esp_err_t ensure_directory(const char *path);
     bool exists(const char *path);
-
-    // Defers automatic discovery writes (not explicit user operations).
-    // Queue is bounded and items with the same path are coalesced.
-    esp_err_t defer_write(const char *path, const void *data, size_t length);
-    esp_err_t flush_pending();
-    esp_err_t cancel_pending(const char *path);
 }

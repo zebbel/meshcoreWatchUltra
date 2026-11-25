@@ -1,13 +1,13 @@
-#include "ClockPage.h"
+#include "FlowBridge.h"
 #include "Power.h"
 #include "DisplayPower.h"
 #include "WatchDisplay.h"
+#include "CO5300Panel.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include "sdkconfig.h"
 #include "ui.h"
 #include "vars.h"
-#include "screens.h"
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -31,7 +31,6 @@ uint32_t s_last_battery = 0;
 uint32_t s_last_clock = 0;
 std::atomic<uint32_t> s_status{0};
 std::atomic<uint32_t> s_rx{0};
-std::atomic<int32_t> s_brightness{0}; // blank until EEZ requests brightness
 constexpr uint32_t GPS_ENABLED=1U, GPS_FIX=2U, BLE=4U, MESH=8U;
 void sample_time() {
     const time_t epoch = std::time(nullptr);
@@ -94,13 +93,13 @@ int32_t get_var_meshcore_rx_packets() {
 void set_var_meshcore_rx_packets(int32_t) {}
 int32_t get_var_sleep_percent() { return (s_status.load() >> 16) & 255U; }
 void set_var_sleep_percent(int32_t) {}
-int32_t get_var_brightness() { return s_brightness.load(); }
+int32_t get_var_brightness() { return hardware::co5300::brightness(); }
 void set_var_brightness(int32_t value) {
     // Do not narrow an unchecked signed value, or turn the UI black.
     if (value < 1 || value > 100) return;
-    if (value == s_brightness.load()) return;
-    const esp_err_t err = ui::watch_display::set_ui_brightness_locked(
-        static_cast<uint8_t>(value));
+    if (value == hardware::co5300::brightness()) return;
+    // Native setters execute under the LVGL lock, including hidden wake.
+    const esp_err_t err = hardware::co5300::set_brightness(static_cast<uint8_t>(value));
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "EEZ brightness change failed: %s", esp_err_to_name(err));
     }
@@ -117,27 +116,16 @@ void publish_watch_status(const watch::WatchStatus &status) {
     s_rx.store(status.meshcore_rx_packets);
     s_status.store(bits);
 }
-void publish_ui_brightness(uint8_t percent) { s_brightness.store(percent); }
-void refresh_clock_battery() {
-    if (s_timer) sample_battery();
-}
-void set_clock_charging_mode(bool charging) {
+void refresh_flow(bool charging) {
     if (!s_timer) return;
-    const bool changed = s_charging != charging;
     s_charging = charging;
     sample_battery();
     sample_time();
     // Also called during hidden wake with the display service still reporting
     // asleep. Explicitly tick here, rather than relying on the periodic timer.
     settle_flow();
-    if (changed) {
-        ESP_LOGI(TAG, "Charging state published to EEZ: %s", charging ? "true" : "false");
-        if (lv_screen_active() != (charging ? objects.charging : objects.main)) {
-            ESP_LOGW(TAG, "EEZ navigation not settled; check page Watch actions (no native fallback)");
-        }
-    }
 }
-esp_err_t render_clock_page() {
+esp_err_t init_flow() {
     if (s_timer) return ESP_OK;
     setenv("TZ", CONFIG_MCW_WATCH_CLOCK_TIMEZONE, 1);
     tzset();
@@ -145,15 +133,17 @@ esp_err_t render_clock_page() {
     s_charging = services::display_power::is_charging();
     sample_time();
     sample_battery();
+    lv_obj_t *initial_screen = lv_screen_active();
     ui_init();
     settle_flow();
-    if (!objects.main || !objects.charging || objects.main == objects.charging) {
-        ESP_LOGE(TAG, "EEZ main/charging pages missing; enable creation at startup");
+    // The designer, not C++, owns page names and navigation policy.
+    if (eez_flow_is_stopped() || !lv_screen_active() || lv_screen_active() == initial_screen) {
+        ESP_LOGE(TAG, "EEZ Flow did not load a generated screen");
         return ESP_ERR_INVALID_STATE;
     }
     s_timer = lv_timer_create(tick, kFlowTickMs, nullptr);
     if (!s_timer) return ESP_ERR_NO_MEM;
-    if (s_brightness.load() == 0) ESP_LOGW(TAG, "EEZ has not set brightness yet; panel remains blank until a valid request");
+    if (hardware::co5300::brightness() == 0) ESP_LOGW(TAG, "EEZ has not set brightness yet; panel remains blank until a valid request");
     ESP_LOGI(TAG, "EEZ Flow ready (50 ms tick; native hardware variables)");
     return ESP_OK;
 }

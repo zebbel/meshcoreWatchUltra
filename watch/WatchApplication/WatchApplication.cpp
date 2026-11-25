@@ -123,7 +123,6 @@ void watch::run(){
     bluetooth.set_wakeup_task(xTaskGetCurrentTaskHandle());
     constexpr uint32_t kMainLoopWaitMs = 50;
     constexpr uint32_t kActiveBleWaitMs = 10;
-    ESP_LOGD(TAG, "IRQ-assisted MeshCore loop: 50 ms idle, 10 ms BLE traffic; BLE event wake");
 
     while(true){
         services::power_management::restore_wakeup_pins_if_needed();

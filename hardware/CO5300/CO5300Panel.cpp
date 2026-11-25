@@ -87,7 +87,6 @@ namespace {
 
 esp_err_t init() {
     if (s_ready) return ESP_OK;
-    ESP_LOGD(TAG, "Initializing CO5300 hardware: 410x502, SPI3 QSPI 40MHz");
     esp_err_t err = AXP2101::enable(AXP2101::rail_t::display);
     if (err != ESP_OK) return err;
     vTaskDelay(pdMS_TO_TICKS(20));
@@ -187,7 +186,6 @@ esp_err_t set_screen_enabled(bool enabled, bool defer_display_on) {
             ESP_LOGW(TAG, "AMOLED deep standby failed: %s", esp_err_to_name(err));
             return err;
         }
-        ESP_LOGD(TAG, "AMOLED entered CO5300 deep standby");
 #endif
         s_screen_enabled = false;
         s_output_hidden_for_redraw = false;
@@ -209,7 +207,6 @@ esp_err_t set_screen_enabled(bool enabled, bool defer_display_on) {
         if (err == ESP_OK) {
             s_screen_enabled = true;
             s_output_hidden_for_redraw = true;
-            ESP_LOGD(TAG, "AMOLED initialized, output blank until redraw DMA completes");
         }
         return err;
     }
@@ -219,7 +216,6 @@ esp_err_t set_screen_enabled(bool enabled, bool defer_display_on) {
     if (err == ESP_OK) {
         s_screen_enabled = true;
         s_output_hidden_for_redraw = false;
-        ESP_LOGD(TAG, "AMOLED panel awake");
     }
     return err;
 }
@@ -237,7 +233,6 @@ esp_err_t reveal_after_full_refresh() {
     err = esp_lcd_panel_co5300_set_brightness(s_panel, s_brightness);
     if (err == ESP_OK) {
         s_output_hidden_for_redraw = false;
-        ESP_LOGD(TAG, "AMOLED visible after bounded redraw DMA fence");
     }
     return err;
 }
@@ -281,6 +276,8 @@ esp_err_t set_brightness(uint8_t percentage) {
     if (err == ESP_OK) s_brightness = percentage;
     return err;
 }
+
+uint8_t brightness() { return s_brightness; }
 
 bool ready() { return s_ready; }
 esp_lcd_panel_handle_t panel() { return s_panel; }

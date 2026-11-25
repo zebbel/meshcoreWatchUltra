@@ -38,7 +38,7 @@ namespace meshcore::sdstore {
     }
 
     template<typename T>
-    esp_err_t write(const char *path, uint32_t magic, const T &value, bool deferred = false){
+    esp_err_t write(const char *path, uint32_t magic, const T &value){
         static_assert(sizeof(T) <= 65535U, "SD record too large");
         struct Record { Header header; T payload; } item = {};
         item.header.magic = magic;
@@ -46,7 +46,6 @@ namespace meshcore::sdstore {
         item.header.length = sizeof(T);
         item.header.checksum = crc32(reinterpret_cast<const uint8_t *>(&value), sizeof(T));
         item.payload = value;
-        if(deferred) return hardware::sd::defer_write(path, &item, sizeof(item));
         return hardware::sd::write_file(path, &item, sizeof(item));
     }
 

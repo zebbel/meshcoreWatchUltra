@@ -15,7 +15,7 @@ file(MAKE_DIRECTORY "${WATCH_EEZ_COMPAT}/lvgl/src")
 file(WRITE "${WATCH_EEZ_COMPAT}/lvgl/lvgl.h" "#pragma once\n#include <lvgl.h>\n")
 file(WRITE "${WATCH_EEZ_COMPAT}/lvgl/src/lvgl_private.h" "#pragma once\n#include <src/lvgl_private.h>\n")
 idf_component_register(
-    SRCS "WatchDisplay.cpp" "pages/ClockPage.cpp" ${WATCH_EEZ_SOURCES}
+    SRCS "WatchDisplay.cpp" "FlowBridge.cpp" ${WATCH_EEZ_SOURCES}
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "${WATCH_EEZ_DIR}" "${WATCH_EEZ_COMPAT}"
     REQUIRES esp_common WatchStatus
