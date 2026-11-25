@@ -25,6 +25,7 @@ namespace meshcore {
     static bool prepared = false;
     static meshcore::RadioAdapter *prepared_radio = nullptr;
     static meshcore::Node *node = nullptr;
+    static meshcore::Contacts *contact_store = nullptr;
     static meshcore::Companion *companion = nullptr;
     static meshcore::SettingsStore *settings_store = nullptr;
 
@@ -89,6 +90,7 @@ namespace meshcore {
             if(!companion_instance.storage_ready()) return ESP_ERR_INVALID_CRC;
 
             node = &mesh_node;
+            contact_store = &contacts;
             companion = &companion_instance;
             settings_store = &settings;
             prepared_radio = &radio;
@@ -130,6 +132,7 @@ namespace meshcore {
         }
         node->loop();
         companion->loop();
+        contact_store->flush_due();
     }
 
     uint32_t received_packet_count(){

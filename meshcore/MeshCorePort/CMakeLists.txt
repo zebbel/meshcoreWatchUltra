@@ -75,6 +75,7 @@ idf_component_register(
         bt
         bootloader_support
         freertos
+    PRIV_REQUIRES heap
 )
 
 target_compile_options(

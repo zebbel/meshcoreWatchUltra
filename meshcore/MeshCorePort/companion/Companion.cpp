@@ -1396,7 +1396,10 @@ namespace meshcore {
         if(reboot_at_ms_ != 0 && static_cast<int32_t>(time_ms(clock_) - reboot_at_ms_) >= 0){
 
             ESP_LOGI(TAG, "Reboot requested by paired companion");
-
+            // Preserve pending automatic contact updates on orderly reboot.
+            const esp_err_t err = contacts_.flush_pending();
+            if(err != ESP_OK)
+                ESP_LOGW(TAG, "Contact database save before reboot failed: %s", esp_err_to_name(err));
             hardware::system::restart();
         }
     }

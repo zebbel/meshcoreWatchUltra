@@ -5,27 +5,43 @@
 #include <string.h>
 #include "esp_log.h"
 #include "MeshCoreSD.h"
-#include <dirent.h>
+#include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include <memory>
 
 namespace meshcore {
     static const char *TAG = "Contacts";
-    static constexpr const char *DIRECTORY = "/sdcard/meshcore/contacts";
-    static constexpr uint32_t CONTACT_MAGIC = 0x4D434354U;
+    static constexpr const char *DATABASE = "/sdcard/meshcore/contacts.bin";
+    static constexpr uint32_t DATABASE_MAGIC = 0x4244434DU; // "MCDB" in little endian
+    static constexpr uint32_t DATABASE_VERSION = 1;
+    static constexpr size_t HEADER_BYTES = 20;
+    static constexpr size_t CHECKSUM_OFFSET = 16;
+    static constexpr size_t RECORD_BYTES = Contacts::WIRE_LENGTH;
+    static constexpr size_t MAX_DATABASE_BYTES = HEADER_BYTES + Contacts::CAPACITY * RECORD_BYTES;
+    static constexpr uint32_t DEFER_MS = 30U * 60U * 1000U;
+    static constexpr uint32_t RETRY_MS = 30U * 1000U;
 
-    static void file_path(const uint8_t pub[PUB_KEY_SIZE], char path[128]){
-        char hex[PUB_KEY_SIZE * 2 + 1] = {};
-        sdstore::hex_key(pub, PUB_KEY_SIZE, hex);
-        snprintf(path, 128, "%s/%s.bin", DIRECTORY, hex);
+    // Only temporary serialization storage; the existing Contacts table is
+    // still the sole live RAM database. Do not put the file on a task stack.
+    using Buffer = std::unique_ptr<uint8_t, decltype(&heap_caps_free)>;
+    static Buffer allocate_buffer(size_t bytes){
+        return Buffer(static_cast<uint8_t *>(heap_caps_malloc(
+            bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)), &heap_caps_free);
+    }
+
+    static uint32_t monotonic_ms(){
+        return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
     }
 
     static uint32_t read_u32(const uint8_t *p){
-        uint32_t v;
-        memcpy(&v, p, 4);
-        return v;
+        return static_cast<uint32_t>(p[0]) |
+            (static_cast<uint32_t>(p[1]) << 8U) |
+            (static_cast<uint32_t>(p[2]) << 16U) |
+            (static_cast<uint32_t>(p[3]) << 24U);
     }
 
     static void put_u32(uint8_t *p, uint32_t v){
-        memcpy(p, &v, 4);
+        for(unsigned i = 0; i < 4; ++i) p[i] = static_cast<uint8_t>(v >> (8U * i));
     }
 
     static bool record_valid(const Contact &c){
@@ -36,41 +52,134 @@ namespace meshcore {
         return true;
     }
 
-    esp_err_t Contacts::load(){
-        hardware::sd::Session session;
-        if(!session.ok()) return session.error();
-        esp_err_t err = hardware::sd::ensure_directory(DIRECTORY);
-        if(err != ESP_OK) return err;
-        DIR *dir = opendir(DIRECTORY);
-        if(dir == nullptr) return ESP_FAIL;
-        struct dirent *entry;
-        size_t loaded = 0;
-        while((entry = readdir(dir)) != nullptr){
-            const size_t n = strnlen(entry->d_name, sizeof(entry->d_name));
-            if(n != 68 && n != 72) continue;
+    // Decode exactly one complete contact response record. Unlike incoming
+    // partial wire commands, stored records must already be well formed.
+    static bool decode_record(const uint8_t *f, Contact &c){
+        if(f[0] != 3) return false;
+        size_t i = 1;
+        c = Contact{};
+        memcpy(c.public_key, &f[i], PUB_KEY_SIZE); i += PUB_KEY_SIZE;
+        c.type = f[i++]; c.flags = f[i++]; c.path_len = f[i++];
+        memcpy(c.path, &f[i], MAX_PATH_SIZE); i += MAX_PATH_SIZE;
+        memcpy(c.name, &f[i], sizeof(c.name)); i += sizeof(c.name);
+        c.advert_time = read_u32(&f[i]); i += 4;
+        c.latitude_micro = static_cast<int32_t>(read_u32(&f[i])); i += 4;
+        c.longitude_micro = static_cast<int32_t>(read_u32(&f[i])); i += 4;
+        c.lastmod = read_u32(&f[i]); i += 4;
+        c.present = true;
+        return i == RECORD_BYTES && record_valid(c);
+    }
 
-            char name[80] = {};
-            memcpy(name, entry->d_name, n + 1);
-            // Backups are also candidates, for power-loss recovery.
-            if(n == 72 && strcmp(name + 68, ".bak") == 0){ name[68] = 0; }
-            else if(n != 68) continue;
-            if(strcmp(name + 64, ".bin") != 0) continue;
-            if(loaded >= CAPACITY){ closedir(dir); return ESP_ERR_NO_MEM; }
-            char path[128] = {};
-            snprintf(path, sizeof(path), "%s/%s", DIRECTORY, name);
-            Contact item = {};
-            err = sdstore::read(path, CONTACT_MAGIC, item);
-            if(err != ESP_OK){ closedir(dir); return err; }
-            if(!record_valid(item)){ closedir(dir); return ESP_ERR_INVALID_CRC; }
-            char expected[128] = {};
-            file_path(item.public_key, expected);
-            if(strcmp(path, expected) != 0){ closedir(dir); return ESP_ERR_INVALID_CRC; }
-            if(find_slot(item.public_key, PUB_KEY_SIZE) >= 0) continue;
-            contacts_[loaded++] = item;
+    // CRC covers the header (including count and format) and payload, with
+    // the checksum field itself set to zero during calculation.
+    static uint32_t database_crc(uint8_t *bytes, size_t length){
+        const uint32_t saved = read_u32(bytes + CHECKSUM_OFFSET);
+        put_u32(bytes + CHECKSUM_OFFSET, 0);
+        const uint32_t crc = sdstore::crc32(bytes, length);
+        put_u32(bytes + CHECKSUM_OFFSET, saved);
+        return crc;
+    }
+
+    static esp_err_t validate_database(uint8_t *bytes, size_t length, size_t &count){
+        count = 0;
+        if(length < HEADER_BYTES || read_u32(bytes) != DATABASE_MAGIC ||
+           read_u32(bytes + 4) != DATABASE_VERSION ||
+           read_u32(bytes + 12) != RECORD_BYTES) return ESP_ERR_INVALID_CRC;
+        const uint32_t records = read_u32(bytes + 8);
+        if(records > Contacts::CAPACITY ||
+           length != HEADER_BYTES + static_cast<size_t>(records) * RECORD_BYTES ||
+           read_u32(bytes + CHECKSUM_OFFSET) != database_crc(bytes, length))
+            return ESP_ERR_INVALID_CRC;
+        // Validate every record and reject duplicate full public keys before
+        // exposing any data to the live contact table. No extra RAM table.
+        for(size_t i = 0; i < records; ++i){
+            const uint8_t *record = bytes + HEADER_BYTES + i * RECORD_BYTES;
+            Contact item{};
+            if(!decode_record(record, item)) return ESP_ERR_INVALID_CRC;
+            for(size_t j = 0; j < i; ++j){
+                if(memcmp(record + 1, bytes + HEADER_BYTES + j * RECORD_BYTES + 1,
+                          PUB_KEY_SIZE) == 0) return ESP_ERR_INVALID_CRC;
+            }
         }
-        closedir(dir);
-        ESP_LOGI(TAG, "Loaded %u contacts from SD", static_cast<unsigned>(loaded));
+        count = records;
         return ESP_OK;
+    }
+
+    esp_err_t Contacts::load(){
+        const int64_t start_us = esp_timer_get_time();
+        auto buffer = allocate_buffer(MAX_DATABASE_BYTES);
+        if(!buffer) return ESP_ERR_NO_MEM;
+        size_t length = 0;
+        const esp_err_t read_err = hardware::sd::read_file(
+            DATABASE, buffer.get(), MAX_DATABASE_BYTES, length);
+        size_t loaded = 0;
+        if(read_err == ESP_OK){
+            const esp_err_t err = validate_database(buffer.get(), length, loaded);
+            if(err != ESP_OK) return err;
+        }else if(read_err != ESP_ERR_NOT_FOUND){
+            // A damaged file is not equivalent to an empty address book.
+            return read_err;
+        }
+        // A genuinely missing database starts empty. No legacy scan or import.
+        for(auto &contact : contacts_) contact = Contact{};
+        for(size_t i = 0; i < loaded; ++i){
+            (void)decode_record(buffer.get() + HEADER_BYTES + i * RECORD_BYTES, contacts_[i]);
+        }
+        dirty_ = false;
+        retry_pending_ = false;
+        ESP_LOGI(TAG, "Loaded %u contacts from database in %lu ms",
+                 static_cast<unsigned>(loaded),
+                 static_cast<unsigned long>((esp_timer_get_time() - start_us) / 1000ULL));
+        return ESP_OK;
+    }
+
+    esp_err_t Contacts::save_database(){
+        const size_t records = count();
+        const size_t length = HEADER_BYTES + records * RECORD_BYTES;
+        auto buffer = allocate_buffer(length);
+        if(!buffer) return ESP_ERR_NO_MEM;
+        uint8_t *bytes = buffer.get();
+        put_u32(bytes, DATABASE_MAGIC);
+        put_u32(bytes + 4, DATABASE_VERSION);
+        put_u32(bytes + 8, static_cast<uint32_t>(records));
+        put_u32(bytes + 12, static_cast<uint32_t>(RECORD_BYTES));
+        put_u32(bytes + CHECKSUM_OFFSET, 0);
+        size_t offset = HEADER_BYTES;
+        for(const auto &contact : contacts_){
+            if(!contact.present) continue;
+            if(to_wire(bytes + offset, contact) != RECORD_BYTES) return ESP_ERR_INVALID_CRC;
+            offset += RECORD_BYTES;
+        }
+        put_u32(bytes + CHECKSUM_OFFSET, database_crc(bytes, length));
+        size_t validated = 0;
+        if(validate_database(bytes, length, validated) != ESP_OK || validated != records)
+            return ESP_ERR_INVALID_CRC;
+        // The existing SD service writes a temporary file, flushes/fsyncs,
+        // and rotates the previous main file to .bak before installing it.
+        const esp_err_t err = hardware::sd::write_file(DATABASE, bytes, length);
+        if(err == ESP_OK){
+            dirty_ = false;
+            retry_pending_ = false;
+        }
+        return err;
+    }
+
+    esp_err_t Contacts::flush_pending(){
+        if(!dirty_) return ESP_OK;
+        return save_database();
+    }
+
+    void Contacts::flush_due(){
+        if(!dirty_) return;
+        const uint32_t now = monotonic_ms();
+        if(static_cast<uint32_t>(now - dirty_since_ms_) < DEFER_MS) return;
+        if(retry_pending_ && static_cast<uint32_t>(now - last_attempt_ms_) < RETRY_MS) return;
+        last_attempt_ms_ = now;
+        const esp_err_t err = flush_pending();
+        if(err != ESP_OK){
+            retry_pending_ = true;
+            ESP_LOGW(TAG, "Contact database batch save failed: %s", esp_err_to_name(err));
+        }
     }
 
     size_t Contacts::count() const{
@@ -99,34 +208,31 @@ namespace meshcore {
 
     bool Contacts::save_slot(size_t idx, const Contact *value, bool deferred){
         if(idx >= CAPACITY || !hardware::sd::writable()) return false;
-        const Contact old = contacts_[idx];
         if(value != nullptr && !record_valid(*value)) return false;
-        char path[128] = {};
-        file_path(value != nullptr ? value->public_key : old.public_key, path);
-        esp_err_t err = ESP_OK;
-        if(deferred){
-            if(value == nullptr) return false;
-            err = sdstore::write(path, CONTACT_MAGIC, *value, true);
-        }else{
-            // Ensure that a previously queued automatic update cannot resurrect
-            // a deleted or explicitly replaced contact.
-            // A manual contact change or a newly discovered contact must be
-            // persisted now. Keep unrelated advert updates queued for their
-            // normal 30-minute flush; cancel only this contact's stale data.
-            err = hardware::sd::cancel_pending(path);
-            if(err != ESP_OK) return false;
-            err = value == nullptr ? hardware::sd::remove_file(path) : sdstore::write(path, CONTACT_MAGIC, *value);
-            if(err == ESP_OK && old.present && value != nullptr && memcmp(old.public_key, value->public_key, PUB_KEY_SIZE) != 0){
-                char old_path[128] = {};
-                file_path(old.public_key, old_path);
-                err = hardware::sd::remove_file(old_path);
-            }
-        }
-        if(err != ESP_OK){ ESP_LOGE(TAG, "Cannot save SD contact: %s", esp_err_to_name(err)); return false; }
+        const Contact old = contacts_[idx];
+        if(deferred && (value == nullptr || !old.present)) return false;
         contacts_[idx] = value != nullptr ? *value : Contact{};
+        if(deferred){
+            // The first unsaved change starts the 30-minute batch window;
+            // subsequent advertisements update RAM without extending it.
+            if(!dirty_){
+                dirty_since_ms_ = monotonic_ms();
+                retry_pending_ = false;
+            }
+            dirty_ = true;
+            return true;
+        }
+        // Persist the entire snapshot for explicit edits and new contacts.
+        // Any pending advert updates ride along, so no stale queued write
+        // can resurrect a deleted contact. Failed edits roll back in RAM.
+        const esp_err_t err = save_database();
+        if(err != ESP_OK){
+            contacts_[idx] = old;
+            ESP_LOGE(TAG, "Cannot save contact database: %s", esp_err_to_name(err));
+            return false;
+        }
         return true;
     }
-
 
     ContactUpdateResult Contacts::update_from_wire(const uint8_t *f, size_t len, uint32_t now){
         constexpr size_t REQUIRED = 1 + PUB_KEY_SIZE + 3 + MAX_PATH_SIZE + 32 + 4;
@@ -209,9 +315,8 @@ namespace meshcore {
         if(existing >= 0 && timestamp == c.advert_time) return true; // avoid repeated flash writes
         c.advert_time = timestamp;
         c.lastmod = now ? now : 1;
-        // Auto-discovered NEW contacts must be persisted immediately.
-        // Existing contacts only update their queued SD snapshot. A new
-        // advert replaces the previous queued snapshot for that public key.
+        // New contacts persist immediately; existing advert changes are
+        // coalesced in the live RAM table until the next database save.
         return save_slot(idx, &c, existing >= 0);
     }
 

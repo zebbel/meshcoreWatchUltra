@@ -31,6 +31,9 @@ namespace meshcore {
         static constexpr size_t CAPACITY = 350;
         static constexpr size_t WIRE_LENGTH = 1 + PUB_KEY_SIZE + 1 + 1 + 1 + MAX_PATH_SIZE + 32 + 4 + 4 + 4 + 4;
         esp_err_t load();
+        // Called only by the MeshCore application task, like all mutations.
+        void flush_due();
+        esp_err_t flush_pending();
         size_t count() const;
         const Contact *at(size_t index) const;
         const Contact *find(const uint8_t pub[PUB_KEY_SIZE], size_t prefix_len = PUB_KEY_SIZE) const;
@@ -41,6 +44,11 @@ namespace meshcore {
         size_t to_wire(uint8_t result[WIRE_LENGTH], const Contact &contact) const;
     private:
         Contact contacts_[CAPACITY] = {};
+        bool dirty_ = false;
+        bool retry_pending_ = false;
+        uint32_t dirty_since_ms_ = 0;
+        uint32_t last_attempt_ms_ = 0;
+        esp_err_t save_database();
         bool save_slot(size_t idx, const Contact *record, bool deferred = false);
         int find_slot(const uint8_t *pub, size_t prefix_len) const;
     };
