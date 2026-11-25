@@ -19,7 +19,7 @@ namespace hardware::co5300 {
 namespace {
     constexpr auto kSpiHost = SPI3_HOST; // SPI2 belongs to LoRa/SD/NFC.
     constexpr int kSpiClockHz = 40 * 1000 * 1000;
-    constexpr uint8_t kInitialBrightness = 25;
+    constexpr uint8_t kInitialBrightness = 0; // blank until EEZ sets brightness
     constexpr size_t kDmaStageBytes = 4096;
     uint8_t *s_dma_stage = nullptr;
 

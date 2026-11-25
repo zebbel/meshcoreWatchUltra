@@ -122,15 +122,19 @@ esp_err_t read_interrupt(TouchPoint &point) {
 
     // Only read following GPIO12 IRQ: idle reads can lack the CST92xx 0xAB marker.
     const esp_err_t read_err = esp_lcd_touch_read_data(s_touch);
+    esp_err_t point_err = ESP_OK;
     if (read_err == ESP_OK) {
         esp_lcd_touch_point_data_t data[1] = {};
         uint8_t count = 0;
 
-        const esp_err_t err =
-            esp_lcd_touch_get_data(s_touch, data, &count, 1);
-
-        if (err == ESP_OK && count > 0) {
-            point = {data[0].x, data[0].y, true};
+        point_err = esp_lcd_touch_get_data(s_touch, data, &count, 1);
+        if (point_err == ESP_OK) {
+            point.report_valid = true;
+            if (count > 0) {
+                point.x = data[0].x;
+                point.y = data[0].y;
+                point.pressed = true;
+            }
         }
     }
 
@@ -140,7 +144,8 @@ esp_err_t read_interrupt(TouchPoint &point) {
     const esp_err_t ack_err = esp_lcd_panel_io_tx_param(s_io, 0xD0, ack, sizeof(ack));
     if (ack_err != ESP_OK) return ack_err;
     // An IRQ without an 0xAB-marked coordinate report is still valid activity.
-    return (read_err == ESP_ERR_INVALID_RESPONSE) ? ESP_OK : read_err;
+    if (read_err == ESP_ERR_INVALID_RESPONSE) return ESP_OK;
+    return read_err == ESP_OK ? point_err : read_err;
 }
 
 bool ready() { return s_ready; }

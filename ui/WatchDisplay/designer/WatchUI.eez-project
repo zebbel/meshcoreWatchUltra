@@ -160,7 +160,14 @@
             "childStyles": []
           },
           "timeline": [],
-          "eventHandlers": [],
+          "eventHandlers": [
+            {
+              "objID": "7413b0e2-98b9-41d9-d6ca-5119eb3638ae",
+              "eventName": "SCREEN_LOADED",
+              "handlerType": "flow",
+              "userData": 0
+            }
+          ],
           "leftUnit": "px",
           "topUnit": "px",
           "widthUnit": "px",
@@ -274,6 +281,60 @@
               "recolor": false,
               "previewValue": "14:31",
               "useStaticText": true
+            },
+            {
+              "objID": "1ab41fde-3c49-49e5-a11d-e3c2e37ba47c",
+              "type": "LVGLLabelWidget",
+              "left": 223,
+              "top": 50,
+              "width": 60,
+              "height": 33,
+              "customInputs": [],
+              "customOutputs": [],
+              "style": {
+                "objID": "ebc2a1ae-422c-4951-f1be-e8bd757445d2",
+                "useStyle": "default",
+                "conditionalStyles": [],
+                "childStyles": []
+              },
+              "timeline": [],
+              "eventHandlers": [],
+              "identifier": "charge_lightning_icon_1",
+              "leftUnit": "px",
+              "topUnit": "px",
+              "widthUnit": "px",
+              "heightUnit": "content",
+              "children": [],
+              "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
+              "hiddenFlagType": "literal",
+              "clickableFlagType": "literal",
+              "flagScrollbarMode": "",
+              "flagScrollDirection": "",
+              "scrollSnapX": "",
+              "scrollSnapY": "",
+              "checkedStateType": "literal",
+              "disabledStateType": "literal",
+              "states": "",
+              "localStyles": {
+                "objID": "037a34d2-6176-4717-b546-5f53a146b5f5",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "text_font": "MONTSERRAT_30",
+                      "text_color": "#EBC36D",
+                      "text_align": "CENTER"
+                    }
+                  }
+                }
+              },
+              "group": "",
+              "groupIndex": 0,
+              "text": "is_charging == true ? \"\" : \"\"",
+              "textType": "expression",
+              "longMode": "WRAP",
+              "recolor": false,
+              "previewValue": "",
+              "useStaticText": true
             }
           ],
           "widgetFlags": "CLICKABLE|PRESS_LOCK|CLICK_FOCUSABLE|GESTURE_BUBBLE|SNAPPABLE|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER",
@@ -296,42 +357,10 @@
           "groupIndex": 0
         },
         {
-          "objID": "2f6524fa-f46a-46de-ba45-1bcf9afd85d7",
-          "type": "StartActionComponent",
-          "left": 15,
-          "top": 536,
-          "width": 87,
-          "height": 24,
-          "customInputs": [],
-          "customOutputs": []
-        },
-        {
-          "objID": "beb6c227-24eb-4256-eaa6-c14bfd12f4c5",
-          "type": "WatchVariableActionComponent",
-          "left": 127,
-          "top": 536,
-          "width": 141,
-          "height": 53,
-          "customInputs": [],
-          "customOutputs": [],
-          "variable": "is_charging"
-        },
-        {
-          "objID": "e9dc7f3d-b86c-4920-a77d-927166541def",
-          "type": "IsTrueActionComponent",
-          "left": 457,
-          "top": 536,
-          "width": 116,
-          "height": 68,
-          "customInputs": [],
-          "customOutputs": [],
-          "value": "is_charging"
-        },
-        {
           "objID": "23c6b3ad-3be9-49c3-b9df-4f3151785527",
           "type": "LVGLActionComponent",
-          "left": 607,
-          "top": 534,
+          "left": 803,
+          "top": 236,
           "width": 366,
           "height": 53,
           "customInputs": [],
@@ -352,28 +381,50 @@
               "useStackType": "literal"
             }
           ]
+        },
+        {
+          "objID": "3fb41a30-15ed-49dd-860e-62b3b54467c0",
+          "type": "DelayActionComponent",
+          "left": 600,
+          "top": 236,
+          "width": 87,
+          "height": 53,
+          "customInputs": [],
+          "customOutputs": [],
+          "milliseconds": "5000"
+        },
+        {
+          "objID": "f36c692d-0d63-49c8-9bdf-d94dc2a62218",
+          "type": "IsTrueActionComponent",
+          "left": 438,
+          "top": 236,
+          "width": 116,
+          "height": 68,
+          "customInputs": [],
+          "customOutputs": [],
+          "value": "is_charging"
         }
       ],
       "connectionLines": [
         {
-          "objID": "c39c2143-0bfb-4055-f646-5b5d270a5c0d",
-          "source": "2f6524fa-f46a-46de-ba45-1bcf9afd85d7",
+          "objID": "f91706ac-0158-4851-d9ef-50aae11684fc",
+          "source": "f90b60d0-0665-1f2d-d7bb-8672ca4b6e2e",
+          "output": "SCREEN_LOADED",
+          "target": "f36c692d-0d63-49c8-9bdf-d94dc2a62218",
+          "input": "@seqin"
+        },
+        {
+          "objID": "9c2ee0f9-802a-44a9-c3a6-32d5d3925644",
+          "source": "3fb41a30-15ed-49dd-860e-62b3b54467c0",
           "output": "@seqout",
-          "target": "beb6c227-24eb-4256-eaa6-c14bfd12f4c5",
-          "input": "@seqin"
-        },
-        {
-          "objID": "0b4b6567-5765-4496-ffe9-d2244d27303f",
-          "source": "beb6c227-24eb-4256-eaa6-c14bfd12f4c5",
-          "output": "variable",
-          "target": "e9dc7f3d-b86c-4920-a77d-927166541def",
-          "input": "@seqin"
-        },
-        {
-          "objID": "a81e5641-a37e-45ae-a13e-516076273362",
-          "source": "e9dc7f3d-b86c-4920-a77d-927166541def",
-          "output": "True",
           "target": "23c6b3ad-3be9-49c3-b9df-4f3151785527",
+          "input": "@seqin"
+        },
+        {
+          "objID": "3a2aa9f2-d502-4188-b8f6-4807b86975c8",
+          "source": "f36c692d-0d63-49c8-9bdf-d94dc2a62218",
+          "output": "True",
+          "target": "3fb41a30-15ed-49dd-860e-62b3b54467c0",
           "input": "@seqin"
         }
       ],
@@ -407,7 +458,14 @@
             "childStyles": []
           },
           "timeline": [],
-          "eventHandlers": [],
+          "eventHandlers": [
+            {
+              "objID": "0b31c2c5-2658-4571-c5a0-3731701f4d5d",
+              "eventName": "CLICKED",
+              "handlerType": "flow",
+              "userData": 0
+            }
+          ],
           "leftUnit": "px",
           "topUnit": "px",
           "widthUnit": "px",
@@ -545,8 +603,8 @@
         {
           "objID": "fa96fb30-8c01-478d-8386-4fc5e8fd9f6f",
           "type": "StartActionComponent",
-          "left": 0,
-          "top": 530,
+          "left": 427,
+          "top": 18,
           "width": 87,
           "height": 24,
           "customInputs": [],
@@ -555,8 +613,8 @@
         {
           "objID": "5643a78e-af3b-45bb-c714-57ca31f1a347",
           "type": "WatchVariableActionComponent",
-          "left": 112,
-          "top": 530,
+          "left": 539,
+          "top": 18,
           "width": 141,
           "height": 53,
           "customInputs": [],
@@ -566,8 +624,8 @@
         {
           "objID": "c159c53a-b61a-4e0e-f010-63a50a7ef207",
           "type": "IsTrueActionComponent",
-          "left": 442,
-          "top": 530,
+          "left": 721,
+          "top": 11,
           "width": 116,
           "height": 68,
           "customInputs": [],
@@ -577,8 +635,8 @@
         {
           "objID": "9543cd12-a560-46c3-bc0f-d24dce399719",
           "type": "LVGLActionComponent",
-          "left": 592,
-          "top": 528,
+          "left": 868,
+          "top": 11,
           "width": 341,
           "height": 53,
           "customInputs": [],
@@ -620,6 +678,13 @@
           "objID": "a05b7a17-df7a-4bf8-93d7-6a215d96c372",
           "source": "c159c53a-b61a-4e0e-f010-63a50a7ef207",
           "output": "False",
+          "target": "9543cd12-a560-46c3-bc0f-d24dce399719",
+          "input": "@seqin"
+        },
+        {
+          "objID": "99eac1b2-6b86-44b8-e70a-c66be053dd5c",
+          "source": "b3720506-29d9-4acb-bbc4-39bcd1e7f2a5",
+          "output": "CLICKED",
           "target": "9543cd12-a560-46c3-bc0f-d24dce399719",
           "input": "@seqin"
         }

@@ -23,10 +23,35 @@ namespace {
     bool s_ready = false;
     // no LVGL tick or render task activity while AMOLED is off.
     bool s_adapter_paused = false;
-    constexpr uint8_t kChargingBrightness = 10;
-    uint8_t s_normal_brightness = 25;
-    bool s_charging_mode = false; // protected by the LVGL lock
     uint32_t s_flush_events = 0;
+    lv_indev_t *s_touch_indev = nullptr;
+
+    // LVGL task only. The DisplayPower service remains the sole owner of
+    // touch IRQ reads/ACKs. No I2C access or LVGL calls from the producer.
+    void read_touch(lv_indev_t *indev, lv_indev_data_t *data) {
+        const auto sample = services::display_power::read_touch_input();
+        data->point.x = sample.x < hardware::co5300::width ? sample.x : hardware::co5300::width - 1;
+        data->point.y = sample.y < hardware::co5300::height ? sample.y : hardware::co5300::height - 1;
+        data->state = sample.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+        data->continue_reading = sample.more;
+        if (sample.reset) {
+            lv_indev_reset(indev, nullptr);
+            data->state = LV_INDEV_STATE_RELEASED;
+            data->continue_reading = false;
+        }
+    }
+
+    void init_touch_input(lv_display_t *disp) {
+        s_touch_indev = lv_indev_create();
+        if (!s_touch_indev) {
+            ESP_LOGW(TAG, "LVGL touch input allocation failed; touch wake still available");
+            return;
+        }
+        lv_indev_set_type(s_touch_indev, LV_INDEV_TYPE_POINTER);
+        lv_indev_set_display(s_touch_indev, disp);
+        lv_indev_set_read_cb(s_touch_indev, read_touch);
+        ESP_LOGI(TAG, "LVGL touch pointer registered (IRQ-driven reports)");
+    }
     // LVGL supplies packed RGB565 in panel byte order. The hardware driver
     // owns DMA staging and returns after every segment has completed.
     esp_err_t staged_draw_bitmap(lv_display_t *disp, esp_lcd_panel_handle_t,
@@ -57,13 +82,7 @@ namespace {
 
     // Caller owns the LVGL lock and the panel is awake (possibly hidden).
     esp_err_t apply_charging_mode_locked(bool charging) {
-        if (s_charging_mode != charging) {
-            const esp_err_t err = hardware::co5300::set_brightness(
-                charging ? kChargingBrightness : s_normal_brightness);
-            if (err != ESP_OK) return err;
-            s_charging_mode = charging;
-        }
-        publish_ui_brightness(charging ? kChargingBrightness : s_normal_brightness);
+        // Publish the charging state only. EEZ Flow owns brightness and navigation.
         set_clock_charging_mode(charging);
         return ESP_OK;
     }
@@ -253,6 +272,7 @@ esp_err_t init() {
     err = esp_lv_adapter_lock(2000);
     if (err == ESP_OK) {
         err = render_clock_page();
+        if (err == ESP_OK) init_touch_input(disp);
         esp_lv_adapter_unlock();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "EEZ UI initialization failed: %s", esp_err_to_name(err));
@@ -276,19 +296,18 @@ esp_err_t init() {
     return ESP_OK;
 }
 
-esp_err_t set_brightness(uint8_t percentage) {
-    if (percentage > 100) return ESP_ERR_INVALID_ARG;
-    if (!s_ready) return ESP_ERR_INVALID_STATE;
-    esp_err_t err = esp_lv_adapter_lock(1000);
-    if (err != ESP_OK) return err;
-    if (!s_charging_mode) err = hardware::co5300::set_brightness(percentage);
+esp_err_t set_ui_brightness_locked(uint8_t percentage) {
+    if (percentage < 1 || percentage > 100) return ESP_ERR_INVALID_ARG;
+    // ui_init() may invoke a setter before s_ready becomes true; the panel
+    // and adapter have already been initialized in that case.
+    if (!s_adapter_ready) return ESP_ERR_INVALID_STATE;
+    const esp_err_t err = hardware::co5300::set_brightness(percentage);
     if (err == ESP_OK) {
-        s_normal_brightness = percentage;
-        publish_ui_brightness(s_charging_mode ? kChargingBrightness : s_normal_brightness);
+        publish_ui_brightness(percentage);
     }
-    esp_lv_adapter_unlock();
     return err;
 }
+
 
 esp_err_t set_screen_awake(bool awake) {
     return services::display_power::set_screen_awake(awake);

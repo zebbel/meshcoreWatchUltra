@@ -12,6 +12,7 @@ namespace hardware::cst9217 {
         uint16_t x = 0;
         uint16_t y = 0;
         bool pressed = false;
+        bool report_valid = false; // false for an IRQ without a valid coordinate frame
     };
 
     esp_err_t init();

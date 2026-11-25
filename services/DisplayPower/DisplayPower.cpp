@@ -1,4 +1,5 @@
 #include "DisplayPower.h"
+#include "TouchInputBuffer.h"
 
 #include "CST9217.h"
 #include "Power.h"
@@ -31,6 +32,38 @@ namespace {
     std::atomic<bool> s_screen_awake{true};
     std::atomic<uint32_t> s_last_activity_ms{0};
     bool s_started = false;
+    detail::TouchInputBuffer s_touch_buffer;
+    portMUX_TYPE s_touch_mux = portMUX_INITIALIZER_UNLOCKED;
+
+    void touch_set_awake(bool awake) {
+        portENTER_CRITICAL(&s_touch_mux);
+        s_touch_buffer.set_awake(awake);
+        portEXIT_CRITICAL(&s_touch_mux);
+    }
+    bool touch_tracking() {
+        portENTER_CRITICAL(&s_touch_mux);
+        const bool tracking = s_touch_buffer.tracking();
+        portEXIT_CRITICAL(&s_touch_mux);
+        return tracking;
+    }
+    void touch_report(const hardware::cst9217::TouchPoint &point, esp_err_t err,
+                      bool wake_contact, uint32_t now) {
+        portENTER_CRITICAL(&s_touch_mux);
+        if (wake_contact) {
+            if (!point.report_valid || point.pressed || err != ESP_OK)
+                s_touch_buffer.suppress_wake(now);
+        } else if (err != ESP_OK) {
+            s_touch_buffer.cancel(now);
+        } else if (point.report_valid) {
+            s_touch_buffer.report(point.x, point.y, point.pressed, now);
+        }
+        portEXIT_CRITICAL(&s_touch_mux);
+    }
+    void touch_expire(uint32_t now) {
+        portENTER_CRITICAL(&s_touch_mux);
+        s_touch_buffer.expire(now);
+        portEXIT_CRITICAL(&s_touch_mux);
+    }
 
     // own the PM lock in the display service,
     // not in the main loop. A touch can wake the panel before app_main
@@ -102,6 +135,9 @@ namespace {
                 ? (s_charging.load() ? kChargerPollMs : remaining_ms)
                 : kScreenOffRecheckMs;
             if (s_charging_display && wait_ms > kChargerPollMs) wait_ms = kChargerPollMs;
+            // A bounded release watchdog only while tracking a contact. No
+            // additional I2C reads: all coordinate reads remain IRQ-driven.
+            if (s_screen_awake.load() && touch_tracking() && wait_ms > 25) wait_ms = 25;
             const TickType_t wait_ticks = pdMS_TO_TICKS(wait_ms) > 0 ? pdMS_TO_TICKS(wait_ms) : 1;
             const uint32_t events = ulTaskNotifyTake(pdTRUE, wait_ticks);
             // EXT0 can wake before digital IRQ is
@@ -122,13 +158,16 @@ namespace {
                     ESP_LOGI(TAG, "Touch communication recovered");
                 }
 
-                // The first tap on a sleeping display wakes it without being
-                // sent to a UI control. Subsequent taps are reserved for a
-                // future LVGL input adapter; no new UI actions in this refactor.
-                if (!s_screen_awake.load()) {
+                // The wake contact is consumed until its release (or a quiet
+                // interval); it must not activate a widget on the new screen.
+                const bool wake_contact = !s_screen_awake.load();
+                if (wake_contact) {
                     if (set_screen_awake(true) == ESP_OK) {
                         ESP_LOGD(TAG, "AMOLED woke on touch");
+                        touch_report(point, err, true, uptime_ms());
                     }
+                } else {
+                    touch_report(point, err, false, uptime_ms());
                 }
                 // Start a fresh five-second period after the wake command
                 // finishes. The previous code could compare an older
@@ -139,6 +178,7 @@ namespace {
 
             // Take the clock snapshot only after all touch processing.
             const uint32_t now = uptime_ms();
+            touch_expire(now);
             // Fail safe: keep AMOLED on if touch ACK isn't reliable.
             if (s_screen_awake.load() && !s_charging.load() && touch_communication_ok &&
                 static_cast<uint32_t>(now - s_last_activity_ms.load()) >= s_timeout_ms) {
@@ -186,9 +226,11 @@ esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms,
     s_timeout_ms = timeout_ms;
     s_last_activity_ms.store(uptime_ms());
     s_screen_awake.store(true);
+    touch_set_awake(true);
 
-    if (xTaskCreate(policy_task, "display_power", 4096, nullptr, 4, &s_task) != pdPASS) {
+    if (xTaskCreate(policy_task, "display_power", 8192, nullptr, 4, &s_task) != pdPASS) {
         s_screen_control = nullptr;
+        touch_set_awake(false);
         display_lock_release();
 #if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && CONFIG_MCW_AUTO_LIGHT_SLEEP && CONFIG_PM_LIGHT_SLEEP_CALLBACKS
         if (!s_display_sleep_lock_held) {
@@ -232,9 +274,11 @@ esp_err_t set_screen_awake(bool awake) {
             // Even if app_main is still asleep, auto light sleep is inhibited.
             err = display_lock_acquire();
         }
+        if (err == ESP_OK && !awake) touch_set_awake(false);
         if (err == ESP_OK) err = s_screen_control(awake);
         if (err == ESP_OK) {
             s_screen_awake.store(awake);
+            if (awake) touch_set_awake(true);
             if (awake) {
                 // The wake callback renders the requested mode before revealing.
                 s_charging_display_applied = charging;
@@ -247,10 +291,20 @@ esp_err_t set_screen_awake(bool awake) {
             // Fail-safe: a partially reinitialized panel must not go straight
             // back to CPU light sleep; the next touch can retry the wake.
             ESP_LOGW(TAG, "AMOLED wake incomplete; keeping CPU light sleep blocked");
+        } else {
+            // Panel failed to sleep: restore input, without replaying old taps.
+            touch_set_awake(true);
         }
     }
     xSemaphoreGive(s_transition_mutex);
     return err;
+}
+
+TouchInput read_touch_input() {
+    portENTER_CRITICAL(&s_touch_mux);
+    const TouchInput input = s_touch_buffer.read();
+    portEXIT_CRITICAL(&s_touch_mux);
+    return input;
 }
 
 bool is_screen_awake() { return s_screen_awake.load(); }

@@ -15,4 +15,13 @@ namespace services::display_power {
     bool is_screen_awake();
     bool is_charging();
     void notify_activity();
+
+    // Nonblocking, RAM-only pointer samples for the UI. No hardware I/O.
+    struct TouchInput {
+        uint16_t x = 0, y = 0;
+        bool pressed = false;
+        bool more = false;
+        bool reset = false; // cancel stale LVGL input before processing more samples
+    };
+    TouchInput read_touch_input();
 }

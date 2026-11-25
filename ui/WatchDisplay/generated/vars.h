@@ -24,6 +24,8 @@ extern int32_t get_var_battery_percent();
 extern void set_var_battery_percent(int32_t value);
 extern const char *get_var_clock_time();
 extern void set_var_clock_time(const char *value);
+extern int32_t get_var_brightness();
+extern void set_var_brightness(int32_t value);
 
 #ifdef __cplusplus
 }

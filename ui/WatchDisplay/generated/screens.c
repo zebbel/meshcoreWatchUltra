@@ -13,13 +13,53 @@
 objects_t objects;
 
 static const char *screen_names[] = { "Main", "charging" };
-static const char *object_names[] = { "main", "charging", "battery_label", "time_label", "charge_percent_label", "charge_lightning_icon" };
+static const char *object_names[] = { "main", "charging", "battery_label", "time_label", "charge_lightning_icon_1", "charge_percent_label", "charge_prcentage_arc" };
 
 //
 // Event handlers
 //
 
 lv_obj_t *tick_value_change_obj;
+
+static void event_handler_cb_main_main(lv_event_t *e) {
+    lv_event_code_t event = lv_event_get_code(e);
+    void *flowState = lv_event_get_user_data(e);
+    (void)flowState;
+    
+    if (event == LV_EVENT_SCREEN_LOADED) {
+        e->user_data = (void *)0;
+        flowPropagateValueLVGLEvent(flowState, 1, 0, e);
+    }
+}
+
+static void event_handler_cb_charging_charging(lv_event_t *e) {
+    lv_event_code_t event = lv_event_get_code(e);
+    void *flowState = lv_event_get_user_data(e);
+    (void)flowState;
+    
+    if (event == LV_EVENT_SCREEN_LOADED) {
+        e->user_data = (void *)0;
+        flowPropagateValueLVGLEvent(flowState, 1, 0, e);
+    }
+    if (event == LV_EVENT_CLICKED) {
+        e->user_data = (void *)0;
+        flowPropagateValueLVGLEvent(flowState, 1, 1, e);
+    }
+}
+
+static void event_handler_cb_charging_charge_prcentage_arc(lv_event_t *e) {
+    lv_event_code_t event = lv_event_get_code(e);
+    void *flowState = lv_event_get_user_data(e);
+    (void)flowState;
+    
+    if (event == LV_EVENT_VALUE_CHANGED) {
+        lv_obj_t *ta = lv_event_get_target_obj(e);
+        if (tick_value_change_obj != ta) {
+            int32_t value = lv_arc_get_value(ta);
+            assignIntegerProperty(flowState, 2, 3, value, "Failed to assign Value in Arc widget");
+        }
+    }
+}
 
 //
 // Screens
@@ -32,6 +72,7 @@ void create_screen_main() {
     objects.main = obj;
     lv_obj_set_pos(obj, 0, 0);
     lv_obj_set_size(obj, 410, 502);
+    lv_obj_add_event_cb(obj, event_handler_cb_main_main, LV_EVENT_ALL, flowState);
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(obj, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
     {
@@ -57,6 +98,17 @@ void create_screen_main() {
             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_font(obj, &ui_font_clock96, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text(obj, "");
+        }
+        {
+            // charge_lightning_icon_1
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.charge_lightning_icon_1 = obj;
+            lv_obj_set_pos(obj, 223, 51);
+            lv_obj_set_size(obj, 60, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_font(obj, &lv_font_montserrat_30, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_color(obj, lv_color_hex(0xebc36d), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text(obj, "");
         }
     }
@@ -85,6 +137,15 @@ void tick_screen_main() {
             tick_value_change_obj = NULL;
         }
     }
+    {
+        const char *new_val = evalTextProperty(flowState, 3, 3, "Failed to evaluate Text in Label widget");
+        const char *cur_val = lv_label_get_text(objects.charge_lightning_icon_1);
+        if (strcmp(new_val, cur_val) != 0) {
+            tick_value_change_obj = objects.charge_lightning_icon_1;
+            lv_label_set_text(objects.charge_lightning_icon_1, new_val);
+            tick_value_change_obj = NULL;
+        }
+    }
 }
 
 void create_screen_charging() {
@@ -94,6 +155,7 @@ void create_screen_charging() {
     objects.charging = obj;
     lv_obj_set_pos(obj, 0, 0);
     lv_obj_set_size(obj, 410, 502);
+    lv_obj_add_event_cb(obj, event_handler_cb_charging_charging, LV_EVENT_ALL, flowState);
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(obj, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(obj, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -112,15 +174,24 @@ void create_screen_charging() {
             lv_label_set_text(obj, "");
         }
         {
-            // charge_lightning_icon
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.charge_lightning_icon = obj;
-            lv_obj_set_pos(obj, 320, 230);
-            lv_obj_set_size(obj, 60, LV_SIZE_CONTENT);
-            lv_obj_set_style_text_font(obj, &lv_font_montserrat_48, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(obj, lv_color_hex(0xebc36d), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "");
+            // charge_prcentage_arc
+            lv_obj_t *obj = lv_arc_create(parent_obj);
+            objects.charge_prcentage_arc = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, 380, 380);
+            lv_arc_set_bg_start_angle(obj, 0);
+            lv_arc_set_bg_end_angle(obj, 360);
+            lv_arc_set_rotation(obj, 90);
+            lv_obj_add_event_cb(obj, event_handler_cb_charging_charge_prcentage_arc, LV_EVENT_ALL, flowState);
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_color(obj, lv_color_hex(0x33383d), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_width(obj, 25, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_color(obj, lv_color_hex(0x00fd41), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+            lv_obj_set_style_arc_width(obj, 25, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+            lv_obj_set_style_bg_opa(obj, 0, LV_PART_KNOB | LV_STATE_DEFAULT);
+            lv_obj_set_style_border_opa(obj, 0, LV_PART_KNOB | LV_STATE_DEFAULT);
+            lv_obj_set_style_shadow_opa(obj, 0, LV_PART_KNOB | LV_STATE_DEFAULT);
         }
     }
     
@@ -136,6 +207,15 @@ void tick_screen_charging() {
         if (strcmp(new_val, cur_val) != 0) {
             tick_value_change_obj = objects.charge_percent_label;
             lv_label_set_text(objects.charge_percent_label, new_val);
+            tick_value_change_obj = NULL;
+        }
+    }
+    {
+        int32_t new_val = evalIntegerProperty(flowState, 2, 3, "Failed to evaluate Value in Arc widget");
+        int32_t cur_val = lv_arc_get_value(objects.charge_prcentage_arc);
+        if (new_val != cur_val) {
+            tick_value_change_obj = objects.charge_prcentage_arc;
+            lv_arc_set_value(objects.charge_prcentage_arc, new_val);
             tick_value_change_obj = NULL;
         }
     }
