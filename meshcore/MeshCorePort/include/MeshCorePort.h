@@ -4,9 +4,7 @@
 #include "esp_err.h"
 
 namespace meshcore {
-    // Preload ALL MeshCore files in a single SD session before radio init.
-    esp_err_t prepare_storage();
-    // Called after prepare_storage() and hardware::lora::init(). No SD I/O.
+    // Load persistent storage, initialize LoRa and start MeshCore.
     esp_err_t init();
     void loop();
 

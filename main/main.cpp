@@ -39,18 +39,10 @@ extern "C" void app_main() {
     err = services::time_service::initialize_utc_clock();
     if(err != ESP_OK) ESP_LOGW(TAG, "Hardware RTC unavailable: %s", esp_err_to_name(err));
 
-    // Initialize MeshCore if SD storage is available.
-    bool meshcore_enabled = false;
-    if(hardware::sd::ready()){
-        // Load persistent MeshCore data before initializing LoRa.
-        err = meshcore::prepare_storage();
-        if(err == ESP_OK) err = hardware::lora::init();
-        if(err == ESP_OK) err = meshcore::init();
-        meshcore_enabled = (err == ESP_OK);
-        if(!meshcore_enabled) ESP_LOGE(TAG, "MeshCore unavailable: %s", esp_err_to_name(err));
-    } else {
-        ESP_LOGW(TAG, "SD unavailable; MeshCore disabled");
-    }
+    // Initialize MeshCore.
+    err = meshcore::init();
+    const bool meshcore_enabled = (err == ESP_OK);
+    if(!meshcore_enabled) ESP_LOGW(TAG, "MeshCore unavailable: %s", esp_err_to_name(err));
 
     // Start MeshCore Bluetooth companion.
     auto &bluetooth = hardware::bluetooth::transport();

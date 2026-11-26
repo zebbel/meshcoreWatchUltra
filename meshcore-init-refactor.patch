@@ -1,0 +1,77 @@
+--- a/main/main.cpp
++++ b/main/main.cpp
+@@ -39,18 +39,10 @@
+     err = services::time_service::initialize_utc_clock();
+     if(err != ESP_OK) ESP_LOGW(TAG, "Hardware RTC unavailable: %s", esp_err_to_name(err));
+ 
+-    // Initialize MeshCore if SD storage is available.
+-    bool meshcore_enabled = false;
+-    if(hardware::sd::ready()){
+-        // Load persistent MeshCore data before initializing LoRa.
+-        err = meshcore::prepare_storage();
+-        if(err == ESP_OK) err = hardware::lora::init();
+-        if(err == ESP_OK) err = meshcore::init();
+-        meshcore_enabled = (err == ESP_OK);
+-        if(!meshcore_enabled) ESP_LOGE(TAG, "MeshCore unavailable: %s", esp_err_to_name(err));
+-    } else {
+-        ESP_LOGW(TAG, "SD unavailable; MeshCore disabled");
+-    }
++    // Initialize MeshCore.
++    err = meshcore::init();
++    const bool meshcore_enabled = (err == ESP_OK);
++    if(!meshcore_enabled) ESP_LOGW(TAG, "MeshCore unavailable: %s", esp_err_to_name(err));
+ 
+     // Start MeshCore Bluetooth companion.
+     auto &bluetooth = hardware::bluetooth::transport();
+--- a/meshcore/MeshCorePort/MeshCorePort.cpp
++++ b/meshcore/MeshCorePort/MeshCorePort.cpp
+@@ -32,7 +32,7 @@
+     // All SD reads and first-boot writes happen before SX126x initialization.
+     // Nested SD sessions in IdentityStore/Contacts/Node/Companion reuse this
+     // mount, and the outer scope unmounts/powers off exactly once.
+-    esp_err_t prepare_storage(){
++    static esp_err_t prepare_storage(){
+         if(prepared) return ESP_OK;
+         if(init_attempted) return ESP_ERR_INVALID_STATE;
+         init_attempted = true;
+@@ -103,11 +103,26 @@
+ 
+     esp_err_t init(){
+         if(initialized) return ESP_OK;
++        if(!hardware::sd::ready()){
++            ESP_LOGW(TAG, "SD unavailable; MeshCore disabled");
++            return ESP_ERR_INVALID_STATE;
++        }
++
++        // Finish the SD session before initializing the radio.
++        esp_err_t err = prepare_storage();
++        if(err != ESP_OK) return err;
++
+         if(!prepared || node == nullptr || prepared_radio == nullptr || settings_store == nullptr)
+             return ESP_ERR_INVALID_STATE;
+ 
++        err = hardware::lora::init();
++        if(err != ESP_OK){
++            ESP_LOGE(TAG, "LoRa init failed: %s", esp_err_to_name(err));
++            return err;
++        }
++
+         const hardware::lora::config_t config = settings_store->get().radio();
+-        esp_err_t err = hardware::lora::configure(config);
++        err = hardware::lora::configure(config);
+         if(err != ESP_OK){
+             ESP_LOGE(TAG, "Radio configure failed: %s", esp_err_to_name(err));
+             return err;
+--- a/meshcore/MeshCorePort/include/MeshCorePort.h
++++ b/meshcore/MeshCorePort/include/MeshCorePort.h
+@@ -4,9 +4,7 @@
+ #include "esp_err.h"
+ 
+ namespace meshcore {
+-    // Preload ALL MeshCore files in a single SD session before radio init.
+-    esp_err_t prepare_storage();
+-    // Called after prepare_storage() and hardware::lora::init(). No SD I/O.
++    // Load persistent storage, initialize LoRa and start MeshCore.
+     esp_err_t init();
+     void loop();
+ 

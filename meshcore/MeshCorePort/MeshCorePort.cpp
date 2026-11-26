@@ -32,7 +32,7 @@ namespace meshcore {
     // All SD reads and first-boot writes happen before SX126x initialization.
     // Nested SD sessions in IdentityStore/Contacts/Node/Companion reuse this
     // mount, and the outer scope unmounts/powers off exactly once.
-    esp_err_t prepare_storage(){
+    static esp_err_t prepare_storage(){
         if(prepared) return ESP_OK;
         if(init_attempted) return ESP_ERR_INVALID_STATE;
         init_attempted = true;
@@ -103,11 +103,26 @@ namespace meshcore {
 
     esp_err_t init(){
         if(initialized) return ESP_OK;
+        if(!hardware::sd::ready()){
+            ESP_LOGW(TAG, "SD unavailable; MeshCore disabled");
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        // Finish the SD session before initializing the radio.
+        esp_err_t err = prepare_storage();
+        if(err != ESP_OK) return err;
+
         if(!prepared || node == nullptr || prepared_radio == nullptr || settings_store == nullptr)
             return ESP_ERR_INVALID_STATE;
 
+        err = hardware::lora::init();
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "LoRa init failed: %s", esp_err_to_name(err));
+            return err;
+        }
+
         const hardware::lora::config_t config = settings_store->get().radio();
-        esp_err_t err = hardware::lora::configure(config);
+        err = hardware::lora::configure(config);
         if(err != ESP_OK){
             ESP_LOGE(TAG, "Radio configure failed: %s", esp_err_to_name(err));
             return err;
