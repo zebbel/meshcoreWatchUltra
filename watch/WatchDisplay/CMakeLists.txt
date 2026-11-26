@@ -20,6 +20,6 @@ idf_component_register(
     PRIV_INCLUDE_DIRS "${WATCH_EEZ_DIR}" "${WATCH_EEZ_COMPAT}"
     REQUIRES esp_common WatchStatus
     PRIV_REQUIRES CO5300 DisplayPower AXP2101 esp_lcd freertos
-                  espressif__esp_lvgl_adapter lvgl__lvgl
+                  espressif__esp_lvgl_adapter lvgl__lvgl Bluetooth
 )
 message(STATUS "WatchDisplay: EEZ Flow UI")

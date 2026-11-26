@@ -24,20 +24,6 @@
 
 static const char *TAG = "MeshCoreWatch";
 
-static void update_bluetooth_pairing(){
-    static uint32_t last_pin = 0;
-
-    const uint32_t pin =
-        hardware::bluetooth::transport().active_pairing_pin();
-
-    if(pin == last_pin) return;
-
-    ui::watch_display::publish_pairing_pin(pin);
-    services::display_power::set_keep_awake(pin != 0);
-
-    last_pin = pin;
-}
-
 // GPS and MeshCore are polled by app_main. Copy their state here rather
 // than reading non-atomic firmware structures from the LVGL task.
 static void publish_watchface_status(bool meshcore_enabled) {
@@ -117,7 +103,7 @@ extern "C" void app_main() {
 
     while(true){
         services::power_management::restore_wakeup_pins_if_needed();
-        update_bluetooth_pairing();
+        ui::watch_display::update_bluetooth_pairing();
         hardware::gps::loop();
         services::position_sync::synchronize();
         if(meshcore_enabled) meshcore::loop();

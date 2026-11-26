@@ -3,6 +3,7 @@
 #include "DisplayPower.h"
 #include "WatchDisplay.h"
 #include "CO5300Panel.h"
+#include "BluetoothTransport.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include "sdkconfig.h"
@@ -170,9 +171,17 @@ void publish_watch_status(const watch::WatchStatus &status) {
     s_rx.store(status.meshcore_rx_packets);
     s_status.store(bits);
 }
-void publish_pairing_pin(uint32_t pin) {
+
+void update_bluetooth_pairing() {
+    const uint32_t pin =
+        hardware::bluetooth::transport().active_pairing_pin();
+
+    if(pin == s_pairing_pin.load()) return;
+
     s_pairing_pin.store(pin);
+    services::display_power::set_keep_awake(pin != 0);
 }
+
 void refresh_flow(bool charging) {
     if (!s_timer) return;
 

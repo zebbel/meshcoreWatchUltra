@@ -11,5 +11,5 @@ namespace ui::watch_display {
     bool screen_awake();
     bool ready();
     void publish_watch_status(const watch::WatchStatus &status);
-    void publish_pairing_pin(uint32_t pin);
+    void update_bluetooth_pairing();
 }
