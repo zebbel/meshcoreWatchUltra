@@ -14,6 +14,10 @@ namespace meshcore {
     static constexpr const char *PATH = "/sdcard/meshcore/identity.bin";
     static constexpr uint32_t MAGIC = 0x4D434944U;
 
+    // ------------------------------------------------------------------------
+    // Load existing identity or initialize an empty store
+    // ------------------------------------------------------------------------
+
     esp_err_t load_or_create_identity(mesh::LocalIdentity &identity, mesh::RNG &rng){
         hardware::sd::Session session;
         if(!session.ok()) return session.error();

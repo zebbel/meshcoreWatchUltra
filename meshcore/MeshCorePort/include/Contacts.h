@@ -1,4 +1,3 @@
-
 #pragma once
 #include "esp_err.h"
 
@@ -32,10 +31,18 @@ namespace meshcore {
     public:
         static constexpr size_t CAPACITY = 350;
         static constexpr size_t WIRE_LENGTH = 1 + PUB_KEY_SIZE + 1 + 1 + 1 + MAX_PATH_SIZE + 32 + 4 + 4 + 4 + 4;
+        // ------------------------------------------------------------------------
+        // Database lifecycle and deferred persistence
+        // ------------------------------------------------------------------------
+
         esp_err_t load();
         // Called only by the MeshCore application task, like all mutations.
         void flush_due();
         esp_err_t flush_pending();
+        // ------------------------------------------------------------------------
+        // Contact access and updates
+        // ------------------------------------------------------------------------
+
         size_t count() const;
         const Contact *at(size_t index) const;
         const Contact *find(const uint8_t pub[PUB_KEY_SIZE], size_t prefix_len = PUB_KEY_SIZE) const;

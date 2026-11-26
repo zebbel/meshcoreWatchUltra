@@ -14,6 +14,10 @@ namespace meshcore {
 
     class Node final : public mesh::Mesh {
     public:
+        // ------------------------------------------------------------------------
+        // Callback interfaces
+        // ------------------------------------------------------------------------
+
         using GroupCallback = void (*)(void *ctx, const mesh::Packet *packet, uint8_t channel_index, uint32_t timestamp, const uint8_t *text, size_t length);
         using PeerCallback = void (*)(void *, const mesh::Packet *, const uint8_t pub[32], uint8_t text_type, uint32_t timestamp, const uint8_t *text, size_t length);
         using AdvertCallback = void (*)(void *, const mesh::Identity &, uint32_t timestamp, const uint8_t *, size_t);
@@ -42,6 +46,10 @@ namespace meshcore {
         }
         int pendingOutboundCount() const { return _mgr->getOutboundTotal(); }
         uint16_t errorFlags() const { return _err_flags; }
+        // ------------------------------------------------------------------------
+        // Messaging and channels
+        // ------------------------------------------------------------------------
+
         bool send_private_text(const Contact &contact, uint32_t timestamp, const uint8_t *text, size_t len, uint32_t &ack_hash, uint32_t &timeout_ms);
         bool send_channel_text(uint8_t channel, uint32_t timestamp, const char *name, const uint8_t *text, size_t length);
         esp_err_t load_channels();
@@ -54,6 +62,10 @@ namespace meshcore {
         bool get_advert_path(const uint8_t public_key[PUB_KEY_SIZE], uint32_t &received_at, uint8_t &path_len, uint8_t path[MAX_PATH_SIZE]) const;
 
     protected:
+        // ------------------------------------------------------------------------
+        // Upstream Mesh overrides
+        // ------------------------------------------------------------------------
+
         bool allowPacketForward(const mesh::Packet *packet) override;
         float getAirtimeBudgetFactor() const override;
         int calcRxDelay(float score, uint32_t airtime) const override;
@@ -70,6 +82,10 @@ namespace meshcore {
         void onAckRecv(mesh::Packet *packet, uint32_t ack_crc) override;
 
     private:
+        // ------------------------------------------------------------------------
+        // Channel storage
+        // ------------------------------------------------------------------------
+
         struct Channel {
             char name[32] = {};
             mesh::GroupChannel value = {};
@@ -78,6 +94,10 @@ namespace meshcore {
 
         static constexpr size_t ADVERT_PATH_CACHE_SIZE = 64;
         static constexpr uint32_t ADVERT_PATH_MAX_AGE_MS = 24U * 60U * 60U * 1000U;
+
+        // ------------------------------------------------------------------------
+        // Advertisement path cache
+        // ------------------------------------------------------------------------
 
         struct AdvertPath {
             uint8_t public_key[PUB_KEY_SIZE] = {};

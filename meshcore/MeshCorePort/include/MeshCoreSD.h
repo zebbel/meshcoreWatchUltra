@@ -18,6 +18,10 @@ namespace meshcore::sdstore {
         uint32_t checksum;
     };
 
+    // ------------------------------------------------------------------------
+    // Persistent record checksum
+    // ------------------------------------------------------------------------
+
     inline uint32_t crc32(const uint8_t *data, size_t length){
         uint32_t crc = 0xFFFFFFFFU;
         for(size_t i = 0; i < length; ++i){
@@ -50,6 +54,10 @@ namespace meshcore::sdstore {
         item.payload = value;
         return hardware::sd::write_file(path, &item, sizeof(item));
     }
+
+    // ------------------------------------------------------------------------
+    // Public key text encoding
+    // ------------------------------------------------------------------------
 
     inline void hex_key(const uint8_t *bytes, size_t length, char *out){
         static constexpr char HEX[] = "0123456789abcdef";

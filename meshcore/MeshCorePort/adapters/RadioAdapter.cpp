@@ -14,6 +14,10 @@ namespace meshcore {
         if(err != ESP_OK) ESP_LOGE(TAG, "Cannot start reception: %s", esp_err_to_name(err));
     }
 
+    // ------------------------------------------------------------------------
+    // Receive and signal measurements
+    // ------------------------------------------------------------------------
+
     int RadioAdapter::recvRaw(uint8_t *bytes, int size){
         if(bytes == nullptr || size <= 0 || !hardware::lora::is_in_receive_mode()) return 0;
         hardware::lora::packet_t packet;
@@ -34,6 +38,10 @@ namespace meshcore {
         last_snr_ = packet.snr_db;
         return packet.length;
     }
+
+    // ------------------------------------------------------------------------
+    // Airtime and packet scoring
+    // ------------------------------------------------------------------------
 
     uint32_t RadioAdapter::getEstAirtimeFor(int length){
         if(length < 0) return 0;
@@ -63,6 +71,10 @@ namespace meshcore {
         const float score = quality * penalty;
         return score < 0.0f ? 0.0f : score > 1.0f ? 1.0f : score;
     }
+
+    // ------------------------------------------------------------------------
+    // Nonblocking transmission
+    // ------------------------------------------------------------------------
 
     bool RadioAdapter::startSendRaw(const uint8_t *bytes, int length){
         if(tx_pending_ || bytes == nullptr || length <= 0 || length > 255) return false;
@@ -103,6 +115,10 @@ namespace meshcore {
         if(err != ESP_OK) ESP_LOGE(TAG, "Unable to resume RX: %s", esp_err_to_name(err));
     }
 
+    // ------------------------------------------------------------------------
+    // Radio state
+    // ------------------------------------------------------------------------
+
     bool RadioAdapter::isInRecvMode() const{
         return !tx_pending_ && hardware::lora::is_in_receive_mode();
     }
@@ -116,6 +132,10 @@ namespace meshcore {
 
     float RadioAdapter::getLastRSSI() const{ return last_rssi_; }
     float RadioAdapter::getLastSNR() const{ return last_snr_; }
+
+    // ------------------------------------------------------------------------
+    // Configuration with rollback
+    // ------------------------------------------------------------------------
 
     bool RadioAdapter::applyConfig(const hardware::lora::config_t &next){
         if(tx_pending_) return false;

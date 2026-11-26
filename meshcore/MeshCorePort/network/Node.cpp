@@ -1,4 +1,3 @@
-
 #include "Node.h"
 
 #include "esp_log.h"
@@ -15,8 +14,11 @@ namespace meshcore {
     static const char *TAG = "Node";
     static constexpr uint8_t PUBLIC_KEY_16[16] = { 0x8B, 0x33, 0x87, 0xE9, 0xC5, 0xCD, 0xEA, 0x6A, 0xC9, 0xE5, 0xED, 0xBA, 0xA1, 0x15, 0xCD, 0x72 };
 
-    Node::Node(mesh::Radio &radio, mesh::MillisecondClock &clock, mesh::RNG &rng, mesh::RTCClock &rtc, mesh::PacketManager &manager, mesh::MeshTables &tables)
-        : mesh::Mesh(radio, clock, rng, rtc, manager, tables){
+    // ------------------------------------------------------------------------
+    // Node initialization
+    // ------------------------------------------------------------------------
+
+    Node::Node(mesh::Radio &radio, mesh::MillisecondClock &clock, mesh::RNG &rng, mesh::RTCClock &rtc, mesh::PacketManager &manager, mesh::MeshTables &tables) : mesh::Mesh(radio, clock, rng, rtc, manager, tables){
         set_public_channel(channels_[0]);
     }
 
@@ -24,6 +26,10 @@ namespace meshcore {
         group_callback_ = callback;
         group_context_ = context;
     }
+
+    // ------------------------------------------------------------------------
+    // Channel configuration
+    // ------------------------------------------------------------------------
 
     void Node::set_public_channel(Channel &channel){
         channel = Channel{};
@@ -81,6 +87,10 @@ namespace meshcore {
         return true;
     }
 
+    // ------------------------------------------------------------------------
+    // Forwarding and airtime policy
+    // ------------------------------------------------------------------------
+
     bool Node::allowPacketForward(const mesh::Packet *){
         return false; // Companion node, not a repeater.
     }
@@ -96,6 +106,10 @@ namespace meshcore {
         float delay = factor * air_time;
         return delay > 0 ? static_cast<int>(delay) : 0;
     }
+
+    // ------------------------------------------------------------------------
+    // Peer lookup and shared secrets
+    // ------------------------------------------------------------------------
 
     int Node::searchPeersByHash(const uint8_t *hash){
         for(int &i : matching_slots_) i = -1;
@@ -140,6 +154,10 @@ namespace meshcore {
         sendFlood(packet, codes, delay, path_hash_size_);
     }
 
+    // ------------------------------------------------------------------------
+    // Private message transmission
+    // ------------------------------------------------------------------------
+
     bool Node::send_private_text(const Contact &contact, uint32_t timestamp, const uint8_t *text, size_t len, uint32_t &ack_hash, uint32_t &timeout_ms){
         if(!contact.present || !text || len == 0 || len > 150 || timestamp == 0 || _mgr->getOutboundTotal() >= 20) return false;
         uint8_t plain[5 + 150] = {};
@@ -157,6 +175,10 @@ namespace meshcore {
         send_scoped_flood(packet);
         return true;
     }
+
+    // ------------------------------------------------------------------------
+    // Incoming peer messages
+    // ------------------------------------------------------------------------
 
     void Node::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, const uint8_t *secret, uint8_t *data, size_t len){
         (void)secret;
@@ -186,6 +208,10 @@ namespace meshcore {
     uint32_t Node::getCADFailMaxDuration() const{
         return 60000; // Retry busy channels for up to a minute.
     }
+
+    // ------------------------------------------------------------------------
+    // Channel lookup and transmission
+    // ------------------------------------------------------------------------
 
     int Node::searchChannelsByHash(const uint8_t *hash, mesh::GroupChannel channels[], int max_matches){
         if(hash == nullptr || channels == nullptr || max_matches < 1) return 0;
@@ -244,6 +270,10 @@ namespace meshcore {
         return true;
     }
 
+    // ------------------------------------------------------------------------
+    // Incoming group messages
+    // ------------------------------------------------------------------------
+
     void Node::onGroupDataRecv(mesh::Packet *packet, uint8_t type, const mesh::GroupChannel &channel, uint8_t *data, size_t length){
         int index = -1;
         for(int i = 0; i < CHANNEL_COUNT; i++){
@@ -266,21 +296,27 @@ namespace meshcore {
         }
     }
 
+    // ------------------------------------------------------------------------
+    // Receive statistics and raw callbacks
+    // ------------------------------------------------------------------------
+
     void Node::logRx(mesh::Packet *packet, int length, float score){
         packets_received_++;
     }
 
     void Node::logRxRaw(float snr, float rssi, const uint8_t raw[], int length){
-        if(raw_rx_callback_ == nullptr)
-            return;
+        if(raw_rx_callback_ == nullptr) return;
 
-        if(raw == nullptr || length <= 0 || length > MAX_TRANS_UNIT)
-            return;
+        if(raw == nullptr || length <= 0 || length > MAX_TRANS_UNIT) return;
 
         // Forward the original received LoRa bytes.
         // Do not modify routing or packet processing.
         raw_rx_callback_(raw_rx_context_, snr, rssi, raw, static_cast<size_t>(length));
     }
+
+    // ------------------------------------------------------------------------
+    // Advertisement path cache
+    // ------------------------------------------------------------------------
 
     void Node::cache_advert_path(const mesh::Packet *packet, const mesh::Identity &identity){
         if(packet == nullptr || packet->path_len > 255) return;
@@ -353,7 +389,11 @@ namespace meshcore {
 
         return false;
     }
-   
+
+    // ------------------------------------------------------------------------
+    // Advertisement and acknowledgment callbacks
+    // ------------------------------------------------------------------------
+
     void Node::onAdvertRecv(mesh::Packet *packet, const mesh::Identity &identity, uint32_t timestamp, const uint8_t *data, size_t length){
         valid_adverts_++;
 

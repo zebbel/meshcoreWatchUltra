@@ -1,4 +1,3 @@
-
 #include "Ed25519.h"
 
 #include "monocypher-ed25519.h"

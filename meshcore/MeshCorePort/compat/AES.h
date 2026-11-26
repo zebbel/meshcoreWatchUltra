@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include "esp_log.h"
@@ -76,8 +75,7 @@ private:
         uint8_t output[32] = {};
         size_t output_length = 0;
 
-        psa_status_t status = encrypt ? psa_cipher_encrypt(key_id_, PSA_ALG_ECB_NO_PADDING, src, 16, output, sizeof(output), &output_length) :
-            psa_cipher_decrypt(key_id_, PSA_ALG_ECB_NO_PADDING, src, 16, output, sizeof(output), &output_length);
+        psa_status_t status = encrypt ? psa_cipher_encrypt(key_id_, PSA_ALG_ECB_NO_PADDING, src, 16, output, sizeof(output), &output_length) : psa_cipher_decrypt(key_id_, PSA_ALG_ECB_NO_PADDING, src, 16, output, sizeof(output), &output_length);
 
         check(status, encrypt ? "AES encrypt" : "AES decrypt");
 

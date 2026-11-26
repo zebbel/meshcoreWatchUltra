@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <stdint.h>
@@ -15,8 +14,7 @@ namespace meshcore {
     // Prevents the upstream MeshCore engine from transmitting.
     class ReceiveOnlyRadio final : public mesh::Radio {
     public:
-        explicit ReceiveOnlyRadio(RadioAdapter &radio)
-            : radio_(radio){}
+        explicit ReceiveOnlyRadio(RadioAdapter &radio) : radio_(radio){}
 
         void begin() override;
 

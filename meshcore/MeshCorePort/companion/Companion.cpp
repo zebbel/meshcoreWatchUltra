@@ -1,4 +1,3 @@
-
 #include "Companion.h"
 
 #include "esp_log.h"
@@ -46,7 +45,7 @@ namespace meshcore {
         RESP_ADVERT_PATH=22,
         RESP_TUNING=23,
         RESP_STATS=24, RESP_AUTOADD=25, RESP_REPEAT_FREQ=26,
-        RESP_DEFAULT_SCOPE=28,  
+        RESP_DEFAULT_SCOPE=28,
         PUSH_ADVERT=0x80,
         PUSH_ACK=0x82,
         PUSH_MSGS=0x83,
@@ -78,10 +77,11 @@ namespace meshcore {
         return static_cast<uint32_t>(clock.getMillis());
     }
 
-    Companion::Companion(hardware::bluetooth::Transport &ble, Node &mesh, RadioAdapter &radio, SettingsStore &settings, Contacts &contacts, RTCAdapter &rtc, mesh::MillisecondClock &clock, Telemetry &telemetry)
-        : ble_(ble), mesh_(mesh), radio_(radio),
-          settings_(settings), contacts_(contacts),
-          rtc_(rtc), clock_(clock), telemetry_(telemetry){
+    // ------------------------------------------------------------------------
+    // Companion initialization
+    // ------------------------------------------------------------------------
+
+    Companion::Companion(hardware::bluetooth::Transport &ble, Node &mesh, RadioAdapter &radio, SettingsStore &settings, Contacts &contacts, RTCAdapter &rtc, mesh::MillisecondClock &clock, Telemetry &telemetry) : ble_(ble), mesh_(mesh), radio_(radio), settings_(settings), contacts_(contacts), rtc_(rtc), clock_(clock), telemetry_(telemetry){
 
         snprintf(node_name_, sizeof(node_name_), "Watch-%02X%02X%02X%02X", mesh_.self_id.pub_key[0], mesh_.self_id.pub_key[1], mesh_.self_id.pub_key[2], mesh_.self_id.pub_key[3]);
 
@@ -110,6 +110,10 @@ namespace meshcore {
         mesh_.set_raw_rx_callback(raw_rx_callback, this);
     }
 
+    // ------------------------------------------------------------------------
+    // Mesh callback adapters
+    // ------------------------------------------------------------------------
+
     void Companion::group_callback(void *ctx, const mesh::Packet *p, uint8_t ch, uint32_t ts, const uint8_t *txt, size_t n){
 
         static_cast<Companion *>(ctx)-> on_group_message(p, ch, ts, txt, n);
@@ -130,11 +134,14 @@ namespace meshcore {
     }
 
     void Companion::raw_rx_callback(void *ctx, float snr, float rssi, const uint8_t *raw, size_t length){
-        if(ctx == nullptr)
-            return;
+        if(ctx == nullptr) return;
 
         static_cast<Companion *>(ctx)->on_raw_rx(snr, rssi, raw, length);
     }
+
+    // ------------------------------------------------------------------------
+    // Incoming message queue
+    // ------------------------------------------------------------------------
 
     void Companion::enqueue(const uint8_t *data, size_t len){
         if(data == nullptr || len == 0 || len > hardware::bluetooth::Transport::MAX_FRAME) return;
@@ -175,8 +182,7 @@ namespace meshcore {
         put_u32(&f[i], ts);
         i += 4;
 
-        if(n > sizeof(f) - i)
-            n = sizeof(f) - i;
+        if(n > sizeof(f) - i) n = sizeof(f) - i;
 
         memcpy(&f[i], text, n);
         i += n;
@@ -207,8 +213,7 @@ namespace meshcore {
         put_u32(&f[i], ts);
         i += 4;
 
-        if(n > sizeof(f) - i)
-            n = sizeof(f) - i;
+        if(n > sizeof(f) - i) n = sizeof(f) - i;
 
         memcpy(&f[i], text, n);
         i += n;
@@ -232,8 +237,7 @@ namespace meshcore {
         }
 
         const auto *contact = contacts_.find(id.pub_key);
-        if(contact == nullptr)
-            return;
+        if(contact == nullptr) return;
 
         if(is_new){
             send_contact(*contact, PUSH_NEW_ADVERT);
@@ -260,8 +264,7 @@ namespace meshcore {
     }
 
     void Companion::on_raw_rx(float snr, float rssi, const uint8_t *raw, size_t length){
-        if(raw == nullptr || length == 0)
-            return;
+        if(raw == nullptr || length == 0) return;
 
         // MeshCore raw RX notification format:
         //
@@ -272,19 +275,14 @@ namespace meshcore {
 
         constexpr size_t HEADER_SIZE = 3;
 
-        if(length > hardware::bluetooth::Transport::MAX_FRAME - HEADER_SIZE)
-            return;
+        if(length > hardware::bluetooth::Transport::MAX_FRAME - HEADER_SIZE) return;
 
         // Use only valid BLE signal byte ranges.
         const float snr_scaled = snr * 4.0f;
 
-        const int snr_value = snr_scaled < -128.0f ? -128 :
-            snr_scaled > 127.0f ? 127 :
-            static_cast<int>(snr_scaled);
+        const int snr_value = snr_scaled < -128.0f ? -128 : snr_scaled > 127.0f ? 127 : static_cast<int>(snr_scaled);
 
-        const int rssi_value = rssi < -128.0f ? -128 :
-            rssi > 127.0f ? 127 :
-            static_cast<int>(rssi);
+        const int rssi_value = rssi < -128.0f ? -128 : rssi > 127.0f ? 127 : static_cast<int>(rssi);
 
         uint8_t frame[hardware::bluetooth::Transport::MAX_FRAME] = {};
 
@@ -303,10 +301,12 @@ namespace meshcore {
         ble_.send_best_effort(frame, frame_length);
     }
 
+    // ------------------------------------------------------------------------
+    // Command replies
+    // ------------------------------------------------------------------------
+
     void Companion::reply_error(uint8_t code, const uint8_t *cmd, size_t len){
-        ESP_LOGW(TAG, "Companion command rejected: cmd=%u len=%u error=%u",
-                 static_cast<unsigned>(len && cmd ? cmd[0] : 0),
-                 static_cast<unsigned>(len), static_cast<unsigned>(code));
+        ESP_LOGW(TAG, "Companion command rejected: cmd=%u len=%u error=%u", static_cast<unsigned>(len && cmd ? cmd[0] : 0), static_cast<unsigned>(len), static_cast<unsigned>(code));
 
         const uint8_t f[2] = {RESP_ERROR, code};
         ble_.send(f, 2);
@@ -316,6 +316,10 @@ namespace meshcore {
         const uint8_t f[1] = {RESP_OK};
         ble_.send(f, 1);
     }
+
+    // ------------------------------------------------------------------------
+    // Persistent companion configuration
+    // ------------------------------------------------------------------------
 
     bool Companion::save_name(){
         struct NameRecord { char name[32]; } saved = {};
@@ -334,8 +338,7 @@ namespace meshcore {
 
         const bool radio_changed = radio_change && (next.freq_khz != before.freq_khz || next.bandwidth_hz != before.bandwidth_hz || next.sf != before.sf || next.cr != before.cr || next.tx_power_dbm != before.tx_power_dbm);
 
-        if(radio_change && !radio_changed)
-            return true;
+        if(radio_change && !radio_changed) return true;
 
         if(radio_changed && mesh_.pendingOutboundCount() != 0){
             ESP_LOGW(TAG, "Cannot change active radio while outbound packets are queued");
@@ -362,6 +365,10 @@ namespace meshcore {
 
         return false;
     }
+
+    // ------------------------------------------------------------------------
+    // Application handshake and queries
+    // ------------------------------------------------------------------------
 
     void Companion::handle_app_start(){
         const auto &s = settings_.get();
@@ -449,25 +456,25 @@ namespace meshcore {
         ble_.send(f, sizeof(f));
     }
 
+    // ------------------------------------------------------------------------
+    // Contact synchronization
+    // ------------------------------------------------------------------------
+
     bool Companion::send_contact(const Contact &c, uint8_t code){
 
         uint8_t f[Contacts::WIRE_LENGTH] = {};
         size_t n = contacts_.to_wire(f, c);
 
-        if(n == 0)
-            return false;
+        if(n == 0) return false;
 
         f[0] = code;
         return ble_.send(f, n);
     }
 
     void Companion::pump_contacts(){
-        if(!contact_sync_)
-            return;
+        if(!contact_sync_) return;
 
-        for(;
-            contact_index_ < Contacts::CAPACITY;
-            contact_index_++){
+        for(; contact_index_ < Contacts::CAPACITY; contact_index_++){
 
             const Contact *peer = contacts_.at(contact_index_);
 
@@ -475,11 +482,9 @@ namespace meshcore {
                 continue;
             }
 
-            if(!send_contact(*peer))
-                return;
+            if(!send_contact(*peer)) return;
 
-            if(peer->lastmod > last_mod_)
-                last_mod_ = peer->lastmod;
+            if(peer->lastmod > last_mod_) last_mod_ = peer->lastmod;
 
             contact_index_++;
             return;
@@ -488,14 +493,16 @@ namespace meshcore {
         uint8_t f[5] = {RESP_CONTACTS_END};
         put_u32(&f[1], last_mod_);
 
-        if(ble_.send(f, sizeof(f)))
-            contact_sync_ = false;
+        if(ble_.send(f, sizeof(f))) contact_sync_ = false;
     }
+
+    // ------------------------------------------------------------------------
+    // Command dispatcher
+    // ------------------------------------------------------------------------
 
     void Companion::handle(const uint8_t *cmd, size_t len){
 
-        if(cmd == nullptr || len == 0)
-            return;
+        if(cmd == nullptr || len == 0) return;
 
         const auto &before = settings_.get();
 
@@ -548,8 +555,7 @@ namespace meshcore {
                     return;
                 }
 
-                if(auto *c = contacts_.find(&cmd[1]))
-                    send_contact(*c);
+                if(auto *c = contacts_.find(&cmd[1])) send_contact(*c);
                 else
                     reply_error(ERR_NOT_FOUND , cmd, len);
                 return;
@@ -693,8 +699,7 @@ namespace meshcore {
 
                 mesh_.releasePacket(packet);
 
-                if(!ble_.send(response, packet_len + 1))
-                    reply_error(ERR_BAD_STATE, cmd, len);
+                if(!ble_.send(response, packet_len + 1)) reply_error(ERR_BAD_STATE, cmd, len);
                 return;
             }
 
@@ -732,9 +737,9 @@ namespace meshcore {
                 ble_.send(f, sizeof(f));
                 return;
             }
-            
+
             case CMD_SET_TIME: {
-                if (len != 5) {
+                if(len != 5){
                     reply_error(ERR_ILLEGAL, cmd, len);
                     return;
                 }
@@ -743,39 +748,29 @@ namespace meshcore {
                 const uint32_t current = rtc_.getCurrentTime();
 
                 // Reject obviously invalid Unix timestamps.
-                if (requested < 1577836800U ||
-                    requested > 4102444799U) {
+                if(requested < 1577836800U || requested > 4102444799U){
                     reply_error(ERR_ILLEGAL, cmd, len);
                     return;
                 }
 
-                ESP_LOGD(TAG,
-                        "SET_TIME requested=%lu current=%lu",
-                        static_cast<unsigned long>(requested),
-                        static_cast<unsigned long>(current));
+                ESP_LOGD(TAG, "SET_TIME requested=%lu current=%lu", static_cast<unsigned long>(requested), static_cast<unsigned long>(current));
 
                 // Ignore small backward differences to preserve
                 // monotonic message timestamps.
-                if (current != 0 &&
-                    requested < current &&
-                    current - requested <= 30U) {
+                if(current != 0 && requested < current && current - requested <= 30U){
                     reply_ok();
                     return;
                 }
 
                 // The paired companion can correct an RTC that
                 // contains an incorrect time, including backwards.
-                if (current != 0 && requested < current) {
-                    ESP_LOGW(TAG,
-                            "Correcting RTC backwards by %lu seconds",
-                            static_cast<unsigned long>(current - requested));
+                if(current != 0 && requested < current){
+                    ESP_LOGW(TAG, "Correcting RTC backwards by %lu seconds", static_cast<unsigned long>(current - requested));
                 }
 
                 rtc_.setCurrentTime(requested);
 
-                ESP_LOGD(TAG,
-                        "SET_TIME applied=%lu",
-                        static_cast<unsigned long>(rtc_.getCurrentTime()));
+                ESP_LOGD(TAG, "SET_TIME applied=%lu", static_cast<unsigned long>(rtc_.getCurrentTime()));
 
                 reply_ok();
                 return;
@@ -844,8 +839,7 @@ namespace meshcore {
 
                 uint32_t ts = get_u32(&cmd[3]);
 
-                if(ts == 0)
-                    ts = rtc_.getCurrentTimeUnique();
+                if(ts == 0) ts = rtc_.getCurrentTimeUnique();
 
                 if(!mesh_.send_channel_text(cmd[2], ts, node_name_, &cmd[7], len - 7)){
 
@@ -872,8 +866,7 @@ namespace meshcore {
 
                 uint32_t ts = get_u32(&cmd[3]);
 
-                if(ts == 0)
-                    ts = rtc_.getCurrentTimeUnique();
+                if(ts == 0) ts = rtc_.getCurrentTimeUnique();
 
                 uint32_t ack = 0;
                 uint32_t timeout = 0;
@@ -1030,14 +1023,11 @@ namespace meshcore {
 
                 next.manual_contact_mode = cmd[1];
 
-                if(len >= 3)
-                    next.telemetry_modes = cmd[2];
+                if(len >= 3) next.telemetry_modes = cmd[2];
 
-                if(len >= 4)
-                    next.advert_loc_policy = cmd[3];
+                if(len >= 4) next.advert_loc_policy = cmd[3];
 
-                if(len >= 5)
-                    next.multi_acks = cmd[4];
+                if(len >= 5) next.multi_acks = cmd[4];
 
                 if(!update_settings(next, false)){
                     reply_error(ERR_ILLEGAL , cmd, len);
@@ -1062,7 +1052,7 @@ namespace meshcore {
                 reply_ok();
                 return;
             }
-            
+
             case CMD_GET_ADVERT_PATH: {
                 if(len != 34){
                     reply_error(ERR_ILLEGAL, cmd, len);
@@ -1340,11 +1330,10 @@ namespace meshcore {
 
                 reboot_at_ms_ = time_ms(clock_) + 2000;
 
-                if(reboot_at_ms_ == 0)
-                    reboot_at_ms_ = 1;
+                if(reboot_at_ms_ == 0) reboot_at_ms_ = 1;
 
                 return;
-            
+
             case CMD_GET_CUSTOM_VARS: {
                 if(len != 1){
                     reply_error(ERR_ILLEGAL , cmd, len);
@@ -1383,16 +1372,18 @@ namespace meshcore {
         }
     }
 
+    // ------------------------------------------------------------------------
+    // Application task polling
+    // ------------------------------------------------------------------------
+
     void Companion::loop(){
         hardware::bluetooth::Transport::Frame frame;
 
         for(int i = 0; i < 4 && ble_.receive(frame); i++){
-            if(ble_.connected())
-                handle(frame.data, frame.length);
+            if(ble_.connected()) handle(frame.data, frame.length);
         }
 
-        if(ble_.connected())
-            pump_contacts();
+        if(ble_.connected()) pump_contacts();
         else
             contact_sync_ = false;
         if(reboot_at_ms_ != 0 && static_cast<int32_t>(time_ms(clock_) - reboot_at_ms_) >= 0){
@@ -1400,8 +1391,7 @@ namespace meshcore {
             ESP_LOGI(TAG, "Reboot requested by paired companion");
             // Preserve pending automatic contact updates on orderly reboot.
             const esp_err_t err = contacts_.flush_pending();
-            if(err != ESP_OK)
-                ESP_LOGW(TAG, "Contact database save before reboot failed: %s", esp_err_to_name(err));
+            if(err != ESP_OK) ESP_LOGW(TAG, "Contact database save before reboot failed: %s", esp_err_to_name(err));
             hardware::system::restart();
         }
     }

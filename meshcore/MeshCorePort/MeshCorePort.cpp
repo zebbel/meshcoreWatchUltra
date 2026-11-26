@@ -30,6 +30,10 @@ namespace meshcore {
     static meshcore::Companion *companion = nullptr;
     static meshcore::SettingsStore *settings_store = nullptr;
 
+    // ------------------------------------------------------------------------
+    // Persistent storage and object construction
+    // ------------------------------------------------------------------------
+
     // All SD reads and first-boot writes happen before SX126x initialization.
     // Nested SD sessions in IdentityStore/Contacts/Node/Companion reuse this
     // mount, and the outer scope unmounts/powers off exactly once.
@@ -102,6 +106,10 @@ namespace meshcore {
         return ESP_OK;
     }
 
+    // ------------------------------------------------------------------------
+    // Radio initialization
+    // ------------------------------------------------------------------------
+
     esp_err_t init(){
         if(initialized) return ESP_OK;
         if(!hardware::sd::ready()){
@@ -113,8 +121,7 @@ namespace meshcore {
         esp_err_t err = prepare_storage();
         if(err != ESP_OK) return err;
 
-        if(!prepared || node == nullptr || prepared_radio == nullptr || settings_store == nullptr)
-            return ESP_ERR_INVALID_STATE;
+        if(!prepared || node == nullptr || prepared_radio == nullptr || settings_store == nullptr) return ESP_ERR_INVALID_STATE;
 
         err = hardware::lora::init();
         if(err != ESP_OK){
@@ -141,6 +148,10 @@ namespace meshcore {
 
     bool is_initialized(){ return initialized; }
 
+    // ------------------------------------------------------------------------
+    // Application polling
+    // ------------------------------------------------------------------------
+
     static void process_meshcore(){
         if(!initialized) return;
         if(!hardware::sd::ready()){
@@ -158,6 +169,10 @@ namespace meshcore {
         process_meshcore();
         hardware::bluetooth::transport().loop();
     }
+
+    // ------------------------------------------------------------------------
+    // Status and position interface
+    // ------------------------------------------------------------------------
 
     uint32_t received_packet_count(){
         return initialized && node != nullptr ? node->packetCount() : 0U;

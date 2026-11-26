@@ -1,4 +1,3 @@
-
 #include "Telemetry.h"
 
 #include "esp_log.h"
@@ -17,6 +16,10 @@ namespace meshcore {
     static constexpr uint8_t LPP_PERCENTAGE = 0x78;
     static constexpr uint8_t LPP_GPS = 0x88;
 
+    // ------------------------------------------------------------------------
+    // Signed 24-bit wire encoding
+    // ------------------------------------------------------------------------
+
     static void add_i24(uint8_t *out, int32_t value){
         uint32_t bits = static_cast<uint32_t>(value) & 0xFFFFFF;
 
@@ -24,6 +27,10 @@ namespace meshcore {
         out[1] = static_cast<uint8_t>(bits >> 8);
         out[2] = static_cast<uint8_t>(bits);
     }
+
+    // ------------------------------------------------------------------------
+    // Battery voltage
+    // ------------------------------------------------------------------------
 
     uint16_t Telemetry::battery_millivolts() const{
         hardware::power::battery_info_t battery;
@@ -34,6 +41,10 @@ namespace meshcore {
 
         return battery.millivolts;
     }
+
+    // ------------------------------------------------------------------------
+    // Permission-filtered telemetry encoding
+    // ------------------------------------------------------------------------
 
     size_t Telemetry::encode(uint8_t permissions, uint8_t *out, size_t capacity){
 

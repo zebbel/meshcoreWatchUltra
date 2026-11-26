@@ -1,4 +1,3 @@
-
 #include "Contacts.h"
 
 #include "esp_log.h"
@@ -27,8 +26,7 @@ namespace meshcore {
     // still the sole live RAM database. Do not put the file on a task stack.
     using Buffer = std::unique_ptr<uint8_t, decltype(&heap_caps_free)>;
     static Buffer allocate_buffer(size_t bytes){
-        return Buffer(static_cast<uint8_t *>(heap_caps_malloc(
-            bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)), &heap_caps_free);
+        return Buffer(static_cast<uint8_t *>(heap_caps_malloc( bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)), &heap_caps_free);
     }
 
     static uint32_t monotonic_ms(){
@@ -84,14 +82,9 @@ namespace meshcore {
 
     static esp_err_t validate_database(uint8_t *bytes, size_t length, size_t &count){
         count = 0;
-        if(length < HEADER_BYTES || read_u32(bytes) != DATABASE_MAGIC ||
-           read_u32(bytes + 4) != DATABASE_VERSION ||
-           read_u32(bytes + 12) != RECORD_BYTES) return ESP_ERR_INVALID_CRC;
+        if(length < HEADER_BYTES || read_u32(bytes) != DATABASE_MAGIC || read_u32(bytes + 4) != DATABASE_VERSION || read_u32(bytes + 12) != RECORD_BYTES) return ESP_ERR_INVALID_CRC;
         const uint32_t records = read_u32(bytes + 8);
-        if(records > Contacts::CAPACITY ||
-           length != HEADER_BYTES + static_cast<size_t>(records) * RECORD_BYTES ||
-           read_u32(bytes + CHECKSUM_OFFSET) != database_crc(bytes, length))
-            return ESP_ERR_INVALID_CRC;
+        if(records > Contacts::CAPACITY || length != HEADER_BYTES + static_cast<size_t>(records) * RECORD_BYTES || read_u32(bytes + CHECKSUM_OFFSET) != database_crc(bytes, length)) return ESP_ERR_INVALID_CRC;
         // Validate every record and reject duplicate full public keys before
         // exposing any data to the live contact table. No extra RAM table.
         for(size_t i = 0; i < records; ++i){
@@ -99,21 +92,23 @@ namespace meshcore {
             Contact item{};
             if(!decode_record(record, item)) return ESP_ERR_INVALID_CRC;
             for(size_t j = 0; j < i; ++j){
-                if(memcmp(record + 1, bytes + HEADER_BYTES + j * RECORD_BYTES + 1,
-                          PUB_KEY_SIZE) == 0) return ESP_ERR_INVALID_CRC;
+                if(memcmp(record + 1, bytes + HEADER_BYTES + j * RECORD_BYTES + 1, PUB_KEY_SIZE) == 0) return ESP_ERR_INVALID_CRC;
             }
         }
         count = records;
         return ESP_OK;
     }
 
+    // ------------------------------------------------------------------------
+    // Database loading and validation
+    // ------------------------------------------------------------------------
+
     esp_err_t Contacts::load(){
         const int64_t start_us = esp_timer_get_time();
         auto buffer = allocate_buffer(MAX_DATABASE_BYTES);
         if(!buffer) return ESP_ERR_NO_MEM;
         size_t length = 0;
-        const esp_err_t read_err = hardware::sd::read_file(
-            DATABASE, buffer.get(), MAX_DATABASE_BYTES, length);
+        const esp_err_t read_err = hardware::sd::read_file( DATABASE, buffer.get(), MAX_DATABASE_BYTES, length);
         size_t loaded = 0;
         if(read_err == ESP_OK){
             const esp_err_t err = validate_database(buffer.get(), length, loaded);
@@ -129,11 +124,13 @@ namespace meshcore {
         }
         dirty_ = false;
         retry_pending_ = false;
-        ESP_LOGI(TAG, "Loaded %u contacts from database in %lu ms",
-                 static_cast<unsigned>(loaded),
-                 static_cast<unsigned long>((esp_timer_get_time() - start_us) / 1000ULL));
+        ESP_LOGI(TAG, "Loaded %u contacts from database in %lu ms", static_cast<unsigned>(loaded), static_cast<unsigned long>((esp_timer_get_time() - start_us) / 1000ULL));
         return ESP_OK;
     }
+
+    // ------------------------------------------------------------------------
+    // Database persistence
+    // ------------------------------------------------------------------------
 
     esp_err_t Contacts::save_database(){
         const size_t records = count();
@@ -154,8 +151,7 @@ namespace meshcore {
         }
         put_u32(bytes + CHECKSUM_OFFSET, database_crc(bytes, length));
         size_t validated = 0;
-        if(validate_database(bytes, length, validated) != ESP_OK || validated != records)
-            return ESP_ERR_INVALID_CRC;
+        if(validate_database(bytes, length, validated) != ESP_OK || validated != records) return ESP_ERR_INVALID_CRC;
         // The existing SD service writes a temporary file, flushes/fsyncs,
         // and rotates the previous main file to .bak before installing it.
         const esp_err_t err = hardware::sd::write_file(DATABASE, bytes, length);
@@ -165,6 +161,10 @@ namespace meshcore {
         }
         return err;
     }
+
+    // ------------------------------------------------------------------------
+    // Deferred writes
+    // ------------------------------------------------------------------------
 
     esp_err_t Contacts::flush_pending(){
         if(!dirty_) return ESP_OK;
@@ -183,6 +183,10 @@ namespace meshcore {
             ESP_LOGW(TAG, "Contact database batch save failed: %s", esp_err_to_name(err));
         }
     }
+
+    // ------------------------------------------------------------------------
+    // Contact lookup
+    // ------------------------------------------------------------------------
 
     size_t Contacts::count() const{
         size_t n = 0;
@@ -207,6 +211,9 @@ namespace meshcore {
         return i >= 0 ? &contacts_[i] : nullptr;
     }
 
+    // ------------------------------------------------------------------------
+    // Contact mutations
+    // ------------------------------------------------------------------------
 
     bool Contacts::save_slot(size_t idx, const Contact *value, bool deferred){
         if(idx >= CAPACITY || !hardware::sd::writable()) return false;
@@ -282,6 +289,10 @@ namespace meshcore {
         return save_slot(i, &c);
     }
 
+    // ------------------------------------------------------------------------
+    // Advertisement updates
+    // ------------------------------------------------------------------------
+
     bool Contacts::observe_advert(const mesh::Identity &id, uint32_t timestamp, const uint8_t *data, size_t len, uint32_t now, bool auto_add, uint8_t mask){
         if(data == nullptr || len < 1) return false;
         uint8_t type = data[0] & 0x0F;
@@ -321,6 +332,10 @@ namespace meshcore {
         // coalesced in the live RAM table until the next database save.
         return save_slot(idx, &c, existing >= 0);
     }
+
+    // ------------------------------------------------------------------------
+    // Companion wire encoding
+    // ------------------------------------------------------------------------
 
     size_t Contacts::to_wire(uint8_t f[WIRE_LENGTH], const Contact &c) const{
         if(!record_valid(c)) return 0;

@@ -1,4 +1,3 @@
-
 #include "Routing.h"
 
 #include "esp_log.h"
@@ -6,6 +5,10 @@
 namespace meshcore {
 
     static const char *TAG = "MeshCoreRouting";
+
+    // ------------------------------------------------------------------------
+    // Receive-only radio adapter
+    // ------------------------------------------------------------------------
 
     void ReceiveOnlyRadio::begin(){
         radio_.begin();
@@ -72,8 +75,11 @@ namespace meshcore {
         return radio_.getLastSNR();
     }
 
-    Routing::Routing(mesh::Radio &radio, mesh::MillisecondClock &clock, StaticPoolPacketManager &manager, SimpleMeshTables &tables)
-        : mesh::Dispatcher(radio, clock, manager), tables_(tables){}
+    // ------------------------------------------------------------------------
+    // Receive-only dispatcher
+    // ------------------------------------------------------------------------
+
+    Routing::Routing(mesh::Radio &radio, mesh::MillisecondClock &clock, StaticPoolPacketManager &manager, SimpleMeshTables &tables) : mesh::Dispatcher(radio, clock, manager), tables_(tables){}
 
     // Read-only monitoring does not need flood retransmission delays.
     int Routing::calcRxDelay(float score, uint32_t air_time) const{

@@ -11,6 +11,10 @@ namespace meshcore {
     static constexpr const char *PATH = "/sdcard/meshcore/settings.bin";
     static constexpr uint32_t MAGIC = 0x4D435346U;
 
+    // ------------------------------------------------------------------------
+    // Radio profile
+    // ------------------------------------------------------------------------
+
     hardware::lora::config_t Settings::radio() const{
         hardware::lora::config_t cfg;
         cfg.frequency_hz = freq_khz * 1000U;
@@ -23,6 +27,10 @@ namespace meshcore {
         cfg.crc_enabled = true;
         return cfg;
     }
+
+    // ------------------------------------------------------------------------
+    // Settings validation
+    // ------------------------------------------------------------------------
 
     bool Settings::valid() const{
         if(magic != MAGIC_SETTINGS || version != VERSION) return false;
@@ -39,6 +47,10 @@ namespace meshcore {
         if(memchr(default_scope_name, 0, sizeof(default_scope_name)) == nullptr) return false;
         return true;
     }
+
+    // ------------------------------------------------------------------------
+    // Persistent settings
+    // ------------------------------------------------------------------------
 
     esp_err_t SettingsStore::load(){
         Settings persisted = {};
