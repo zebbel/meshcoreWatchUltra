@@ -13,6 +13,8 @@
 #include <cstdlib>
 #include <ctime>
 #include <climits>
+#include "screens.h"
+#include "eez-flow.h"
 
 #ifndef CONFIG_MCW_WATCH_CLOCK_TIMEZONE
 #define CONFIG_MCW_WATCH_CLOCK_TIMEZONE "CET-1CEST,M3.5.0,M10.5.0/3"
@@ -33,6 +35,7 @@ std::atomic<uint32_t> s_status{0};
 std::atomic<uint32_t> s_rx{0};
 std::atomic<uint32_t> s_pairing_pin{0};
 char s_pairing_pin_text[7] = "";
+bool s_pairing_page_active = false;
 constexpr uint32_t GPS_ENABLED=1U, GPS_FIX=2U, BLE=4U, MESH=8U;
 void sample_time() {
     const time_t epoch = std::time(nullptr);
@@ -54,11 +57,42 @@ void sample_battery() {
     }
     s_last_battery = lv_tick_get();
 }
+void update_pairing_page() {
+    const bool pairing = s_pairing_pin.load() != 0;
+
+    if (pairing && !s_pairing_page_active) {
+        s_pairing_page_active = true;
+
+        eez_flow_push_screen(
+            SCREEN_ID_PAIRING,
+            LV_SCR_LOAD_ANIM_NONE,
+            0, 0
+        );
+    } else if (!pairing && s_pairing_page_active) {
+        s_pairing_page_active = false;
+
+        if (eez_flow_get_current_screen() == SCREEN_ID_PAIRING) {
+            eez_flow_pop_screen(
+                LV_SCR_LOAD_ANIM_NONE,
+                0, 0
+            );
+        }
+    }
+}
 void tick(lv_timer_t *) {
     if (!services::display_power::is_screen_awake()) return;
+
     const uint32_t now = lv_tick_get();
-    if (now - s_last_clock >= 1000U) sample_time();
-    if (now - s_last_battery >= (s_charging ? kChargingBatteryMs : kBatteryMs)) sample_battery();
+
+    if (now - s_last_clock >= 1000U)
+        sample_time();
+
+    if (now - s_last_battery >=
+        (s_charging ? kChargingBatteryMs : kBatteryMs))
+        sample_battery();
+
+    update_pairing_page();
+
     ui_tick();
 }
 // All runtime access is under the existing LVGL lock / timer context.
@@ -106,6 +140,24 @@ void set_var_brightness(int32_t value) {
         ESP_LOGW(TAG, "EEZ brightness change failed: %s", esp_err_to_name(err));
     }
 }
+const char *get_var_ble_pairing_pin() {
+    const uint32_t pin = s_pairing_pin.load();
+
+    if (pin >= 100000 && pin <= 999999) {
+        std::snprintf(
+            s_pairing_pin_text,
+            sizeof(s_pairing_pin_text),
+            "%06lu",
+            static_cast<unsigned long>(pin)
+        );
+    } else {
+        s_pairing_pin_text[0] = '\0';
+    }
+
+    return s_pairing_pin_text;
+}
+
+void set_var_ble_pairing_pin(const char *) {}
 }
 
 namespace ui::watch_display {
@@ -123,11 +175,14 @@ void publish_pairing_pin(uint32_t pin) {
 }
 void refresh_flow(bool charging) {
     if (!s_timer) return;
+
     s_charging = charging;
+
     sample_battery();
     sample_time();
-    // Also called during hidden wake with the display service still reporting
-    // asleep. Explicitly tick here, rather than relying on the periodic timer.
+
+    update_pairing_page();
+
     settle_flow();
 }
 esp_err_t init_flow() {
