@@ -39,11 +39,10 @@ static void publish_watchface_status(bool meshcore_enabled) {
     hardware::gps::status_t gps_info{};
     hardware::gps::get_status(gps_info);
     snapshot.gps_acquiring = snapshot.gps_enabled && gps_info.powered;
-    if (snapshot.gps_has_fix) snapshot.gps_satellites = gps_info.satellites;
+    if(snapshot.gps_has_fix) snapshot.gps_satellites = gps_info.satellites;
 
     snapshot.meshcore_active = meshcore_enabled && hardware::sd::ready();
-    if (snapshot.meshcore_active)
-        snapshot.meshcore_rx_packets = meshcore::received_packet_count();
+    if(snapshot.meshcore_active) snapshot.meshcore_rx_packets = meshcore::received_packet_count();
     snapshot.ble_connected = hardware::bluetooth::transport().connected();
     const auto sleep = services::power_management::sleep_stats();
     snapshot.pm_enabled = sleep.pm_enabled;
