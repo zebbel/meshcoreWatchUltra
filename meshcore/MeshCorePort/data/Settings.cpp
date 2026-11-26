@@ -1,6 +1,9 @@
 #include "Settings.h"
-#include <string.h>
+
 #include "esp_log.h"
+
+#include <string.h>
+
 #include "MeshCoreSD.h"
 
 namespace meshcore {

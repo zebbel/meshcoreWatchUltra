@@ -3,8 +3,9 @@
 
 #include <stdint.h>
 
-#include "Dispatcher.h"
 #include "RadioAdapter.h"
+
+#include "Dispatcher.h"
 #include "helpers/SimpleMeshTables.h"
 #include "helpers/StaticPoolPacketManager.h"
 

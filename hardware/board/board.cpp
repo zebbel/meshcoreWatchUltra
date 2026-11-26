@@ -1,10 +1,11 @@
 
 #include "board.h"
-#include "board_pins.h"
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+
+#include "board_pins.h"
 
 namespace hardware::board {
 

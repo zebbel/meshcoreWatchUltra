@@ -1,10 +1,12 @@
 
 #include "Node.h"
 
+#include "esp_log.h"
+
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
-#include "esp_log.h"
+
 #include "SHA256.h"
 #include "MeshCoreSD.h"
 

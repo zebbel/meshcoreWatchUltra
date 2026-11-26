@@ -1,8 +1,9 @@
 #pragma once
 
+#include "esp_err.h"
+
 #include <stddef.h>
 #include <stdint.h>
-#include "esp_err.h"
 
 namespace hardware::sd {
     constexpr size_t MAX_PATH = 160;

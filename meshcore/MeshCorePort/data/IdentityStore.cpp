@@ -1,9 +1,13 @@
 #include "IdentityStore.h"
+
+#include "esp_log.h"
+
 #include <string.h>
 #include <dirent.h>
-#include "ed_25519.h"
-#include "esp_log.h"
+
 #include "MeshCoreSD.h"
+
+#include "ed_25519.h"
 
 namespace meshcore {
     static const char *TAG = "IdentityStore";

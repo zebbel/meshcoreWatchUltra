@@ -1,20 +1,24 @@
 #include "FlowBridge.h"
+
+#include "esp_log.h"
+#include "sdkconfig.h"
+
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <climits>
+
 #include "Power.h"
 #include "DisplayPower.h"
 #include "WatchDisplay.h"
 #include "WatchStatus.h"
 #include "CO5300Panel.h"
 #include "BluetoothTransport.h"
-#include "esp_log.h"
+
 #include "lvgl.h"
-#include "sdkconfig.h"
 #include "ui.h"
 #include "vars.h"
-#include <atomic>
-#include <cstdio>
-#include <cstdlib>
-#include <ctime>
-#include <climits>
 #include "screens.h"
 #include "eez-flow.h"
 

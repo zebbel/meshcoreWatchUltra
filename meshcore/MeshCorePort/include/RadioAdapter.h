@@ -1,8 +1,10 @@
 #pragma once
 
 #include <stdint.h>
-#include "Dispatcher.h"
+
 #include "LoRa.h"
+
+#include "Dispatcher.h"
 
 namespace meshcore {
     class RadioAdapter final : public mesh::Radio {

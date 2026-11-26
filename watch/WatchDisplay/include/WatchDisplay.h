@@ -1,7 +1,8 @@
 #pragma once
 
-#include <stdint.h>
 #include "esp_err.h"
+
+#include <stdint.h>
 
 // Watch UI entry point: LVGL lifecycle and integration only; no pin or I2C/SPI knowledge.
 namespace watch::display {

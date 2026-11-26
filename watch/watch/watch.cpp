@@ -1,4 +1,5 @@
 #include "watch.h"
+
 #include "WatchDisplay.h"
 #include "WatchStatus.h"
 #include "MeshCorePort.h"

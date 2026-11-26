@@ -1,9 +1,10 @@
 #pragma once
 
-#include <stdint.h>
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+#include <stdint.h>
 
 // Sole owner of the CST9217 I2C connection, GPIO12 IRQ and 0xD000AB ACK.
 // This component never calls LVGL and never decides when the display sleeps.

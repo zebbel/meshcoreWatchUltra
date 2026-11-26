@@ -1,19 +1,21 @@
 #include "CO5300Panel.h"
 
+#include "driver/spi_master.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include <cstring>
+
 #include "AXP2101.h"
 #include "XL9555.h"
 #include "board_pins.h"
 
-#include "driver/spi_master.h"
-#include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_ops.h"
 #include "esp_lcd_co5300.h"
-#include "esp_log.h"
-#include "esp_heap_caps.h"
-#include "sdkconfig.h"
-#include <cstring>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 namespace hardware::co5300 {
 namespace {

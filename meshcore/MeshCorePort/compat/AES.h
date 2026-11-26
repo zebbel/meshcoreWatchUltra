@@ -1,13 +1,13 @@
 
 #pragma once
 
+#include "esp_log.h"
+#include "psa/crypto.h"
+
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
-
-#include "esp_log.h"
-#include "psa/crypto.h"
 
 // Compatibility adapter for the AES128 interface used by
 // upstream MeshCore Utils.cpp.

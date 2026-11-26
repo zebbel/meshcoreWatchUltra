@@ -1,8 +1,9 @@
 
 #pragma once
 
-#include <stdint.h>
 #include "driver/gpio.h"
+
+#include <stdint.h>
 
 namespace hardware::board {
 

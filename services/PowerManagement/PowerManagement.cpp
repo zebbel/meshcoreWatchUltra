@@ -1,6 +1,5 @@
 #include "PowerManagement.h"
-#include "LoRa.h"
-#include "BluetoothTransport.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -10,9 +9,13 @@
 #include "esp_attr.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
-#include "board_pins.h"
+
 #include <atomic>
 #include <stdint.h>
+
+#include "LoRa.h"
+#include "BluetoothTransport.h"
+#include "board_pins.h"
 
 namespace services::power_management {
 static const char *TAG = "PowerManagement";

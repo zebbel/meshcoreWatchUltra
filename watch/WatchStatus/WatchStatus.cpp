@@ -1,10 +1,12 @@
 #include "WatchStatus.h"
+
+#include "freertos/FreeRTOS.h"
+
 #include "HardwareSystem.h"
 #include "GPS.h"
 #include "SDStorage.h"
 #include "MeshCorePort.h"
 #include "BluetoothTransport.h"
-#include "freertos/FreeRTOS.h"
 
 namespace watch::status {
     namespace {

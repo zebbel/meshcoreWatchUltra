@@ -1,11 +1,12 @@
 
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h" // TaskHandle_t for IRQ wakeups
+
+#include <stddef.h>
+#include <stdint.h>
 
 namespace hardware::sx1262 {
 

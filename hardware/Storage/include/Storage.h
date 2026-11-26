@@ -1,8 +1,9 @@
 #pragma once
 
+#include "esp_err.h"
+
 #include <stddef.h>
 #include <stdint.h>
-#include "esp_err.h"
 
 namespace hardware::storage {
     enum class Access : uint8_t { read_only, read_write };

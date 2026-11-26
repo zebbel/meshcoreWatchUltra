@@ -1,12 +1,13 @@
 #pragma once
 
-#include <atomic>
-#include <stddef.h>
-#include <stdint.h>
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+
+#include <atomic>
+#include <stddef.h>
+#include <stdint.h>
 
 struct ble_gap_event;
 struct ble_gatt_access_ctxt;

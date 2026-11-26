@@ -1,8 +1,10 @@
 
 #include "PlatformAdapters.h"
+
+#include "esp_log.h"
+
 #include "HardwareSystem.h"
 #include "TimeService.h"
-#include "esp_log.h"
 
 
 

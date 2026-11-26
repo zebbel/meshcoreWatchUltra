@@ -1,9 +1,12 @@
 #include "TimeService.h"
-#include "PCF85063A.h"
-#include "GPS.h"
+
 #include "esp_timer.h"
 #include "esp_log.h"
+
 #include <sys/time.h>
+
+#include "PCF85063A.h"
+#include "GPS.h"
 
 namespace services::time_service {
     namespace {

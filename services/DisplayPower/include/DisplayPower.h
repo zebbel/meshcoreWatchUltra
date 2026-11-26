@@ -1,7 +1,8 @@
 #pragma once
 
-#include <stdint.h>
 #include "esp_err.h"
+
+#include <stdint.h>
 
 // UI supplies a callback that safely serializes panel operations with its
 // renderer. The service owns only inactivity policy and state, not LVGL.

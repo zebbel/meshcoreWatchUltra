@@ -1,10 +1,11 @@
 
 #pragma once
 
-#include <stdint.h>
 #include "esp_err.h"
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
+
+#include <stdint.h>
 
 namespace hardware::board {
     esp_err_t init();                                                                                   // Initialize shared hardware buses

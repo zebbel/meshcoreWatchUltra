@@ -1,6 +1,7 @@
 #pragma once
-#include <stdint.h>
 #include "esp_err.h"
+
+#include <stdint.h>
 
 namespace services::time_service {
     // Epoch seconds in UTC; returns zero until a trusted time is available.

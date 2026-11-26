@@ -1,11 +1,12 @@
 #include "PCF85063A.h"
 
+#include "driver/i2c_master.h"
+#include "esp_log.h"
+
 #include <time.h>
 
 #include "board.h"
 #include "board_pins.h"
-#include "driver/i2c_master.h"
-#include "esp_log.h"
 
 namespace hardware::rtc {
 namespace {

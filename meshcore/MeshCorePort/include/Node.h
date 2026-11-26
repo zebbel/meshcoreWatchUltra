@@ -1,11 +1,14 @@
 #pragma once
 
+#include "esp_err.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include "Mesh.h"
-#include "esp_err.h"
+
 #include "Contacts.h"
+
+#include "Mesh.h"
 
 namespace meshcore {
 

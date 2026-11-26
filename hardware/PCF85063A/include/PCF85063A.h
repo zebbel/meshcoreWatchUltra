@@ -1,7 +1,8 @@
 #pragma once
 
-#include <stdint.h>
 #include "esp_err.h"
+
+#include <stdint.h>
 
 namespace hardware::rtc {
     // The PCF85063A keeps UTC while its supply remains powered.

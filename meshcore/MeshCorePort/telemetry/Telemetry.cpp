@@ -1,11 +1,12 @@
 
 #include "Telemetry.h"
 
+#include "esp_log.h"
+
 #include <math.h>
 
 #include "Power.h"
 #include "GPS.h"
-#include "esp_log.h"
 
 namespace meshcore {
 

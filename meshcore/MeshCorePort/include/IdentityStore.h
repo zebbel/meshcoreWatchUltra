@@ -1,9 +1,10 @@
 
 #pragma once
 
+#include "esp_err.h"
+
 #include "Identity.h"
 #include "Utils.h"
-#include "esp_err.h"
 
 namespace meshcore {
 

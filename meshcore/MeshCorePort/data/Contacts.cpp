@@ -1,13 +1,15 @@
 
 #include "Contacts.h"
 
-#include <stdio.h>
-#include <string.h>
 #include "esp_log.h"
-#include "MeshCoreSD.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+
+#include <stdio.h>
+#include <string.h>
 #include <memory>
+
+#include "MeshCoreSD.h"
 
 namespace meshcore {
     static const char *TAG = "Contacts";

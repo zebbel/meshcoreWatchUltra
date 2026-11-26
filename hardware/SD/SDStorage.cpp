@@ -1,10 +1,5 @@
 #include "SDStorage.h"
 
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
@@ -13,6 +8,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "board.h"
 #include "board_pins.h"
 #include "AXP2101.h"

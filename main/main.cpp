@@ -1,23 +1,16 @@
+#include "esp_err.h"
+#include "esp_log.h"
+
+#include "BluetoothTransport.h"
+#include "CompanionBluetooth.h"
+#include "LoRa.h"
+#include "MeshCorePort.h"
 #include "PowerManagement.h"
 #include "TimeService.h"
-#include "MeshCorePort.h"
-#include "CompanionBluetooth.h"
-#include "DisplayPower.h"
-
-#include "esp_log.h"
-#include "HardwareSystem.h"
-#include "Storage.h"
-
+#include "WatchDisplay.h"
 #include "hardware.h"
 #include "services.h"
 #include "watch.h"
-#include "board.h"
-#include "Power.h"
-#include "GPIO.h"
-#include "LoRa.h"
-#include "BluetoothTransport.h"
-#include "SDStorage.h"
-#include "WatchDisplay.h"
 
 static const char *TAG = "MeshCoreWatch";
 

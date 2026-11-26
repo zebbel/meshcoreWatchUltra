@@ -1,9 +1,12 @@
 #include "PositionSync.h"
+
+#include "esp_log.h"
+
+#include <math.h>
+
 #include "GPS.h"
 #include "MeshCorePort.h"
 #include "HardwareSystem.h"
-#include "esp_log.h"
-#include <math.h>
 
 namespace services::position_sync {
 static const char *TAG = "PositionSync";

@@ -1,14 +1,6 @@
 
 #include "SX1262.h"
 
-#include <string.h>
-#include <atomic>
-
-#include "AXP2101.h"
-#include "XL9555.h"
-#include "board.h"
-#include "board_pins.h"
-
 #include "driver/gpio.h"
 #include "esp_attr.h"
 #include "driver/spi_master.h"
@@ -18,6 +10,14 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+
+#include <string.h>
+#include <atomic>
+
+#include "AXP2101.h"
+#include "XL9555.h"
+#include "board.h"
+#include "board_pins.h"
 
 namespace hardware::sx1262 {
 

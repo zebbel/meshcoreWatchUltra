@@ -1,7 +1,8 @@
 #include "RadioAdapter.h"
 
-#include <string.h>
 #include "esp_log.h"
+
+#include <string.h>
 
 namespace meshcore {
     static const char *TAG = "RadioAdapter";

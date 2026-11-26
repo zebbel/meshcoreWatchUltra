@@ -1,13 +1,13 @@
 
 #include "AXP2101.h"
-#include "Storage.h"
-
-#include "board.h"
-#include "board_pins.h"
 
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
+
+#include "Storage.h"
+#include "board.h"
+#include "board_pins.h"
 
 namespace hardware::axp2101 {
 

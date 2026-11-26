@@ -1,14 +1,15 @@
 #include "WatchDisplay.h"
-#include "FlowBridge.h"
 
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include "FlowBridge.h"
 #include "CO5300Panel.h"
 #include "DisplayPower.h"
 
 #include "esp_lv_adapter.h"
 #include "esp_lv_adapter_display.h"
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "lvgl.h"
 
 namespace watch::display {

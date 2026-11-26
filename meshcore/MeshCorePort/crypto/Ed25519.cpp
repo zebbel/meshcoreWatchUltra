@@ -1,5 +1,6 @@
 
 #include "Ed25519.h"
+
 #include "monocypher-ed25519.h"
 
 bool Ed25519::verify(const uint8_t signature[64], const uint8_t public_key[32], const void *message, size_t length){

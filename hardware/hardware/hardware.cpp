@@ -1,5 +1,8 @@
 
 #include "hardware.h"
+
+#include "esp_log.h"
+
 #include "Storage.h"
 #include "board.h"
 #include "Power.h"
@@ -7,7 +10,6 @@
 #include "GPS.h"
 #include "SDStorage.h"
 #include "BluetoothTransport.h"
-#include "esp_log.h"
 
 namespace hardware {
 

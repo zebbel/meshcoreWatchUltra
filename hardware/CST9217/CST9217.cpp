@@ -1,16 +1,17 @@
 #include "CST9217.h"
 
+#include "driver/gpio.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include "XL9555.h"
 #include "board.h"
 #include "board_pins.h"
 
-#include "driver/gpio.h"
-#include "esp_lcd_panel_io.h"
 #include "esp_lcd_touch.h"
 #include "esp_lcd_touch_cst9217.h"
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 namespace hardware::cst9217 {
 namespace {

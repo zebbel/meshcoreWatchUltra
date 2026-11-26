@@ -1,13 +1,13 @@
 
 #include "XL9555.h"
 
-#include "board.h"
-#include "board_pins.h"
-
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+
+#include "board.h"
+#include "board_pins.h"
 
 namespace hardware::xl9555 {
 

@@ -1,13 +1,13 @@
 
 #pragma once
 
+#include "esp_log.h"
+#include "psa/crypto.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
-
-#include "esp_log.h"
-#include "psa/crypto.h"
 
 // SHA256 and HMAC compatibility for the original MeshCore Crypto API.
 // Backed by ESP-IDF PSA Crypto.

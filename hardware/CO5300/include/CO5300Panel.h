@@ -1,9 +1,10 @@
 #pragma once
 
-#include <stdint.h>
-#include <stddef.h>
 #include "esp_err.h"
 #include "esp_lcd_types.h"
+
+#include <stdint.h>
+#include <stddef.h>
 
 // CO5300 hardware driver. Owns panel IO, power and synchronous pixel transfers.
 namespace hardware::co5300 {

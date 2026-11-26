@@ -1,9 +1,5 @@
 #include "DisplayPower.h"
-#include "TouchInputBuffer.h"
 
-#include "CST9217.h"
-#include "Power.h"
-#include "board_pins.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -14,6 +10,11 @@
 #include "freertos/semphr.h"
 
 #include <atomic>
+
+#include "TouchInputBuffer.h"
+#include "CST9217.h"
+#include "Power.h"
+#include "board_pins.h"
 
 namespace services::display_power {
 namespace {

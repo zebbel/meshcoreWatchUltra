@@ -1,8 +1,10 @@
 
 #pragma once
+#include "esp_err.h"
+
 #include <stddef.h>
 #include <stdint.h>
-#include "esp_err.h"
+
 #include "Packet.h"
 #include "Identity.h"
 

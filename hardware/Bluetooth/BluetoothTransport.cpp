@@ -1,8 +1,5 @@
 #include "BluetoothTransport.h"
-#include "Storage.h"
 
-#include <stdio.h>
-#include <string.h>
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -21,6 +18,11 @@
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "host/ble_store.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#include "Storage.h"
 
 extern "C" void ble_store_config_init(void);
 

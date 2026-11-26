@@ -1,8 +1,8 @@
 #include "MeshCorePort.h"
 
 #include "esp_log.h"
-#include "HardwareSystem.h"
 
+#include "HardwareSystem.h"
 #include "LoRa.h"
 #include "PlatformAdapters.h"
 #include "RadioAdapter.h"
@@ -14,6 +14,7 @@
 #include "Settings.h"
 #include "Telemetry.h"
 #include "SDStorage.h"
+
 #include "helpers/SimpleMeshTables.h"
 #include "helpers/StaticPoolPacketManager.h"
 

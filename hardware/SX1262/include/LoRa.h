@@ -1,8 +1,9 @@
 #pragma once
 
-#include "SX1262.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h" // TaskHandle_t for IRQ wakeups
+
+#include "SX1262.h"
 
 namespace hardware::lora {
     using config_t = hardware::sx1262::config_t;

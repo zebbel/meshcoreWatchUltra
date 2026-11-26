@@ -1,4 +1,5 @@
 #include "GPIO.h"
+
 #include "XL9555.h"
 
 namespace hardware::gpio {

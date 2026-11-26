@@ -1,7 +1,8 @@
 #pragma once
 
-#include <stdint.h>
 #include "esp_err.h"
+
+#include <stdint.h>
 
 namespace meshcore {
     // Load persistent storage, initialize LoRa and start MeshCore.
