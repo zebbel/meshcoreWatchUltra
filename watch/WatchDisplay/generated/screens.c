@@ -61,6 +61,17 @@ static void event_handler_cb_charging_charge_prcentage_arc(lv_event_t *e) {
     }
 }
 
+static void event_handler_cb_pairing_pairing(lv_event_t *e) {
+    lv_event_code_t event = lv_event_get_code(e);
+    void *flowState = lv_event_get_user_data(e);
+    (void)flowState;
+    
+    if (event == LV_EVENT_SCREEN_LOADED) {
+        e->user_data = (void *)0;
+        flowPropagateValueLVGLEvent(flowState, 1, 0, e);
+    }
+}
+
 //
 // Screens
 //
@@ -260,6 +271,7 @@ void create_screen_pairing() {
     objects.pairing = obj;
     lv_obj_set_pos(obj, 0, 0);
     lv_obj_set_size(obj, 410, 502);
+    lv_obj_add_event_cb(obj, event_handler_cb_pairing_pairing, LV_EVENT_ALL, flowState);
     lv_obj_set_style_bg_color(obj, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
     {
         lv_obj_t *parent_obj = obj;

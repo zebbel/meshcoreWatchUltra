@@ -152,14 +152,6 @@
         "native": true
       },
       {
-        "objID": "fb85896a-15cf-493b-b98f-781a3b3f05e7",
-        "name": "ble_pairing_active",
-        "type": "boolean",
-        "defaultValue": "false",
-        "persistent": false,
-        "native": true
-      },
-      {
         "objID": "38eb9980-b377-4622-922d-3ec49195bdb4",
         "name": "ble_pairing_pin",
         "type": "string",
@@ -1116,7 +1108,14 @@
             "childStyles": []
           },
           "timeline": [],
-          "eventHandlers": [],
+          "eventHandlers": [
+            {
+              "objID": "061aa8eb-6dbc-4173-baad-c51d4edd2d23",
+              "eventName": "SCREEN_LOADED",
+              "handlerType": "flow",
+              "userData": 0
+            }
+          ],
           "leftUnit": "px",
           "topUnit": "px",
           "widthUnit": "px",
@@ -1194,13 +1193,38 @@
             }
           },
           "groupIndex": 0
+        },
+        {
+          "objID": "3d2f68a6-695f-4ee6-d426-2dbf61053676",
+          "type": "SetVariableActionComponent",
+          "left": 546,
+          "top": 95,
+          "width": 140,
+          "height": 57,
+          "customInputs": [],
+          "customOutputs": [],
+          "entries": [
+            {
+              "objID": "3ba12bf6-e533-4277-9852-8053ba6b0427",
+              "variable": "brightness",
+              "value": "50"
+            }
+          ]
         }
       ],
-      "connectionLines": [],
+      "connectionLines": [
+        {
+          "objID": "5204eb98-d5a3-4b15-bc29-abe29ea4345b",
+          "source": "b82e9508-4566-4e1f-bf45-212de4a8a836",
+          "output": "SCREEN_LOADED",
+          "target": "3d2f68a6-695f-4ee6-d426-2dbf61053676",
+          "input": "@seqin"
+        }
+      ],
       "localVariables": [],
       "componentGroups": [],
       "userProperties": [],
-      "name": "bluetooth_pin",
+      "name": "pairing",
       "left": 0,
       "top": 0,
       "width": 410,
