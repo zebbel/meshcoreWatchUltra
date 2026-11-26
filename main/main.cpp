@@ -97,11 +97,10 @@ extern "C" void app_main() {
         ESP_LOGW(TAG, "SD unavailable; MeshCore disabled");
     }
 
-    // Bluetooth
+    // Start MeshCore Bluetooth companion.
     auto &bluetooth = hardware::bluetooth::transport();
-    err = bluetooth.load_pairing_pin();
-    if(err == ESP_OK) err = bluetooth.begin("MeshCore-Watch", meshcore::companion::UUIDS);
-    if(err != ESP_OK) {
+    err = bluetooth.begin("MeshCore-Watch", meshcore::companion::UUIDS);
+    if(err != ESP_OK){
         ESP_LOGE(TAG, "Bluetooth initialization failed: %s", esp_err_to_name(err));
         return;
     }

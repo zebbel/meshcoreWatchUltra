@@ -6,6 +6,7 @@
 #include "GPIO.h"
 #include "GPS.h"
 #include "SDStorage.h"
+#include "BluetoothTransport.h"
 #include "esp_log.h"
 
 namespace hardware {
@@ -30,6 +31,13 @@ namespace hardware {
         // Initialize SD storage subsystem.
         err = sd::init();
         if(err != ESP_OK) ESP_LOGE(TAG, "SD subsystem failed: %s", esp_err_to_name(err));
+
+        // Load Bluetooth pairing configuration.
+        err = bluetooth::transport().load_pairing_pin();
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "Bluetooth settings invalid: %s", esp_err_to_name(err));
+            return err;
+        }
 
         return ESP_OK;
     }

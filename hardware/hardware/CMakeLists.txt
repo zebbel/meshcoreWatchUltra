@@ -1,4 +1,3 @@
-
 idf_component_register(
     SRCS "hardware.cpp"
     INCLUDE_DIRS "include"
@@ -9,5 +8,6 @@ idf_component_register(
         XL9555
         MIA_M10Q
         SD
+        Bluetooth
         log
 )
