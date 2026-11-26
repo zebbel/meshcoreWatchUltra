@@ -37,7 +37,7 @@ namespace hardware::sd {
 
     bool card_present(){
         bool present = false;
-        const esp_err_t err = XL9555::is_sd_inserted(present);
+        const esp_err_t err = hardware::xl9555::is_sd_inserted(present);
         if(err != ESP_OK) present = false;
         // Removal after first mount invalidates this boot session. The user
         // must reboot to revalidate the card and its MeshCore identity.
@@ -74,7 +74,7 @@ namespace hardware::sd {
         }
         // gpio_get_level() would return 0 in GPIO_MODE_OUTPUT, even if the
         // output is high (input buffer disabled): do not use it as verification.
-        const esp_err_t off_err = AXP2101::disable(AXP2101::rail_t::sd);
+        const esp_err_t off_err = hardware::axp2101::disable(hardware::axp2101::rail_t::sd);
         vTaskDelay(pdMS_TO_TICKS(2));
         return off_err;
     }
@@ -104,7 +104,7 @@ namespace hardware::sd {
         if(err != ESP_OK) return err;
         err = gpio_set_level(hardware::board::pins::SD_CS, 1);
         if(err != ESP_OK) return err;
-        err = AXP2101::enable(AXP2101::rail_t::sd);
+        err = hardware::axp2101::enable(hardware::axp2101::rail_t::sd);
         if(err != ESP_OK) return err;
         vTaskDelay(pdMS_TO_TICKS(15));
 

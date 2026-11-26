@@ -9,7 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-namespace XL9555 {
+namespace hardware::xl9555 {
 
     static const char *TAG = "XL9555";
 

@@ -7,7 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h" // TaskHandle_t for IRQ wakeups
 
-namespace sx1262 {
+namespace hardware::sx1262 {
 
     struct config_t {
         uint32_t frequency_hz = 0;

@@ -45,10 +45,10 @@ esp_err_t init() {
     if (hardware::board::i2c_bus() == nullptr) return ESP_ERR_INVALID_STATE;
 
     // The touch reset signal is on XL9555 P1.0, not a native ESP32 GPIO.
-    esp_err_t err = XL9555::set_touch_reset(false);
+    esp_err_t err = hardware::xl9555::set_touch_reset(false);
     if (err != ESP_OK) return err;
     vTaskDelay(pdMS_TO_TICKS(15));
-    err = XL9555::set_touch_reset(true);
+    err = hardware::xl9555::set_touch_reset(true);
     if (err != ESP_OK) return err;
     vTaskDelay(pdMS_TO_TICKS(100));
 

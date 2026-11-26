@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-namespace AXP2101 {
+namespace hardware::axp2101 {
 
     struct battery_info_t {
         bool voltage_valid = false;

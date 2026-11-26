@@ -12,7 +12,7 @@
 #include "esp_timer.h"
 #include "Storage.h"
 
-namespace MIA_M10Q {
+namespace hardware::mia_m10q {
     static UtcCallback s_utc_callback = nullptr;
     void set_utc_callback(UtcCallback callback) { s_utc_callback = callback; }
 
@@ -338,7 +338,7 @@ namespace MIA_M10Q {
         if(!initialized || powered)
             return;
 
-        esp_err_t err = AXP2101::enable(AXP2101::rail_t::gps);
+        esp_err_t err = hardware::axp2101::enable(hardware::axp2101::rail_t::gps);
 
         if(err != ESP_OK){
             ESP_LOGW(TAG, "GNSS power-on failed: %s", esp_err_to_name(err));
@@ -361,7 +361,7 @@ namespace MIA_M10Q {
         if(!powered)
             return;
 
-        esp_err_t err = AXP2101::disable(AXP2101::rail_t::gps);
+        esp_err_t err = hardware::axp2101::disable(hardware::axp2101::rail_t::gps);
 
         if(err != ESP_OK){
             ESP_LOGW(TAG, "GNSS power-off failed: %s", esp_err_to_name(err));

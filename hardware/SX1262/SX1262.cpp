@@ -19,7 +19,7 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 
-namespace sx1262 {
+namespace hardware::sx1262 {
 
     static const char *TAG = "SX1262";
 
@@ -325,7 +325,7 @@ namespace sx1262 {
             radio_mutex = nullptr;
         }
 
-        esp_err_t err = AXP2101::disable(AXP2101::rail_t::radio);
+        esp_err_t err = hardware::axp2101::disable(hardware::axp2101::rail_t::radio);
         if(err != ESP_OK) ESP_LOGW(TAG, "Unable to disable radio power: %s", esp_err_to_name(err));
 
         wakeup_task.store(nullptr, std::memory_order_relaxed);
@@ -358,11 +358,11 @@ namespace sx1262 {
         err = gpio_config(&input_config);
         if(err != ESP_OK) return err;
 
-        err = AXP2101::enable(AXP2101::rail_t::radio);
+        err = hardware::axp2101::enable(hardware::axp2101::rail_t::radio);
         if(err != ESP_OK) return err;
         vTaskDelay(pdMS_TO_TICKS(20));
 
-        err = XL9555::set_lora_antenna(false);
+        err = hardware::xl9555::set_lora_antenna(false);
         if(err != ESP_OK){
             cleanup();
             return err;

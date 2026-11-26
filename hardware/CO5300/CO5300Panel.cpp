@@ -80,18 +80,18 @@ namespace {
         }
         heap_caps_free(s_dma_stage);
         s_dma_stage = nullptr;
-        XL9555::set_display_enabled(false);
-        AXP2101::disable(AXP2101::rail_t::display);
+        hardware::xl9555::set_display_enabled(false);
+        hardware::axp2101::disable(hardware::axp2101::rail_t::display);
     }
 } // namespace
 
 esp_err_t init() {
     if (s_ready) return ESP_OK;
-    esp_err_t err = AXP2101::enable(AXP2101::rail_t::display);
+    esp_err_t err = hardware::axp2101::enable(hardware::axp2101::rail_t::display);
     if (err != ESP_OK) return err;
     vTaskDelay(pdMS_TO_TICKS(20));
 
-    err = XL9555::set_display_enabled(true);
+    err = hardware::xl9555::set_display_enabled(true);
     if (err != ESP_OK) { rollback_hardware(); return err; }
     vTaskDelay(pdMS_TO_TICKS(20));
 

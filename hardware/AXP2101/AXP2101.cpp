@@ -9,7 +9,7 @@
 #include "esp_log.h"
 #include "sdkconfig.h"
 
-namespace AXP2101 {
+namespace hardware::axp2101 {
 
     static const char *TAG = "AXP2101";
     static i2c_master_dev_handle_t pmu_handle = nullptr;

@@ -32,7 +32,7 @@ extern "C" void app_main() {
     if(hardware::init() != ESP_OK) return;
 
     // Display
-    esp_err_t err = ui::watch_display::init();
+    esp_err_t err = watch::display::init();
     if(err != ESP_OK) ESP_LOGW(TAG, "Watch display unavailable: %s", esp_err_to_name(err));
 
     // Time service
@@ -64,7 +64,7 @@ extern "C" void app_main() {
     }
 
     // configure wake sources after LoRa, touch and BLE init.
-    services::power_management::start_light_sleep(meshcore_enabled, ui::watch_display::ready(), meshcore_enabled && hardware::lora::is_in_receive_mode());
+    services::power_management::start_light_sleep(meshcore_enabled, watch::display::ready(), meshcore_enabled && hardware::lora::is_in_receive_mode());
 
     // shared LoRa/BLE event wakeups.
     // Idle connected BLE no longer forces a 10-ms CPU polling loop.
@@ -75,18 +75,17 @@ extern "C" void app_main() {
 
     while(true){
         services::power_management::restore_wakeup_pins_if_needed();
-        ui::watch_display::update_bluetooth_pairing();
+        watch::display::update_bluetooth_pairing();
         hardware::gps::loop();
         services::position_sync::synchronize();
         if(meshcore_enabled) meshcore::loop();
         bluetooth.loop();
-        watch::update_status(meshcore_enabled);
+        watch::status::update(meshcore_enabled);
         hardware::gps::status_t gps{};
         hardware::gps::get_status(gps);
-        const bool screen_awake = ui::watch_display::screen_awake();
+        const bool screen_awake = watch::display::screen_awake();
         const bool ble_active = bluetooth.link_active();
         services::power_management::update_light_sleep_guard(screen_awake, gps.powered, ble_active);
-        services::power_management::report_light_sleep_exits(screen_awake, gps.powered, ble_active);
         // Incoming BLE writes and LoRa IRQs wake immediately.
         const uint32_t wait_ms = (bluetooth.has_pending_tx() || bluetooth.recent_activity()) ? kActiveBleWaitMs : kMainLoopWaitMs;
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));

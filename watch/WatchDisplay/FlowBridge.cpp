@@ -111,23 +111,21 @@ int32_t get_var_battery_percent() { return s_battery; }
 void set_var_battery_percent(int32_t) {}
 const char *get_var_clock_time() { return s_time; }
 void set_var_clock_time(const char *) {}
-bool get_var_gps_enabled() { return watch::get_status().gps_enabled; }
+bool get_var_gps_enabled() { return watch::status::get().gps_enabled; }
 void set_var_gps_enabled(bool) {}
-bool get_var_gps_fix() { return watch::get_status().gps_has_fix; }
+bool get_var_gps_fix() { return watch::status::get().gps_has_fix; }
 void set_var_gps_fix(bool) {}
-int32_t get_var_gps_satellites() { return watch::get_status().gps_satellites; }
+int32_t get_var_gps_satellites() { return watch::status::get().gps_satellites; }
 void set_var_gps_satellites(int32_t) {}
-bool get_var_ble_connected() { return watch::get_status().ble_connected; }
+bool get_var_ble_connected() { return watch::status::get().ble_connected; }
 void set_var_ble_connected(bool) {}
-bool get_var_meshcore_active() { return watch::get_status().meshcore_active; }
+bool get_var_meshcore_active() { return watch::status::get().meshcore_active; }
 void set_var_meshcore_active(bool) {}
 int32_t get_var_meshcore_rx_packets() {
-    const uint32_t count = watch::get_status().meshcore_rx_packets;
+    const uint32_t count = watch::status::get().meshcore_rx_packets;
     return count > INT32_MAX ? INT32_MAX : static_cast<int32_t>(count);
 }
 void set_var_meshcore_rx_packets(int32_t) {}
-int32_t get_var_sleep_percent() { return watch::get_status().sleep_percent; }
-void set_var_sleep_percent(int32_t) {}
 int32_t get_var_brightness() { return hardware::co5300::brightness(); }
 void set_var_brightness(int32_t value) {
     // Do not narrow an unchecked signed value, or turn the UI black.
@@ -159,7 +157,7 @@ const char *get_var_ble_pairing_pin() {
 void set_var_ble_pairing_pin(const char *) {}
 }
 
-namespace ui::watch_display {
+namespace watch::display {
 void update_bluetooth_pairing() {
     const uint32_t pin =
         hardware::bluetooth::transport().active_pairing_pin();
@@ -204,4 +202,4 @@ esp_err_t init_flow() {
     ESP_LOGI(TAG, "EEZ Flow ready (50 ms tick; native hardware variables)");
     return ESP_OK;
 }
-} // namespace ui::watch_display
+} // namespace watch::display

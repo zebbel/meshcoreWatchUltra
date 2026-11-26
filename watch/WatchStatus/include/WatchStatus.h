@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 // Watch status is collected by app_main and read as a thread-safe snapshot.
-namespace watch {
+namespace watch::status {
     struct WatchStatus {
         bool gps_enabled = false;
         bool gps_has_fix = false;       // Fresh, valid position (not an old GGA record)
@@ -12,14 +12,10 @@ namespace watch {
         bool meshcore_active = false;   // MeshCore initialized and storage available
         uint32_t meshcore_rx_packets = 0; // MeshCore RX packets since boot
         bool ble_connected = false;     // Authenticated BLE companion connection
-        // on-device diagnostics while USB is absent.
-        bool pm_enabled = false;
-        uint8_t sleep_percent = 0;      // Actual cumulative sleep / enabled elapsed
-        uint32_t sleep_entries = 0;     // Successful light-sleep exits since boot
     };
 
     // Call only from the main application task. Samples once per second.
-    void update_status(bool meshcore_enabled);
+    void update(bool meshcore_enabled);
     // RAM-only copy; safe to call from the LVGL task.
-    WatchStatus get_status();
-} // namespace watch
+    WatchStatus get();
+} // namespace watch::status

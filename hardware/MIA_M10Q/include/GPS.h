@@ -3,9 +3,9 @@
 #include "MIA_M10Q.h"
 
 namespace hardware::gps {
-    using fix_t = MIA_M10Q::fix_t;
-    using status_t = MIA_M10Q::status_t;
-    using UtcCallback = MIA_M10Q::UtcCallback;
+    using fix_t = hardware::mia_m10q::fix_t;
+    using status_t = hardware::mia_m10q::status_t;
+    using UtcCallback = hardware::mia_m10q::UtcCallback;
     void set_utc_callback(UtcCallback callback);
     esp_err_t init();
     void loop();

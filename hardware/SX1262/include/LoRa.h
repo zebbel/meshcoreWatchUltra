@@ -5,8 +5,8 @@
 #include "freertos/task.h" // TaskHandle_t for IRQ wakeups
 
 namespace hardware::lora {
-    using config_t = sx1262::config_t;
-    using packet_t = sx1262::packet_t;
+    using config_t = hardware::sx1262::config_t;
+    using packet_t = hardware::sx1262::packet_t;
     esp_err_t init();
     esp_err_t configure(const config_t &config);
     esp_err_t start_receive();

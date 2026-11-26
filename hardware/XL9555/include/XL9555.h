@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-namespace XL9555 {
+namespace hardware::xl9555 {
 
     struct state_t {
         uint8_t input0 = 0;

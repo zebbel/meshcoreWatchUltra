@@ -11,7 +11,7 @@
 #include "freertos/task.h"
 #include "lvgl.h"
 
-namespace ui::watch_display {
+namespace watch::display {
 namespace {
     // 32 RGB565 rows (~25.6 KiB) in PSRAM.
     // Restrict one LVGL render operation to bounded rows so scaled-font
@@ -278,4 +278,4 @@ esp_err_t set_screen_awake(bool awake) {
 
 bool screen_awake() { return services::display_power::is_screen_awake(); }
 bool ready() { return s_ready; }
-} // namespace ui::watch_display
+} // namespace watch::display

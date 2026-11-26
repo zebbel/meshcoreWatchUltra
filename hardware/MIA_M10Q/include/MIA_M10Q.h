@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-namespace MIA_M10Q {
+namespace hardware::mia_m10q {
 
     struct fix_t {
         double latitude = 0;
