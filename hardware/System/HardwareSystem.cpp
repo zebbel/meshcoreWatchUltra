@@ -5,6 +5,7 @@
 #include "esp_system.h"
 #include "bootloader_random.h"
 
+// System primitives for monotonic timing, entropy and restart.
 namespace hardware::system {
     int64_t micros(){ return esp_timer_get_time(); }
     uint32_t millis(){ return static_cast<uint32_t>(esp_timer_get_time() / 1000LL); }

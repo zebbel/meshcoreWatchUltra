@@ -1,5 +1,6 @@
 #include "LoRa.h"
 
+// Generic LoRa interface backed by the SX1262 radio.
 namespace hardware::lora {
     esp_err_t init(){ return hardware::sx1262::init(); }
     esp_err_t configure(const config_t &config){ return hardware::sx1262::configure(config); }

@@ -33,6 +33,10 @@ namespace hardware::sd {
     static bool storage_fault = false;
     static bool cached_present = false;
     static uint32_t last_detect_ms = 0;
+    // ------------------------------------------------------------------------
+    // Path validation and card status
+    // ------------------------------------------------------------------------
+
     static bool valid_path(const char *path){
         return path != nullptr && strncmp(path, "/sdcard/", 8) == 0 && strlen(path) < MAX_PATH && strstr(path, "..") == nullptr;
     }
@@ -57,6 +61,10 @@ namespace hardware::sd {
     }
     bool writable(){ return ready(); }
     uint32_t capacity_kib(){ return last_capacity_kib; }
+
+    // ------------------------------------------------------------------------
+    // SD power and shared SPI ownership
+    // ------------------------------------------------------------------------
 
     static esp_err_t power_off(){
         // SDSPI may release the GPIO21 output configuration at unmount.
@@ -97,6 +105,10 @@ namespace hardware::sd {
         if(err != ESP_OK) return err;
         return gpio_set_direction(hardware::board::pins::SD_CS, GPIO_MODE_OUTPUT);
     }
+
+    // ------------------------------------------------------------------------
+    // Mount and unmount
+    // ------------------------------------------------------------------------
 
     static esp_err_t mount(){
         if(!card_present()) return ESP_ERR_NOT_FOUND;
@@ -166,6 +178,10 @@ namespace hardware::sd {
         if(power_off() != ESP_OK) storage_fault = true;
     }
 
+    // ------------------------------------------------------------------------
+    // Storage initialization
+    // ------------------------------------------------------------------------
+
     esp_err_t init(){
         if(initialized) return ESP_OK;
         mutex = xSemaphoreCreateRecursiveMutex();
@@ -175,6 +191,10 @@ namespace hardware::sd {
         // Do not switch on ALDO1 here; startup storage session will mount.
         return ESP_OK;
     }
+
+    // ------------------------------------------------------------------------
+    // Scoped and nested storage sessions
+    // ------------------------------------------------------------------------
 
     Session::Session(){
         if(!initialized || mutex == nullptr){ error_ = ESP_ERR_INVALID_STATE; return; }
@@ -194,7 +214,7 @@ namespace hardware::sd {
         }
         error_ = mount();
         if(error_ == ESP_OK) ok_ = true;
-        else {
+        else{
             --nesting;
             hardware::board::spi_unlock();
             locked_ = false;
@@ -215,6 +235,10 @@ namespace hardware::sd {
         xSemaphoreGiveRecursive(mutex);
     }
 
+    // ------------------------------------------------------------------------
+    // Directory and file existence operations
+    // ------------------------------------------------------------------------
+
     static esp_err_t mkdir_if_missing(const char *path){
         if(mkdir(path, 0755) == 0 || errno == EEXIST) return ESP_OK;
         return ESP_FAIL;
@@ -234,6 +258,10 @@ namespace hardware::sd {
         struct stat statbuf = {};
         return stat(path, &statbuf) == 0;
     }
+
+    // ------------------------------------------------------------------------
+    // File recovery and reading
+    // ------------------------------------------------------------------------
 
     static esp_err_t recover_file(const char *path){
         char bak[MAX_PATH + 5];
@@ -265,7 +293,7 @@ namespace hardware::sd {
         if(recover != ESP_OK) return recover;
         FILE *f = fopen(path, "rb");
         if(f == nullptr) return ESP_FAIL;
-        const size_t n = fread(out, 1, capacity + 0 /* bounded */, f);
+        const size_t n = fread(out, 1, capacity, f);
         if(ferror(f)){
             fclose(f);
             return ESP_FAIL;
@@ -276,6 +304,10 @@ namespace hardware::sd {
         length = n;
         return ESP_OK;
     }
+
+    // ------------------------------------------------------------------------
+    // Persistent writes and removal
+    // ------------------------------------------------------------------------
 
     static esp_err_t write_raw(const char *path, const void *bytes, size_t length){
         char tmp[MAX_PATH + 5];
@@ -299,7 +331,7 @@ namespace hardware::sd {
             if(had_old) rename(bak, path);
             return ESP_FAIL;
         }
-        // Keep .bak until next update? On FAT, metadata may be lost during power cut.
+        // FAT metadata may be lost during a power cut.
         // Old copy is retained as a recovery candidate if main disappears.
         return ESP_OK;
     }
@@ -308,8 +340,7 @@ namespace hardware::sd {
         if(!valid_path(path) || (bytes == nullptr && length > 0)) return ESP_ERR_INVALID_ARG;
         Session session;
         if(!session.ok()) return session.error();
-        esp_err_t err = write_raw(path, bytes, length);
-        return err;
+        return write_raw(path, bytes, length);
     }
 
     esp_err_t remove_file(const char *path){

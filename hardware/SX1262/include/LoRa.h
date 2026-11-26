@@ -5,6 +5,7 @@
 
 #include "SX1262.h"
 
+// Nonblocking radio interface used by the MeshCore port.
 namespace hardware::lora {
     using config_t = hardware::sx1262::config_t;
     using packet_t = hardware::sx1262::packet_t;

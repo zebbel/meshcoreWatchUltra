@@ -1,10 +1,10 @@
-
 #pragma once
 
 #include "driver/gpio.h"
 
 #include <stdint.h>
 
+// T-Watch Ultra pin assignments, I2C addresses, expander pins and hardware specifications.
 namespace hardware::board {
 
     namespace pins {

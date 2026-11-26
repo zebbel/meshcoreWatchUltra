@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include "esp_err.h"
@@ -54,10 +53,6 @@ namespace hardware::sx1262 {
     esp_err_t channel_busy(bool &busy);
 
     esp_err_t start_transmit(const uint8_t *data, size_t length, uint32_t timeout_ms = 10000);
-    esp_err_t poll_transmit(bool &completed);
-    esp_err_t finish_transmit();
-    esp_err_t abort_transmit();
-    bool is_in_receive_mode();
     esp_err_t poll_transmit(bool &completed);
     esp_err_t finish_transmit();
     esp_err_t abort_transmit();

@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// System primitives shared by the hardware and MeshCore layers.
 namespace hardware::system {
     int64_t micros();
     uint32_t millis();

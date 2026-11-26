@@ -31,15 +31,20 @@ namespace hardware::bluetooth {
     static const char *TAG = "Transport";
     static Transport *instance = nullptr;
 
-    // UUIDs are passed in by the protocol owner.
+    // Protocol-specific UUIDs are supplied by the caller and retained for NimBLE.
     static ble_uuid128_t service_uuid = {};
     static ble_uuid128_t rx_uuid = {};
     static ble_uuid128_t tx_uuid = {};
-    // low-latency BLE with fast initial discovery.
+    // Fast initial discovery and notification pacing (milliseconds).
     static constexpr uint32_t kFastAdvDurationMs = 30000;
     static constexpr uint32_t kNotificationGapMs = 10;
     static constexpr uint32_t kNotifyRetryGapMs = 30;
 
+    // -------------------------------------------------------------------------
+    // NimBLE callbacks and singleton
+    // -------------------------------------------------------------------------
+
+    // NimBLE dispatches callbacks on its host task; the application owns the transport.
     int bluetooth_gap_callback(struct ble_gap_event *event, void *){
         return instance == nullptr ? 0 : instance->on_gap_event(event);
     }
@@ -62,9 +67,11 @@ namespace hardware::bluetooth {
         return singleton;
     }
 
+    // -------------------------------------------------------------------------
+    // Persistent pairing configuration
+    // -------------------------------------------------------------------------
 
-    Transport::Transport(){}
-
+    // PIN zero selects a random six-digit passkey; other values are stored in NVS.
     esp_err_t Transport::load_pairing_pin(){
         hardware::storage::Handle h;
         esp_err_t err = hardware::storage::open("bluetooth", hardware::storage::Access::read_write, h);
@@ -92,6 +99,11 @@ namespace hardware::bluetooth {
         return err;
     }
 
+    // -------------------------------------------------------------------------
+    // Transport initialization
+    // -------------------------------------------------------------------------
+
+    // Create queues, register authenticated GATT characteristics and start the host task.
     esp_err_t Transport::begin(const char *name, const Uuids &uuids){
         if(started_ || instance != nullptr) return ESP_ERR_INVALID_STATE;
         if(name == nullptr) return ESP_ERR_INVALID_ARG;
@@ -156,17 +168,16 @@ namespace hardware::bluetooth {
         ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
         ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
         ble_store_config_init();
-        int bond_count = -1;
-
-        int store_rc = ble_store_util_count(BLE_STORE_OBJ_TYPE_PEER_SEC, &bond_count);
-
-        ESP_LOGD(TAG, "BLE bond storage: rc=%d stored_bonds=%d", store_rc, bond_count);
         ble_att_set_preferred_mtu(517);
         started_ = true;
         nimble_port_freertos_init(host_task);
         ESP_LOGI(TAG, "Bluetooth GATT service started: %s", device_name_);
         return ESP_OK;
     }
+
+    // -------------------------------------------------------------------------
+    // BLE identity and advertising
+    // -------------------------------------------------------------------------
 
     void Transport::sync(){
         // Prefer the ESP32-S3 factory public BLE address.
@@ -181,14 +192,6 @@ namespace hardware::bluetooth {
         if(rc != 0){
             ESP_LOGE(TAG, "No usable BLE address, rc=%d", rc);
             return;
-        }
-
-        uint8_t address[6] = {};
-
-        rc = ble_hs_id_copy_addr(own_addr_type_, address, nullptr);
-
-        if(rc == 0){
-            ESP_LOGD(TAG, "BLE identity type=%u address=%02X:%02X:%02X:%02X:%02X:%02X", static_cast<unsigned>(own_addr_type_), address[5], address[4], address[3], address[2], address[1], address[0]);
         }
 
         if(own_addr_type_ != BLE_OWN_ADDR_PUBLIC){
@@ -220,18 +223,14 @@ namespace hardware::bluetooth {
         params.itvl_min = fast ? 160 : 400;
         params.itvl_max = fast ? 240 : 560;
         if(rc == 0){
-            rc = ble_gap_adv_start(own_addr_type_, nullptr,
-                                   fast ? kFastAdvDurationMs : BLE_HS_FOREVER,
-                                   &params, bluetooth_gap_callback, nullptr);
+            rc = ble_gap_adv_start(own_addr_type_, nullptr, fast ? kFastAdvDurationMs : BLE_HS_FOREVER, &params, bluetooth_gap_callback, nullptr);
         }
-        if(rc == 0){
-            advertising_started_ms_ = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
-            ESP_LOGD(TAG, "BLE %s advertising: %u-%u ms", fast ? "fast" : "idle",
-                     fast ? 100U : 250U, fast ? 150U : 350U);
-        }else{
-            ESP_LOGE(TAG, "Advertising failed: %d", rc);
-        }
+        if(rc != 0) ESP_LOGE(TAG, "Advertising failed: %d", rc);
     }
+
+    // -------------------------------------------------------------------------
+    // Connection lifecycle and security events
+    // -------------------------------------------------------------------------
 
     int Transport::on_gap_event(struct ble_gap_event *event){
         switch(event->type){
@@ -240,9 +239,7 @@ namespace hardware::bluetooth {
                     connection_handle_.store(event->connect.conn_handle);
                     authenticated_.store(false);
                     subscribed_.store(false);
-                    const uint32_t connected_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
-                    ESP_LOGI(TAG, "BLE connected after %lu ms advertising; starting authenticated pairing",
-                             static_cast<unsigned long>(connected_ms - advertising_started_ms_));
+                    ESP_LOGI(TAG, "BLE connected; starting authenticated pairing");
                     wake_main_task();
                     int rc = ble_gap_security_initiate(event->connect.conn_handle);
                     if(rc != 0) ESP_LOGW(TAG, "Security initiation: %d", rc);
@@ -262,25 +259,10 @@ namespace hardware::bluetooth {
                 break;
             case BLE_GAP_EVENT_ADV_COMPLETE:
                 // The 30-second fast-advertising window expired.
-                if (!link_active()) advertise(false);
+                if(!link_active()) advertise(false);
                 break;
-            case BLE_GAP_EVENT_CONN_UPDATE: {
-                ble_gap_conn_desc desc = {};
-                if (event->conn_update.status == 0 &&
-                    ble_gap_conn_find(event->conn_update.conn_handle, &desc) == 0) {
-                    ESP_LOGD(TAG, "BLE negotiated: interval=%lu us latency=%u supervision=%u ms",
-                             static_cast<unsigned long>(desc.conn_itvl) * 1250UL,
-                             static_cast<unsigned>(desc.conn_latency),
-                             static_cast<unsigned>(desc.supervision_timeout) * 10U);
-                } else {
-                    ESP_LOGW(TAG, "BLE connection parameter update status=%d",
-                             event->conn_update.status);
-                }
-                break;
-            }
-            case BLE_GAP_EVENT_MTU:
-                ESP_LOGD(TAG, "BLE negotiated ATT MTU=%u",
-                         static_cast<unsigned>(event->mtu.value));
+            case BLE_GAP_EVENT_CONN_UPDATE:
+                if(event->conn_update.status != 0) ESP_LOGW(TAG, "BLE connection parameter update status=%d", event->conn_update.status);
                 break;
             case BLE_GAP_EVENT_SUBSCRIBE:
                 if(event->subscribe.attr_handle == tx_handle_){
@@ -289,93 +271,106 @@ namespace hardware::bluetooth {
                 }
                 break;
             case BLE_GAP_EVENT_PASSKEY_ACTION:
-                if(event->passkey.params.action == BLE_SM_IOACT_DISP){
-                    ble_sm_io io = {};
-                    io.action = BLE_SM_IOACT_DISP;
-
-                    const uint32_t fixed = configured_pin_.load();
-                    io.passkey = fixed ? fixed : 100000 + (esp_random() % 900000);
-
-                    int rc = ble_sm_inject_io(event->passkey.conn_handle, &io);
-
-                    if(rc == 0){
-                        active_pairing_pin_.store(io.passkey);
-                    }else{
-                        active_pairing_pin_.store(0);
-                        ESP_LOGE(TAG, "Passkey injection failed: %d", rc);
-                    }
-
-                    wake_main_task();
-                }
+                handle_passkey(event);
                 break;
-            case BLE_GAP_EVENT_ENC_CHANGE: {
-                active_pairing_pin_.store(0);
-                wake_main_task();
-
-                ble_gap_conn_desc security_desc = {};
-
-                int find_rc = ble_gap_conn_find(event->enc_change.conn_handle, &security_desc);
-
-                ESP_LOGD(TAG, "BLE security: status=%d lookup=%d encrypted=%d authenticated=%d bonded=%d", event->enc_change.status, find_rc, find_rc == 0 ? security_desc.sec_state.encrypted : 0, find_rc == 0 ? security_desc.sec_state.authenticated : 0, find_rc == 0 ? security_desc.sec_state.bonded : 0);
-                ble_gap_conn_desc desc = {};
-                if(event->enc_change.status == 0 && ble_gap_conn_find(event->enc_change.conn_handle, &desc) == 0 && desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded){
-                    authenticated_.store(true);
-                    ESP_LOGI(TAG, "Authenticated BLE bond established");
-                    wake_main_task();
-                    // Request 15-30 ms for responsive commands and contact sync.
-                    // The central (phone) may negotiate a longer interval.
-                    ble_gap_upd_params params = {};
-                    params.itvl_min = 12; // 15 ms (1.25 ms units)
-                    params.itvl_max = 24; // 30 ms
-                    params.latency = 0;
-                    params.supervision_timeout = 400; // 4 s (10 ms units)
-                    const int update_rc = ble_gap_update_params(
-                        event->enc_change.conn_handle, &params);
-                    if (update_rc != 0) {
-                        ESP_LOGW(TAG, "BLE power-saving interval request rejected: %d", update_rc);
-                    }
-                }else{
-                    authenticated_.store(false);
-                    ESP_LOGW(TAG, "BLE authentication not established");
-                    ble_gap_terminate(event->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
-                }
+            case BLE_GAP_EVENT_ENC_CHANGE:
+                handle_encryption_change(event);
                 break;
-            }       
-            case BLE_GAP_EVENT_REPEAT_PAIRING: {
-                // The peer is requesting pairing although a bond
-                // already exists in local storage.
-                //
-                // Remove only this peer's old security information.
-                // Do not clear all BLE bonds or erase NVS.
-
-                ble_gap_conn_desc desc = {};
-
-                int rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
-
-                if(rc != 0){
-                    ESP_LOGE(TAG, "Repeat pairing: connection lookup failed, rc=%d", rc);
-                    return BLE_GAP_REPEAT_PAIRING_IGNORE;
-                }
-
-                ESP_LOGW(TAG, "Repeat pairing requested; replacing stale peer bond");
-
-                rc = ble_store_util_delete_peer(&desc.peer_id_addr);
-
-                if(rc != 0){
-                    ESP_LOGE(TAG, "Failed to remove stale peer bond, rc=%d", rc);
-                    return BLE_GAP_REPEAT_PAIRING_IGNORE;
-                }
-
-                // Keep MITM protection and Secure Connections enabled.
-                // A fresh authenticated pairing is still required.
-                return BLE_GAP_REPEAT_PAIRING_RETRY;
-            }
+            case BLE_GAP_EVENT_REPEAT_PAIRING:
+                return handle_repeat_pairing(event);
             default:
                 break;
         }
         return 0;
     }
 
+    // -------------------------------------------------------------------------
+    // Pairing and authentication handlers
+    // -------------------------------------------------------------------------
+
+    void Transport::handle_passkey(struct ble_gap_event *event){
+        if(event->passkey.params.action == BLE_SM_IOACT_DISP){
+            ble_sm_io io = {};
+            io.action = BLE_SM_IOACT_DISP;
+
+            const uint32_t fixed = configured_pin_.load();
+            io.passkey = fixed ? fixed : 100000 + (esp_random() % 900000);
+
+            int rc = ble_sm_inject_io(event->passkey.conn_handle, &io);
+
+            if(rc == 0){
+                active_pairing_pin_.store(io.passkey);
+            }else{
+                active_pairing_pin_.store(0);
+                ESP_LOGE(TAG, "Passkey injection failed: %d", rc);
+            }
+
+            wake_main_task();
+        }
+    }
+
+    void Transport::handle_encryption_change(struct ble_gap_event *event){
+        active_pairing_pin_.store(0);
+        wake_main_task();
+
+        ble_gap_conn_desc desc = {};
+        if(event->enc_change.status == 0 && ble_gap_conn_find(event->enc_change.conn_handle, &desc) == 0 && desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded){
+            authenticated_.store(true);
+            ESP_LOGI(TAG, "Authenticated BLE bond established");
+            wake_main_task();
+            // Request 15-30 ms for responsive commands and contact sync.
+            // The central (phone) may negotiate a longer interval.
+            ble_gap_upd_params params = {};
+            params.itvl_min = 12; // 15 ms (1.25 ms units)
+            params.itvl_max = 24; // 30 ms
+            params.latency = 0;
+            params.supervision_timeout = 400; // 4 s (10 ms units)
+            const int update_rc = ble_gap_update_params(event->enc_change.conn_handle, &params);
+            if(update_rc != 0) {
+                ESP_LOGW(TAG, "BLE power-saving interval request rejected: %d", update_rc);
+            }
+        }else{
+            authenticated_.store(false);
+            ESP_LOGW(TAG, "BLE authentication not established");
+            ble_gap_terminate(event->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        }
+    }
+
+    int Transport::handle_repeat_pairing(struct ble_gap_event *event){
+        // The peer is requesting pairing although a bond
+        // already exists in local storage.
+        //
+        // Remove only this peer's old security information.
+        // Do not clear all BLE bonds or erase NVS.
+
+        ble_gap_conn_desc desc = {};
+
+        int rc = ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc);
+
+        if(rc != 0){
+            ESP_LOGE(TAG, "Repeat pairing: connection lookup failed, rc=%d", rc);
+            return BLE_GAP_REPEAT_PAIRING_IGNORE;
+        }
+
+        ESP_LOGW(TAG, "Repeat pairing requested; replacing stale peer bond");
+
+        rc = ble_store_util_delete_peer(&desc.peer_id_addr);
+
+        if(rc != 0){
+            ESP_LOGE(TAG, "Failed to remove stale peer bond, rc=%d", rc);
+            return BLE_GAP_REPEAT_PAIRING_IGNORE;
+        }
+
+        // Keep MITM protection and Secure Connections enabled.
+        // A fresh authenticated pairing is still required.
+        return BLE_GAP_REPEAT_PAIRING_RETRY;
+    }
+
+    // -------------------------------------------------------------------------
+    // Incoming GATT frames
+    // -------------------------------------------------------------------------
+
+    // One authenticated GATT write corresponds to one queued protocol frame.
     int Transport::on_characteristic(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt *ctxt){
         (void)attr;
         if(!authenticated_.load() || conn != connection_handle_.load()){
@@ -392,10 +387,8 @@ namespace hardware::bluetooth {
             if(xQueueSend(rx_queue_, &frame, 0) != pdTRUE){
                 return BLE_ATT_ERR_INSUFFICIENT_RES;
             }
-            // fast-poll only during active
-            // traffic; do not poll every 10 ms for the whole connection.
-            last_activity_ms_.store(static_cast<uint32_t>(esp_timer_get_time() / 1000ULL),
-                                    std::memory_order_relaxed);
+            // Request fast polling only during active traffic, not for the entire BLE link.
+            last_activity_ms_.store(static_cast<uint32_t>(esp_timer_get_time() / 1000ULL), std::memory_order_relaxed);
             wake_main_task();
             return 0;
         }
@@ -404,6 +397,10 @@ namespace hardware::bluetooth {
         }
         return BLE_ATT_ERR_UNLIKELY;
     }
+
+    // -------------------------------------------------------------------------
+    // Application RX/TX queue interface
+    // -------------------------------------------------------------------------
 
     bool Transport::receive(Frame &frame){
         return xQueueReceive(rx_queue_, &frame, 0) == pdTRUE;
@@ -416,29 +413,23 @@ namespace hardware::bluetooth {
         frame.length = length;
         memcpy(frame.data, data, length);
         const bool queued = xQueueSend(tx_queue_, &frame, 0) == pdTRUE;
-        if (queued) last_activity_ms_.store(
-            static_cast<uint32_t>(esp_timer_get_time() / 1000ULL),
-            std::memory_order_relaxed);
+        if(queued) last_activity_ms_.store(static_cast<uint32_t>(esp_timer_get_time() / 1000ULL), std::memory_order_relaxed);
         return queued;
     }
 
     bool Transport::send_best_effort(const uint8_t *data, size_t length){
-        if(data == nullptr || length == 0 || length > MAX_FRAME)
-            return false;
+        if(data == nullptr || length == 0 || length > MAX_FRAME) return false;
 
-        if(tx_queue_ == nullptr)
-            return false;
+        if(tx_queue_ == nullptr) return false;
 
         // Do not enqueue frames that cannot be sent
         // with the currently negotiated BLE MTU.
         // An oversized frame must never block the queue.
-        if(!can_send(length))
-            return false;
+        if(!can_send(length)) return false;
 
         // Preserve at least six queue slots for
         // high-priority protocol responses.
-        if(uxQueueSpacesAvailable(tx_queue_) <= 6)
-            return false;
+        if(uxQueueSpacesAvailable(tx_queue_) <= 6) return false;
 
         Frame frame = {};
 
@@ -457,10 +448,14 @@ namespace hardware::bluetooth {
         return desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded && ble_att_mtu(conn) >= length + 3;
     }
 
+    // -------------------------------------------------------------------------
+    // Application task wakeups and activity tracking
+    // -------------------------------------------------------------------------
+
     bool Transport::recent_activity() const {
-        if (!link_active()) return false;
+        if(!link_active()) return false;
         const uint32_t last = last_activity_ms_.load(std::memory_order_relaxed);
-        if (last == 0) return false;
+        if(last == 0) return false;
         const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
         return static_cast<uint32_t>(now - last) < 500U;
     }
@@ -475,24 +470,16 @@ namespace hardware::bluetooth {
         if(task != nullptr) xTaskNotifyGive(task);
     }
 
+    // -------------------------------------------------------------------------
+    // Outgoing notifications
+    // -------------------------------------------------------------------------
+
+    // Peek until transmission succeeds; retry with backoff without dropping the frame.
     void Transport::loop(){
         if(!authenticated_.load() || !subscribed_.load()) return;
         const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
-        if(last_stats_ms_ == 0) last_stats_ms_ = now;
-        if(static_cast<uint32_t>(now - last_stats_ms_) >= 30000U){
-            ESP_LOGD(TAG, "BLE TX/30s: sent=%lu retries=%lu pending=%u/%d MTU=%u",
-                     static_cast<unsigned long>(tx_sent_),
-                     static_cast<unsigned long>(tx_retries_),
-                     static_cast<unsigned>(uxQueueMessagesWaiting(tx_queue_)),
-                     QUEUE_CAPACITY,
-                     static_cast<unsigned>(ble_att_mtu(connection_handle_.load())));
-            tx_sent_ = 0;
-            tx_retries_ = 0;
-            last_stats_ms_ = now;
-        }
         // Success pacing targets 10 ms; rejected sends back off to 30 ms.
-        if(last_notification_ms_ != 0 &&
-           static_cast<uint32_t>(now - last_notification_ms_) < notification_gap_ms_) return;
+        if(last_notification_ms_ != 0 && static_cast<uint32_t>(now - last_notification_ms_) < notification_gap_ms_) return;
         Frame frame;
         if(xQueuePeek(tx_queue_, &frame, 0) != pdTRUE) return;
         if(!can_send(frame.length)) return;
@@ -509,13 +496,11 @@ namespace hardware::bluetooth {
         if(rc == 0){
             xQueueReceive(tx_queue_, &frame, 0);
             notification_gap_ms_ = kNotificationGapMs;
-            ++tx_sent_;
+            tx_retries_ = 0;
         }else{
             notification_gap_ms_ = kNotifyRetryGapMs;
             ++tx_retries_;
-            if(tx_retries_ == 1 || (tx_retries_ % 32) == 0)
-                ESP_LOGW(TAG, "BLE notify backpressure: rc=%d, retries=%lu",
-                         rc, static_cast<unsigned long>(tx_retries_));
+            if(tx_retries_ == 1 || (tx_retries_ % 32) == 0) ESP_LOGW(TAG, "BLE notify backpressure: rc=%d, retries=%lu", rc, static_cast<unsigned long>(tx_retries_));
         }
     }
 }

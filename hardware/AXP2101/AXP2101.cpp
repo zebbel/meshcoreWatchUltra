@@ -1,4 +1,3 @@
-
 #include "AXP2101.h"
 
 #include "driver/i2c_master.h"
@@ -14,12 +13,10 @@ namespace hardware::axp2101 {
     static const char *TAG = "AXP2101";
     static i2c_master_dev_handle_t pmu_handle = nullptr;
 
-    static constexpr uint8_t REG_STATUS1    = 0x00;
     static constexpr uint8_t REG_STATUS2    = 0x01;
     static constexpr uint8_t REG_CHIP_ID    = 0x03;
     static constexpr uint8_t REG_ADC_CTRL   = 0x30;
     static constexpr uint8_t REG_BATTERY_V  = 0x34;
-    static constexpr uint8_t REG_VBUS_V     = 0x38;
     static constexpr uint8_t REG_LDO_ENABLE = 0x90;
     static constexpr uint8_t REG_BATTERY_PC = 0xA4;
 
@@ -42,12 +39,55 @@ namespace hardware::axp2101 {
     static constexpr uint8_t REG_BATTERY_PARAMETERS = 0xA1;
     static constexpr uint8_t REG_GAUGE_CONTROL = 0xA2;
 
+    // ------------------------------------------------------------------------
+    // I2C register access
+    // ------------------------------------------------------------------------
+
+    // Read, write and verify PMU register changes.
     static esp_err_t read_register(uint8_t reg, uint8_t *data, size_t len){
-        if(pmu_handle == nullptr)
-            return ESP_ERR_INVALID_STATE;
+        if(pmu_handle == nullptr) return ESP_ERR_INVALID_STATE;
 
         return i2c_master_transmit_receive(pmu_handle, &reg, 1, data, len, 1000);
     }
+
+    static esp_err_t write_axp_register(uint8_t reg, uint8_t value){
+        if(pmu_handle == nullptr) return ESP_ERR_INVALID_STATE;
+
+        uint8_t data[2] = {reg, value};
+
+        return i2c_master_transmit(pmu_handle, data, sizeof(data), 1000);
+    }
+
+    static esp_err_t update_axp_register(uint8_t reg, uint8_t mask, uint8_t value){
+
+        uint8_t current = 0;
+        esp_err_t err = read_register(reg, &current, 1);
+
+        if(err != ESP_OK) return err;
+
+        uint8_t updated = (current & ~mask) | (value & mask);
+
+        if(updated == current) return ESP_OK;
+
+        err = write_axp_register(reg, updated);
+        if(err != ESP_OK) return err;
+
+        uint8_t verify = 0;
+        err = read_register(reg, &verify, 1);
+
+        if(err != ESP_OK) return err;
+
+        if((verify & mask) != (updated & mask)){
+            ESP_LOGE(TAG, "AXP2101 register 0x%02X verification failed", reg);
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+
+        return ESP_OK;
+    }
+
+    // ------------------------------------------------------------------------
+    // Battery and charger measurements
+    // ------------------------------------------------------------------------
 
     esp_err_t read_charging(bool &charging){
         // PMU status2: bits 6:5 indicate battery current direction;
@@ -86,57 +126,18 @@ namespace hardware::axp2101 {
             out.percentage = percent;
         }
 
-        if(out.voltage_valid || out.percent_valid)
-            return ESP_OK;
+        if(out.voltage_valid || out.percent_valid) return ESP_OK;
 
-        if(voltage_err != ESP_OK)
-            return voltage_err;
+        if(voltage_err != ESP_OK) return voltage_err;
 
-        if(percent_err != ESP_OK)
-            return percent_err;
+        if(percent_err != ESP_OK) return percent_err;
 
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    static esp_err_t write_axp_register(uint8_t reg, uint8_t value){
-        if(pmu_handle == nullptr)
-            return ESP_ERR_INVALID_STATE;
-
-        uint8_t data[2] = {reg, value};
-
-        return i2c_master_transmit(pmu_handle, data, sizeof(data), 1000);
-    }
-
-    static esp_err_t update_axp_register(uint8_t reg, uint8_t mask, uint8_t value){
-
-        uint8_t current = 0;
-        esp_err_t err = read_register(reg, &current, 1);
-
-        if(err != ESP_OK)
-            return err;
-
-        uint8_t updated = (current & ~mask) | (value & mask);
-
-        if(updated == current)
-            return ESP_OK;
-
-        err = write_axp_register(reg, updated);
-        if(err != ESP_OK)
-            return err;
-
-        uint8_t verify = 0;
-        err = read_register(reg, &verify, 1);
-
-        if(err != ESP_OK)
-            return err;
-
-        if((verify & mask) != (updated & mask)){
-            ESP_LOGE(TAG, "AXP2101 register 0x%02X verification failed", reg);
-            return ESP_ERR_INVALID_RESPONSE;
-        }
-
-        return ESP_OK;
-    }
+    // ------------------------------------------------------------------------
+    // Persistent fuel-gauge model
+    // ------------------------------------------------------------------------
 
     // Match the AXP2101 gauge-ROM programming protocol from XPowersLib.
     // The battery model is written ONCE (after NVS marker check), not at
@@ -146,8 +147,7 @@ namespace hardware::axp2101 {
         esp_err_t err = read_register(reg, &value, 1);
         if(err != ESP_OK) return err;
         const uint8_t mask = static_cast<uint8_t>(1U << bit);
-        value = enabled ? static_cast<uint8_t>(value | mask)
-                        : static_cast<uint8_t>(value & ~mask);
+        value = enabled ? static_cast<uint8_t>(value | mask) : static_cast<uint8_t>(value & ~mask);
         return write_axp_register(reg, value);
     }
 
@@ -217,7 +217,6 @@ namespace hardware::axp2101 {
         err = hardware::storage::read_blob(model_store, "lilygo_gauge", &stored_version, &length);
         if(err == ESP_OK && length == sizeof(stored_version) && stored_version == LILYGO_MODEL_VERSION){
             hardware::storage::close(model_store);
-            ESP_LOGD(TAG, "LilyGO T-Watch Ultra battery model already installed");
             return ESP_OK;
         }
         if(err != ESP_OK && !hardware::storage::is_not_found(err)){
@@ -229,14 +228,17 @@ namespace hardware::axp2101 {
         err = program_lilygo_battery_model();
         if(err == ESP_OK){
             // Only mark success AFTER the full 128-byte ROM readback passed.
-            err = hardware::storage::write_blob(model_store, "lilygo_gauge",
-                                                 &LILYGO_MODEL_VERSION, sizeof(LILYGO_MODEL_VERSION));
+            err = hardware::storage::write_blob(model_store, "lilygo_gauge", &LILYGO_MODEL_VERSION, sizeof(LILYGO_MODEL_VERSION));
             if(err == ESP_OK) err = hardware::storage::commit(model_store);
         }
         hardware::storage::close(model_store);
         if(err == ESP_OK) ESP_LOGI(TAG, "LilyGO battery model verified and saved in NVS");
         return err;
     }
+
+    // ------------------------------------------------------------------------
+    // Peripheral regulator control
+    // ------------------------------------------------------------------------
 
     static esp_err_t set_voltage_reg(uint8_t reg, uint16_t millivolts){
 
@@ -251,19 +253,16 @@ namespace hardware::axp2101 {
     esp_err_t set_enabled(rail_t rail, bool enabled){
         uint8_t bit = static_cast<uint8_t>(rail);
 
-        if(bit > 7 || bit == 6)
-            return ESP_ERR_INVALID_ARG;
+        if(bit > 7 || bit == 6) return ESP_ERR_INVALID_ARG;
 
         uint8_t mask = 1 << bit;
 
-        esp_err_t err = update_axp_register(0x90, mask, enabled ? mask : 0);
+        esp_err_t err = update_axp_register(REG_LDO_ENABLE, mask, enabled ? mask : 0);
 
         if(err != ESP_OK){
             ESP_LOGE(TAG, "Unable to change rail %u: %s", bit, esp_err_to_name(err));
             return err;
         }
-
-        ESP_LOGD(TAG, "Power rail %u: %s", bit, enabled ? "On" : "Off");
 
         return ESP_OK;
     }
@@ -275,6 +274,10 @@ namespace hardware::axp2101 {
     esp_err_t disable(rail_t rail){
         return set_enabled(rail, false);
     }
+
+    // ------------------------------------------------------------------------
+    // Startup voltage and charger configuration
+    // ------------------------------------------------------------------------
 
     static esp_err_t configure_voltages(){
         struct voltage_t {
@@ -293,7 +296,6 @@ namespace hardware::axp2101 {
             }
         }
 
-        ESP_LOGD(TAG, "Peripheral regulator voltages configured");
         return ESP_OK;
     }
 
@@ -356,8 +358,7 @@ namespace hardware::axp2101 {
         err = update_axp_register(0x18, 0x02, 0x00);
 #endif
 
-        if(err != ESP_OK)
-            return err;
+        if(err != ESP_OK) return err;
 
         ESP_LOGI(TAG, "Battery charging configuration applied");
 #else
@@ -367,7 +368,11 @@ namespace hardware::axp2101 {
         return ESP_OK;
     }
 
-   esp_err_t init(){
+    // ------------------------------------------------------------------------
+    // Driver initialization
+    // ------------------------------------------------------------------------
+
+    esp_err_t init(){
         static bool configured = false;
 
         if(pmu_handle != nullptr){
@@ -382,8 +387,6 @@ namespace hardware::axp2101 {
             ESP_LOGE(TAG, "Board I2C bus is not initialized");
             return ESP_ERR_INVALID_STATE;
         }
-
-        ESP_LOGD(TAG, "Initializing AXP2101");
 
         i2c_device_config_t config = {};
         config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
@@ -417,10 +420,7 @@ namespace hardware::axp2101 {
     }
 
     esp_err_t configure(){
-        if(pmu_handle == nullptr)
-            return ESP_ERR_INVALID_STATE;
-
-        ESP_LOGD(TAG, "Configuring AXP2101");
+        if(pmu_handle == nullptr) return ESP_ERR_INVALID_STATE;
 
         esp_err_t err = configure_voltages();
         if(err != ESP_OK) return err;
@@ -436,7 +436,7 @@ namespace hardware::axp2101 {
         if(err != ESP_OK) return err;
 
         // Enable battery/VBUS ADC measurements.
-        err = update_axp_register(0x30, 0x05, 0x05);
+        err = update_axp_register(REG_ADC_CTRL, 0x05, 0x05);
         if(err != ESP_OK) return err;
 
         // Like LilyGO's official firmware, program its battery model once.
@@ -444,8 +444,7 @@ namespace hardware::axp2101 {
         // failure the next boot may retry, with warning in serial logs.
         err = ensure_lilygo_battery_model();
         if(err != ESP_OK){
-            ESP_LOGW(TAG, "LilyGO fuel-gauge setup failed (%s); using existing gauge state",
-                     esp_err_to_name(err));
+            ESP_LOGW(TAG, "LilyGO fuel-gauge setup failed (%s); using existing gauge state", esp_err_to_name(err));
         }
 
         static constexpr rail_t rails[] = { rail_t::sd, rail_t::display, rail_t::radio, rail_t::sensor, rail_t::gps, rail_t::speaker, rail_t::nfc };

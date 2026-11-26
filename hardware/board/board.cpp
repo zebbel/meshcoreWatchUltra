@@ -1,4 +1,3 @@
-
 #include "board.h"
 
 #include "esp_log.h"
@@ -16,12 +15,14 @@ namespace hardware::board {
     static bool spi_initialized = false;
     static SemaphoreHandle_t spi_gate = nullptr;
 
+    // ------------------------------------------------------------------------
+    // Shared bus initialization
+    // ------------------------------------------------------------------------
+
     esp_err_t init(){
         if(i2c_handle != nullptr && spi_initialized){
             return ESP_OK;
         }
-
-        ESP_LOGD(TAG, "Initializing board");
 
         // Initialize I2C bus
         i2c_master_bus_config_t i2c_config = {};
@@ -39,9 +40,6 @@ namespace hardware::board {
             ESP_LOGE(TAG, "I2C initialization failed: %s", esp_err_to_name(err));
             return err;
         }
-
-        ESP_LOGD(TAG, "I2C bus initialized");
-
 
         // Deselect all shared SPI devices before initializing the bus
         gpio_set_level(pins::LORA_CS, 1);
@@ -73,9 +71,6 @@ namespace hardware::board {
             return err;
         }
 
-        ESP_LOGD(TAG, "Shared SPI devices deselected");
-
-
         // Initialize shared SPI bus
         spi_bus_config_t spi_config = {};
 
@@ -105,13 +100,16 @@ namespace hardware::board {
 
         spi_initialized = true;
 
-        ESP_LOGD(TAG, "SPI bus initialized");
         ESP_LOGI(TAG, "Board initialization complete");
 
         gpio_install_isr_service(0);
 
         return ESP_OK;
     }
+
+    // ------------------------------------------------------------------------
+    // Shared bus access and SPI locking
+    // ------------------------------------------------------------------------
 
     i2c_master_bus_handle_t i2c_bus(){
         return i2c_handle;

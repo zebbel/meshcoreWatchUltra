@@ -3,6 +3,7 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 
+// NVS adapter: translate application handles and access modes into ESP-IDF NVS operations.
 namespace hardware::storage {
     static nvs_open_mode_t native_mode(Access access){ return access == Access::read_write ? NVS_READWRITE : NVS_READONLY; }
     static nvs_handle_t native_handle(const Handle &handle){ return static_cast<nvs_handle_t>(handle.id); }

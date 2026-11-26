@@ -2,6 +2,7 @@
 
 #include "AXP2101.h"
 
+// Hardware-independent battery and charging interface.
 namespace hardware::power {
     using battery_info_t = hardware::axp2101::battery_info_t;
     esp_err_t init();

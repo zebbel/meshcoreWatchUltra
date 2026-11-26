@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Persistent key-value storage without exposing ESP-IDF NVS handles.
 namespace hardware::storage {
     enum class Access : uint8_t { read_only, read_write };
     struct Handle { uint32_t id = 0; };

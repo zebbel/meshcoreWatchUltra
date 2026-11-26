@@ -16,8 +16,7 @@ namespace hardware::co5300 {
     // Exclusive right/bottom bounds. Packed RGB565 in panel byte order.
     // Returns only after all submitted pixel DMA has completed on success.
     // Callers must serialize all panel access.
-    esp_err_t draw_rgb565(int x_start, int y_start, int x_end, int y_end,
-                          const void *color_map);
+    esp_err_t draw_rgb565(int x_start, int y_start, int x_end, int y_end, const void *color_map);
     // Normal callers keep immediate-on behavior. Wake-time
     // redraw uses defer_display_on=true to keep the CO5300 output blank.
     esp_err_t set_screen_enabled(bool enabled, bool defer_display_on = false);

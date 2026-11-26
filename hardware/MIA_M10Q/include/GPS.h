@@ -2,6 +2,7 @@
 
 #include "MIA_M10Q.h"
 
+// GPS interface used by application services.
 namespace hardware::gps {
     using fix_t = hardware::mia_m10q::fix_t;
     using status_t = hardware::mia_m10q::status_t;

@@ -1,4 +1,3 @@
-
 #include "XL9555.h"
 
 #include "driver/i2c_master.h"
@@ -21,6 +20,10 @@ namespace hardware::xl9555 {
     static constexpr uint8_t REG_OUTPUT0   = 0x02;
     static constexpr uint8_t REG_POLARITY0 = 0x04;
     static constexpr uint8_t REG_CONFIG0   = 0x06;
+
+    // ------------------------------------------------------------------------
+    // I2C register access and pin mapping
+    // ------------------------------------------------------------------------
 
     // Low-level register access; callers must hold io_mutex after init
     static esp_err_t read_register(uint8_t reg, uint8_t &value){
@@ -78,6 +81,10 @@ namespace hardware::xl9555 {
     static uint8_t pin_mask(uint8_t pin){
         return 1U << (pin % 8);
     }
+
+    // ------------------------------------------------------------------------
+    // GPIO operations
+    // ------------------------------------------------------------------------
 
     esp_err_t read_pin(uint8_t pin, bool &level){
         if(pin >= 16) return ESP_ERR_INVALID_ARG;
@@ -167,6 +174,10 @@ namespace hardware::xl9555 {
         return ESP_OK;
     }
 
+    // ------------------------------------------------------------------------
+    // Board peripheral controls
+    // ------------------------------------------------------------------------
+
     // Enable or disable the haptic driver
     esp_err_t set_haptic_enabled(bool enabled){
         esp_err_t err = set_output(hardware::board::expander::HAPTIC_EN, enabled);
@@ -176,7 +187,6 @@ namespace hardware::xl9555 {
             return err;
         }
 
-        ESP_LOGD(TAG, "Haptic driver: %s", enabled ? "Enabled" : "Disabled");
         return ESP_OK;
     }
 
@@ -189,7 +199,6 @@ namespace hardware::xl9555 {
             return err;
         }
 
-        ESP_LOGD(TAG, "Display enable: %s", enabled ? "On" : "Off");
         return ESP_OK;
     }
 
@@ -202,7 +211,6 @@ namespace hardware::xl9555 {
             return err;
         }
 
-        ESP_LOGD(TAG, "Touch reset: %s", released ? "Released" : "Asserted");
         return ESP_OK;
     }
 
@@ -240,6 +248,10 @@ namespace hardware::xl9555 {
         return ESP_OK;
     }
 
+    // ------------------------------------------------------------------------
+    // Driver initialization and safe startup configuration
+    // ------------------------------------------------------------------------
+
     esp_err_t init(){
         static bool configured = false;
 
@@ -255,8 +267,6 @@ namespace hardware::xl9555 {
             ESP_LOGE(TAG, "Board I2C bus is not initialized");
             return ESP_ERR_INVALID_STATE;
         }
-
-        ESP_LOGD(TAG, "Initializing XL9555");
 
         i2c_device_config_t config = {};
         config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
@@ -306,8 +316,6 @@ namespace hardware::xl9555 {
             return ESP_ERR_INVALID_STATE;
         }
 
-        ESP_LOGD(TAG, "Configuring XL9555");
-
         // Disable haptic driver at startup
         esp_err_t err = set_haptic_enabled(false);
         if(err != ESP_OK) return err;
@@ -316,7 +324,6 @@ namespace hardware::xl9555 {
         err = set_input(hardware::board::expander::SD_DETECT);
         if(err != ESP_OK) return err;
 
-        ESP_LOGD(TAG, "SD card detection configured as input");
         ESP_LOGI(TAG, "XL9555 configuration complete");
         return ESP_OK;
     }

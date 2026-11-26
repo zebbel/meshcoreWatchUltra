@@ -1,4 +1,3 @@
-
 #include "SX1262.h"
 
 #include "driver/gpio.h"
@@ -95,6 +94,10 @@ namespace hardware::sx1262 {
     static TickType_t last_rx_irq_check = 0;
     static constexpr uint32_t RX_IRQ_RECOVERY_MS = 1000;
 
+    // ------------------------------------------------------------------------
+    // Radio interrupts and application wakeups
+    // ------------------------------------------------------------------------
+
     static void IRAM_ATTR dio1_isr(void *arg){
         (void)arg;
         if(irq_semaphore == nullptr) return;
@@ -102,15 +105,19 @@ namespace hardware::sx1262 {
         BaseType_t higher_priority_task_woken = pdFALSE;
         xSemaphoreGiveFromISR(irq_semaphore, &higher_priority_task_woken);
         TaskHandle_t main_task = wakeup_task.load(std::memory_order_relaxed);
-        if(main_task != nullptr) {
+        if(main_task != nullptr){
             vTaskNotifyGiveFromISR(main_task, &higher_priority_task_woken);
         }
         if(higher_priority_task_woken) portYIELD_FROM_ISR();
     }
 
-    void set_wakeup_task(TaskHandle_t task) {
+    void set_wakeup_task(TaskHandle_t task){
         wakeup_task.store(task, std::memory_order_relaxed);
     }
+
+    // ------------------------------------------------------------------------
+    // Radio locking and SPI command transport
+    // ------------------------------------------------------------------------
 
     static esp_err_t lock_radio(){
         if(radio_mutex == nullptr) return ESP_ERR_INVALID_STATE;
@@ -191,6 +198,10 @@ namespace hardware::sx1262 {
         return memcmp(version, "SX126", 5) == 0 ? ESP_OK : ESP_ERR_INVALID_RESPONSE;
     }
 
+    // ------------------------------------------------------------------------
+    // IRQ status and receive preparation
+    // ------------------------------------------------------------------------
+
     static esp_err_t get_irq(uint16_t &flags){
         uint8_t tx[4] = {CMD_GET_IRQ_STATUS, 0, 0, 0};
         uint8_t rx[4] = {};
@@ -265,8 +276,11 @@ namespace hardware::sx1262 {
         return ESP_OK;
     }
 
+    // ------------------------------------------------------------------------
+    // Oscillator and RF switch configuration
+    // ------------------------------------------------------------------------
+
     static esp_err_t configure_oscillator(){
-        ESP_LOGD(TAG, "Configuring SX1262 oscillator");
 
         uint8_t standby_rc[] = {CMD_SET_STANDBY, 0x00};
         esp_err_t err = command(standby_rc, sizeof(standby_rc));
@@ -289,9 +303,12 @@ namespace hardware::sx1262 {
         err = command(standby_xosc, sizeof(standby_xosc));
         if(err != ESP_OK) return err;
 
-        ESP_LOGD(TAG, "SX1262 oscillator configuration complete");
         return ESP_OK;
     }
+
+    // ------------------------------------------------------------------------
+    // Resource cleanup and radio initialization
+    // ------------------------------------------------------------------------
 
     // The SPI2 bus is owned by hardware::board::init(); only unregister our device.
     static void cleanup(){
@@ -441,6 +458,10 @@ namespace hardware::sx1262 {
         return ESP_OK;
     }
 
+    // ------------------------------------------------------------------------
+    // Radio status and configuration
+    // ------------------------------------------------------------------------
+
     esp_err_t read_status(status_t &status){
         if(!initialized) return ESP_ERR_INVALID_STATE;
         esp_err_t err = lock_radio();
@@ -581,6 +602,10 @@ namespace hardware::sx1262 {
         return err;
     }
 
+    // ------------------------------------------------------------------------
+    // Receive operations
+    // ------------------------------------------------------------------------
+
     esp_err_t start_receive(){
         if(!initialized || !configured) return ESP_ERR_INVALID_STATE;
         esp_err_t err = lock_radio();
@@ -648,8 +673,7 @@ namespace hardware::sx1262 {
         // Check once per second anyway as a lost-interrupt recovery path.
         const TickType_t now = xTaskGetTickCount();
         const bool dio1_high = gpio_get_level(hardware::board::pins::LORA_DIO1) != 0;
-        if (!dio1_high &&
-            static_cast<TickType_t>(now - last_rx_irq_check) < pdMS_TO_TICKS(RX_IRQ_RECOVERY_MS)) {
+        if(!dio1_high && static_cast<TickType_t>(now - last_rx_irq_check) < pdMS_TO_TICKS(RX_IRQ_RECOVERY_MS)){
             xSemaphoreGive(radio_mutex);
             return ESP_OK;
         }
@@ -720,6 +744,10 @@ namespace hardware::sx1262 {
     //
     // Initial detection parameters are intended for the currently
     // configured SF8 radio profile and need hardware validation.
+
+    // ------------------------------------------------------------------------
+    // Channel activity detection
+    // ------------------------------------------------------------------------
 
     esp_err_t channel_busy(bool &busy){
         busy = true;
@@ -875,6 +903,10 @@ namespace hardware::sx1262 {
         return err;
     }
 
+    // ------------------------------------------------------------------------
+    // Transmit operations
+    // ------------------------------------------------------------------------
+
     // Starts RF transmission without waiting for TX_DONE.
     esp_err_t start_transmit(const uint8_t *data, size_t length, uint32_t timeout_ms){
         if(!initialized || !configured) return ESP_ERR_INVALID_STATE;
@@ -945,8 +977,7 @@ namespace hardware::sx1262 {
         }else{
             // TX_DONE / TIMEOUT are on DIO1 too. Avoid busy SPI polling,
             // but retain the software TX timeout if the IRQ is lost.
-            if(gpio_get_level(hardware::board::pins::LORA_DIO1) == 0 &&
-                static_cast<TickType_t>(xTaskGetTickCount() - tx_started) < tx_timeout_ticks){
+            if(gpio_get_level(hardware::board::pins::LORA_DIO1) == 0 && static_cast<TickType_t>(xTaskGetTickCount() - tx_started) < tx_timeout_ticks){
                 xSemaphoreGive(radio_mutex);
                 return ESP_OK;
             }
@@ -1020,7 +1051,6 @@ namespace hardware::sx1262 {
             if(err == ESP_OK) err = rx_err;
         }
 
-        if(err == ESP_OK) ESP_LOGD(TAG, "LoRa TX complete: %u bytes", static_cast<unsigned>(length));
         else ESP_LOGE(TAG, "LoRa TX failed: %s", esp_err_to_name(err));
         return err;
     }
@@ -1051,6 +1081,10 @@ namespace hardware::sx1262 {
         xSemaphoreGive(radio_mutex);
         return err;
     }
+
+    // ------------------------------------------------------------------------
+    // Radio shutdown
+    // ------------------------------------------------------------------------
 
     esp_err_t shutdown(){
         if(!initialized) return ESP_OK;

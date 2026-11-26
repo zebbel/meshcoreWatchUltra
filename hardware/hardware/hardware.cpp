@@ -1,4 +1,3 @@
-
 #include "hardware.h"
 
 #include "esp_log.h"
@@ -15,9 +14,12 @@ namespace hardware {
 
     static constexpr const char *TAG = "Hardware";
 
-    void loop() { gps::loop(); }
+    // ------------------------------------------------------------------------
+    // Hardware startup
+    // ------------------------------------------------------------------------
 
-    esp_err_t init() {
+    // Initialize mandatory hardware before optional peripherals.
+    esp_err_t init(){
         esp_err_t err = storage::init();
 
         if(err == ESP_OK) err = board::init();
@@ -45,4 +47,10 @@ namespace hardware {
 
         return ESP_OK;
     }
+
+    // ------------------------------------------------------------------------
+    // Application-task hardware polling
+    // ------------------------------------------------------------------------
+
+    void loop(){ gps::loop(); }
 }
