@@ -10,18 +10,24 @@
 
 namespace watch::status {
     namespace {
+        constexpr uint32_t kStatusUpdateMs = 1000U;
         WatchStatus s_status{};
         portMUX_TYPE s_status_mux = portMUX_INITIALIZER_UNLOCKED;
     }
 
+    // ------------------------------------------------------------------------
+    // Collect and publish status
+    // ------------------------------------------------------------------------
+
+    // Read hardware outside the lock and publish a complete snapshot.
     // Collect on app_main only. Never call drivers or services inside the lock.
-    void update(bool meshcore_enabled) {
+    void update(bool meshcore_enabled){
         static uint32_t last_update_ms = 0;
         const uint32_t now = hardware::system::millis();
-        if (last_update_ms != 0 && now - last_update_ms < 1000U) return;
+        if(last_update_ms != 0 && now - last_update_ms < kStatusUpdateMs) return;
         last_update_ms = now;
 
-        watch::status::WatchStatus snapshot{};
+        WatchStatus snapshot{};
         snapshot.gps_enabled = hardware::gps::is_enabled();
         hardware::gps::fix_t fix{};
         snapshot.gps_has_fix = hardware::gps::get_fresh_fix(fix);
@@ -38,7 +44,11 @@ namespace watch::status {
         portEXIT_CRITICAL(&s_status_mux);
     }
 
-    WatchStatus get() {
+    // ------------------------------------------------------------------------
+    // Thread-safe snapshot access
+    // ------------------------------------------------------------------------
+
+    WatchStatus get(){
         portENTER_CRITICAL(&s_status_mux);
         const WatchStatus snapshot = s_status;
         portEXIT_CRITICAL(&s_status_mux);

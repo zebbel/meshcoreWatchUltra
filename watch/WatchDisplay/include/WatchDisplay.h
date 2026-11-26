@@ -10,5 +10,6 @@ namespace watch::display {
     esp_err_t set_screen_awake(bool awake);
     bool screen_awake();
     bool ready();
+    // Call on every main-loop iteration; navigation is handled by EEZ.
     void update_bluetooth_pairing();
 }
