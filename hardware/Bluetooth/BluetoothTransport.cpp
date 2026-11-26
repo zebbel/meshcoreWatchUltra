@@ -252,7 +252,7 @@ namespace hardware::bluetooth {
                 connection_handle_.store(0xFFFF);
                 authenticated_.store(false);
                 subscribed_.store(false);
-                clear_pin_.store(true);
+                active_pairing_pin_.store(0);
                 xQueueReset(rx_queue_);
                 xQueueReset(tx_queue_);
                 wake_main_task();
@@ -290,14 +290,26 @@ namespace hardware::bluetooth {
                 if(event->passkey.params.action == BLE_SM_IOACT_DISP){
                     ble_sm_io io = {};
                     io.action = BLE_SM_IOACT_DISP;
+
                     const uint32_t fixed = configured_pin_.load();
                     io.passkey = fixed ? fixed : 100000 + (esp_random() % 900000);
-                    pending_pin_.store(io.passkey);
+
                     int rc = ble_sm_inject_io(event->passkey.conn_handle, &io);
-                    if(rc != 0) ESP_LOGE(TAG, "Passkey injection failed: %d", rc);
+
+                    if(rc == 0){
+                        active_pairing_pin_.store(io.passkey);
+                    }else{
+                        active_pairing_pin_.store(0);
+                        ESP_LOGE(TAG, "Passkey injection failed: %d", rc);
+                    }
+
+                    wake_main_task();
                 }
                 break;
             case BLE_GAP_EVENT_ENC_CHANGE: {
+                active_pairing_pin_.store(0);
+                wake_main_task();
+
                 ble_gap_conn_desc security_desc = {};
 
                 int find_rc = ble_gap_conn_find(event->enc_change.conn_handle, &security_desc);
@@ -306,7 +318,6 @@ namespace hardware::bluetooth {
                 ble_gap_conn_desc desc = {};
                 if(event->enc_change.status == 0 && ble_gap_conn_find(event->enc_change.conn_handle, &desc) == 0 && desc.sec_state.encrypted && desc.sec_state.authenticated && desc.sec_state.bonded){
                     authenticated_.store(true);
-                    clear_pin_.store(true);
                     ESP_LOGI(TAG, "Authenticated BLE bond established");
                     wake_main_task();
                     // Request 15-30 ms for responsive commands and contact sync.
@@ -505,8 +516,4 @@ namespace hardware::bluetooth {
                          rc, static_cast<unsigned long>(tx_retries_));
         }
     }
-
-    uint32_t Transport::take_pairing_pin(){ return pending_pin_.exchange(0); }
-    bool Transport::take_pairing_clear_event(){ return clear_pin_.exchange(false); }
-
 }

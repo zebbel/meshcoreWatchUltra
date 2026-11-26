@@ -28,6 +28,8 @@ extern int32_t get_var_brightness();
 extern void set_var_brightness(int32_t value);
 extern bool get_var_ble_connected();
 extern void set_var_ble_connected(bool value);
+extern const char *get_var_ble_pairing_pin();
+extern void set_var_ble_pairing_pin(const char *value);
 
 #ifdef __cplusplus
 }

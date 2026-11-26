@@ -51,8 +51,9 @@ namespace hardware::bluetooth {
         esp_err_t load_pairing_pin();
         esp_err_t set_pairing_pin(uint32_t pin);
         uint32_t pairing_pin() const { return configured_pin_.load(); }
-        uint32_t take_pairing_pin();
-        bool take_pairing_clear_event();
+        uint32_t active_pairing_pin() const {
+            return active_pairing_pin_.load();
+        }
 
     private:
         friend int bluetooth_gap_callback(struct ble_gap_event *, void *);
@@ -64,9 +65,7 @@ namespace hardware::bluetooth {
         QueueHandle_t tx_queue_ = nullptr;
         std::atomic<bool> authenticated_{false};
         std::atomic<bool> subscribed_{false};
-        std::atomic<uint32_t> pending_pin_{0};
         std::atomic<uint32_t> configured_pin_{0};
-        std::atomic<bool> clear_pin_{false};
         std::atomic<uint16_t> connection_handle_{0xFFFF};
         std::atomic<TaskHandle_t> wakeup_task_{nullptr};
         std::atomic<uint32_t> last_activity_ms_{0};
@@ -80,6 +79,7 @@ namespace hardware::bluetooth {
         uint32_t advertising_started_ms_ = 0;
         char device_name_[32] = {};
         bool started_ = false;
+        std::atomic<uint32_t> active_pairing_pin_{0};
 
         int on_gap_event(struct ble_gap_event *event);
         int on_characteristic(uint16_t connection_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt);

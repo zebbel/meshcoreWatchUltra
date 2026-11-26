@@ -13,12 +13,14 @@ enum ScreensEnum {
     _SCREEN_ID_FIRST = 1,
     SCREEN_ID_MAIN = 1,
     SCREEN_ID_CHARGING = 2,
-    _SCREEN_ID_LAST = 2
+    SCREEN_ID_PAIRING = 3,
+    _SCREEN_ID_LAST = 3
 };
 
 typedef struct _objects_t {
     lv_obj_t *main;
     lv_obj_t *charging;
+    lv_obj_t *pairing;
     lv_obj_t *battery_label;
     lv_obj_t *time_label;
     lv_obj_t *battery_bar;
@@ -26,6 +28,7 @@ typedef struct _objects_t {
     lv_obj_t *bluetooth_icon;
     lv_obj_t *charge_percent_label;
     lv_obj_t *charge_prcentage_arc;
+    lv_obj_t *obj0;
 } objects_t;
 
 extern objects_t objects;
@@ -35,6 +38,9 @@ void tick_screen_main();
 
 void create_screen_charging();
 void tick_screen_charging();
+
+void create_screen_pairing();
+void tick_screen_pairing();
 
 void tick_screen_by_id(enum ScreensEnum screenId);
 void tick_screen(int screen_index);

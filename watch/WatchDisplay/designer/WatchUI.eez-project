@@ -150,6 +150,23 @@
         "defaultValue": "false",
         "persistent": false,
         "native": true
+      },
+      {
+        "objID": "fb85896a-15cf-493b-b98f-781a3b3f05e7",
+        "name": "ble_pairing_active",
+        "type": "boolean",
+        "defaultValue": "false",
+        "persistent": false,
+        "native": true
+      },
+      {
+        "objID": "38eb9980-b377-4622-922d-3ec49195bdb4",
+        "name": "ble_pairing_pin",
+        "type": "string",
+        "size": null,
+        "defaultValue": "\"\"",
+        "persistent": false,
+        "native": true
       }
     ],
     "structures": [],
@@ -508,8 +525,8 @@
           "type": "WatchVariableActionComponent",
           "left": 184,
           "top": 536,
-          "width": 141,
-          "height": 53,
+          "width": 142,
+          "height": 54,
           "customInputs": [],
           "customOutputs": [],
           "variable": "is_charging"
@@ -520,7 +537,7 @@
           "left": 457,
           "top": 536,
           "width": 116,
-          "height": 68,
+          "height": 70,
           "customInputs": [],
           "customOutputs": [],
           "value": "is_charging"
@@ -531,7 +548,7 @@
           "left": 765,
           "top": 534,
           "width": 366,
-          "height": 53,
+          "height": 54,
           "customInputs": [],
           "customOutputs": [],
           "actions": [
@@ -557,7 +574,7 @@
           "left": 600,
           "top": 236,
           "width": 87,
-          "height": 53,
+          "height": 54,
           "customInputs": [],
           "customOutputs": [],
           "milliseconds": "5000"
@@ -568,7 +585,7 @@
           "left": 438,
           "top": 236,
           "width": 116,
-          "height": 68,
+          "height": 70,
           "customInputs": [],
           "customOutputs": [],
           "value": "is_charging"
@@ -596,7 +613,7 @@
           "left": 184,
           "top": 631,
           "width": 154,
-          "height": 53,
+          "height": 54,
           "customInputs": [],
           "customOutputs": [],
           "variable": "ble_connected"
@@ -606,8 +623,8 @@
           "type": "IsTrueActionComponent",
           "left": 457,
           "top": 624,
-          "width": 128,
-          "height": 68,
+          "width": 129,
+          "height": 70,
           "customInputs": [],
           "customOutputs": [],
           "value": "ble_connected"
@@ -617,8 +634,8 @@
           "type": "LVGLActionComponent",
           "left": 706,
           "top": 624,
-          "width": 347,
-          "height": 53,
+          "width": 348,
+          "height": 54,
           "customInputs": [],
           "customOutputs": [],
           "actions": [
@@ -643,8 +660,8 @@
           "type": "LVGLActionComponent",
           "left": 706,
           "top": 684,
-          "width": 347,
-          "height": 53,
+          "width": 348,
+          "height": 54,
           "customInputs": [],
           "customOutputs": [],
           "actions": [
@@ -970,8 +987,8 @@
           "type": "WatchVariableActionComponent",
           "left": 571,
           "top": 380,
-          "width": 141,
-          "height": 53,
+          "width": 142,
+          "height": 54,
           "customInputs": [],
           "customOutputs": [],
           "variable": "is_charging"
@@ -982,7 +999,7 @@
           "left": 753,
           "top": 373,
           "width": 116,
-          "height": 68,
+          "height": 70,
           "customInputs": [],
           "customOutputs": [],
           "value": "is_charging"
@@ -992,8 +1009,8 @@
           "type": "LVGLActionComponent",
           "left": 900,
           "top": 373,
-          "width": 341,
-          "height": 53,
+          "width": 342,
+          "height": 54,
           "customInputs": [],
           "customOutputs": [],
           "actions": [
@@ -1072,6 +1089,118 @@
       "componentGroups": [],
       "userProperties": [],
       "name": "charging",
+      "left": 0,
+      "top": 0,
+      "width": 410,
+      "height": 502,
+      "isUsedAsUserWidget": false,
+      "createAtStart": true,
+      "deleteOnScreenUnload": false
+    },
+    {
+      "objID": "1d0c0930-3092-4760-c248-3e591d1614c3",
+      "components": [
+        {
+          "objID": "b82e9508-4566-4e1f-bf45-212de4a8a836",
+          "type": "LVGLScreenWidget",
+          "left": 0,
+          "top": 0,
+          "width": 410,
+          "height": 502,
+          "customInputs": [],
+          "customOutputs": [],
+          "style": {
+            "objID": "19c3a6af-c277-4f4b-8b44-50d9863ef0c7",
+            "useStyle": "default",
+            "conditionalStyles": [],
+            "childStyles": []
+          },
+          "timeline": [],
+          "eventHandlers": [],
+          "leftUnit": "px",
+          "topUnit": "px",
+          "widthUnit": "px",
+          "heightUnit": "px",
+          "children": [
+            {
+              "objID": "f3e5eec1-8c8b-422d-8af0-07a80ebf2e9b",
+              "type": "LVGLLabelWidget",
+              "left": 0,
+              "top": 0,
+              "width": 366,
+              "height": 102,
+              "customInputs": [],
+              "customOutputs": [],
+              "style": {
+                "objID": "f18f6550-ceff-403a-f230-32d2cb181e03",
+                "useStyle": "default",
+                "conditionalStyles": [],
+                "childStyles": []
+              },
+              "timeline": [],
+              "eventHandlers": [],
+              "leftUnit": "px",
+              "topUnit": "px",
+              "widthUnit": "content",
+              "heightUnit": "content",
+              "children": [],
+              "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
+              "hiddenFlagType": "literal",
+              "clickableFlagType": "literal",
+              "flagScrollbarMode": "",
+              "flagScrollDirection": "",
+              "scrollSnapX": "",
+              "scrollSnapY": "",
+              "checkedStateType": "literal",
+              "disabledStateType": "literal",
+              "states": "",
+              "localStyles": {
+                "objID": "7e128e53-04be-46cf-9b4d-ace4e6ea955e",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "text_color": "#EBE9E9",
+                      "text_font": "Clock96",
+                      "align": "CENTER"
+                    }
+                  }
+                }
+              },
+              "group": "",
+              "groupIndex": 0,
+              "text": "ble_pairing_pin",
+              "textType": "expression",
+              "longMode": "WRAP",
+              "recolor": false,
+              "previewValue": "123456",
+              "useStaticText": true
+            }
+          ],
+          "widgetFlags": "CLICKABLE|PRESS_LOCK|CLICK_FOCUSABLE|GESTURE_BUBBLE|SNAPPABLE|SCROLLABLE|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER",
+          "hiddenFlagType": "literal",
+          "clickableFlag": true,
+          "clickableFlagType": "literal",
+          "checkedStateType": "literal",
+          "disabledStateType": "literal",
+          "states": "",
+          "localStyles": {
+            "objID": "d8d4f24e-82f1-48c0-c4b9-209656a5f9e9",
+            "definition": {
+              "MAIN": {
+                "DEFAULT": {
+                  "bg_color": "#000000"
+                }
+              }
+            }
+          },
+          "groupIndex": 0
+        }
+      ],
+      "connectionLines": [],
+      "localVariables": [],
+      "componentGroups": [],
+      "userProperties": [],
+      "name": "bluetooth_pin",
       "left": 0,
       "top": 0,
       "width": 410,

@@ -186,6 +186,7 @@
               "type": "tabset",
               "id": "EDITORS",
               "weight": 65,
+              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
@@ -247,6 +248,14 @@
                       "component": "componentsPalette",
                       "enableClose": false,
                       "icon": "svg:components"
+                    },
+                    {
+                      "type": "tab",
+                      "id": "BREAKPOINTS_PALETTE",
+                      "name": "Breakpoints",
+                      "component": "breakpointsPanel",
+                      "enableClose": false,
+                      "icon": "svg:breakpoints_panel"
                     }
                   ]
                 }
@@ -1068,7 +1077,7 @@
       "transform": {
         "translate": {
           "x": -400,
-          "y": -240
+          "y": -340
         },
         "scale": 1
       },

@@ -31,6 +31,8 @@ uint32_t s_last_battery = 0;
 uint32_t s_last_clock = 0;
 std::atomic<uint32_t> s_status{0};
 std::atomic<uint32_t> s_rx{0};
+std::atomic<uint32_t> s_pairing_pin{0};
+char s_pairing_pin_text[7] = "";
 constexpr uint32_t GPS_ENABLED=1U, GPS_FIX=2U, BLE=4U, MESH=8U;
 void sample_time() {
     const time_t epoch = std::time(nullptr);
@@ -115,6 +117,9 @@ void publish_watch_status(const watch::WatchStatus &status) {
         (static_cast<uint32_t>(status.sleep_percent) << 16);
     s_rx.store(status.meshcore_rx_packets);
     s_status.store(bits);
+}
+void publish_pairing_pin(uint32_t pin) {
+    s_pairing_pin.store(pin);
 }
 void refresh_flow(bool charging) {
     if (!s_timer) return;

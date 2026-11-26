@@ -12,8 +12,8 @@
 
 objects_t objects;
 
-static const char *screen_names[] = { "Main", "charging" };
-static const char *object_names[] = { "main", "charging", "battery_label", "time_label", "battery_bar", "charge_lightning_icon_1", "bluetooth_icon", "charge_percent_label", "charge_prcentage_arc" };
+static const char *screen_names[] = { "Main", "charging", "pairing" };
+static const char *object_names[] = { "main", "charging", "pairing", "battery_label", "time_label", "battery_bar", "charge_lightning_icon_1", "bluetooth_icon", "charge_percent_label", "charge_prcentage_arc", "obj0" };
 
 //
 // Event handlers
@@ -253,13 +253,53 @@ void tick_screen_charging() {
     }
 }
 
+void create_screen_pairing() {
+    void *flowState = getFlowState(0, 2);
+    (void)flowState;
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.pairing = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 410, 502);
+    lv_obj_set_style_bg_color(obj, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+    {
+        lv_obj_t *parent_obj = obj;
+        {
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.obj0 = obj;
+            lv_obj_set_pos(obj, 0, 0);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_color(obj, lv_color_hex(0xebe9e9), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_clock96, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text(obj, "");
+        }
+    }
+    
+    tick_screen_pairing();
+}
+
+void tick_screen_pairing() {
+    void *flowState = getFlowState(0, 2);
+    (void)flowState;
+    {
+        const char *new_val = evalTextProperty(flowState, 0, 3, "Failed to evaluate Text in Label widget");
+        const char *cur_val = lv_label_get_text(objects.obj0);
+        if (strcmp(new_val, cur_val) != 0) {
+            tick_value_change_obj = objects.obj0;
+            lv_label_set_text(objects.obj0, new_val);
+            tick_value_change_obj = NULL;
+        }
+    }
+}
+
 typedef void (*tick_screen_func_t)();
 tick_screen_func_t tick_screen_funcs[] = {
     tick_screen_main,
     tick_screen_charging,
+    tick_screen_pairing,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 2) {
+    if (screen_index >= 0 && screen_index < 3) {
         tick_screen_funcs[screen_index]();
     }
 }
@@ -358,4 +398,5 @@ void create_screens() {
     // Create screens
     create_screen_main();
     create_screen_charging();
+    create_screen_pairing();
 }

@@ -15,6 +15,7 @@ namespace services::display_power {
     bool is_screen_awake();
     bool is_charging();
     void notify_activity();
+    void set_keep_awake(bool enabled);
 
     // Nonblocking, RAM-only pointer samples for the UI. No hardware I/O.
     struct TouchInput {
