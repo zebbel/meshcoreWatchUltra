@@ -9,37 +9,44 @@
 #include "HardwareSystem.h"
 
 namespace services::position_sync {
-static const char *TAG = "PositionSync";
-void synchronize(){
-    static uint32_t last_save_ms = 0;
-    hardware::gps::fix_t fix = {};
-    if(!hardware::gps::get_fresh_fix(fix)) return;
+    static const char *TAG = "PositionSync";
+    static constexpr int64_t kPositionThresholdMicrodegrees = 100;
+    static constexpr uint32_t kSaveIntervalMs = 300000U;
 
-    const int32_t gps_latitude = static_cast<int32_t>(lround(fix.latitude * 1000000.0));
-    const int32_t gps_longitude = static_cast<int32_t>(lround(fix.longitude * 1000000.0));
-    int32_t current_latitude = 0;
-    int32_t current_longitude = 0;
-    if(!meshcore::get_position(current_latitude, current_longitude)) return;
+    // ------------------------------------------------------------------------
+    // Persist fresh GPS position
+    // ------------------------------------------------------------------------
 
-    int64_t latitude_difference = static_cast<int64_t>(gps_latitude) - current_latitude;
-    int64_t longitude_difference = static_cast<int64_t>(gps_longitude) - current_longitude;
-    if(latitude_difference < 0) latitude_difference = -latitude_difference;
-    if(longitude_difference < 0) longitude_difference = -longitude_difference;
+    // Avoid unnecessary SD writes by requiring a meaningful change and a minimum interval between successful saves.
+    void synchronize(){
+        static uint32_t last_save_ms = 0;
+        hardware::gps::fix_t fix = {};
+        if(!hardware::gps::get_fresh_fix(fix)) return;
 
-    const bool position_missing = current_latitude == 0 && current_longitude == 0;
-    const bool position_changed = latitude_difference >= 100 || longitude_difference >= 100;
-    const uint32_t now = static_cast<uint32_t>(hardware::system::millis());
+        const int32_t gps_latitude = static_cast<int32_t>(lround(fix.latitude * 1000000.0));
+        const int32_t gps_longitude = static_cast<int32_t>(lround(fix.longitude * 1000000.0));
+        int32_t current_latitude = 0;
+        int32_t current_longitude = 0;
+        if(!meshcore::get_position(current_latitude, current_longitude)) return;
 
-    if((position_missing || position_changed) && (last_save_ms == 0 || now - last_save_ms >= 300000U)){
-        esp_err_t err = meshcore::set_position(gps_latitude, gps_longitude);
+        int64_t latitude_difference = static_cast<int64_t>(gps_latitude) - current_latitude;
+        int64_t longitude_difference = static_cast<int64_t>(gps_longitude) - current_longitude;
+        if(latitude_difference < 0) latitude_difference = -latitude_difference;
+        if(longitude_difference < 0) longitude_difference = -longitude_difference;
 
-        if(err == ESP_OK){
-            last_save_ms = now;
-            ESP_LOGD(TAG, "GPS position synchronized to companion settings");
-        }else{
-            ESP_LOGW(TAG, "GPS position could not be saved: %s", esp_err_to_name(err));
+        const bool position_missing = current_latitude == 0 && current_longitude == 0;
+        const bool position_changed = latitude_difference >= kPositionThresholdMicrodegrees || longitude_difference >= kPositionThresholdMicrodegrees;
+        const uint32_t now = static_cast<uint32_t>(hardware::system::millis());
+
+        if((position_missing || position_changed) && (last_save_ms == 0 || now - last_save_ms >= kSaveIntervalMs)){
+            esp_err_t err = meshcore::set_position(gps_latitude, gps_longitude);
+
+            if(err == ESP_OK){
+                last_save_ms = now;
+            }else{
+                ESP_LOGW(TAG, "GPS position could not be saved: %s", esp_err_to_name(err));
+            }
         }
     }
-}
 
 }

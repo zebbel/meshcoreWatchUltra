@@ -10,8 +10,8 @@ namespace services::display_power {
     using ScreenControl = esp_err_t (*)(bool awake);
     using ChargingDisplayControl = esp_err_t (*)(bool charging);
 
-    esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms = 5000,
-                    ChargingDisplayControl charging_display = nullptr);
+    esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms = 5000, ChargingDisplayControl charging_display = nullptr);
+    // Serialize panel transitions and enforce charging/keep-awake policy.
     esp_err_t set_screen_awake(bool awake);
     bool is_screen_awake();
     bool is_charging();
