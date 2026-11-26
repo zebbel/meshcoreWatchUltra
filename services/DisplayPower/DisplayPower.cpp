@@ -147,7 +147,7 @@ namespace {
             // EXT0 can wake before digital IRQ is
             // restored. A latched active-low GPIO12 still needs an I2C ACK.
             const bool pending_touch_level = !s_screen_awake.load() &&
-                gpio_get_level(board::pins::TOUCH_IRQ) == 0;
+                gpio_get_level(hardware::board::pins::TOUCH_IRQ) == 0;
             if (events > 0 || pending_touch_level) {
                 hardware::cst9217::TouchPoint point{};
                 const esp_err_t err = hardware::cst9217::read_interrupt(point);

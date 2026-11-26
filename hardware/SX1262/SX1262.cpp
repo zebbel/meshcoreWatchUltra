@@ -120,7 +120,7 @@ namespace sx1262 {
     static esp_err_t wait_busy(){
         TickType_t started = xTaskGetTickCount();
 
-        while(gpio_get_level(board::pins::LORA_BUSY) != 0){
+        while(gpio_get_level(hardware::board::pins::LORA_BUSY) != 0){
             if(xTaskGetTickCount() - started >= pdMS_TO_TICKS(BUSY_TIMEOUT_MS)){
                 ESP_LOGE(TAG, "SX1262 BUSY timeout");
                 return ESP_ERR_TIMEOUT;
@@ -149,15 +149,15 @@ namespace sx1262 {
         transaction.tx_buffer = spi_tx;
         transaction.rx_buffer = spi_rx;
 
-        if(!board::spi_lock(portMAX_DELAY)) return ESP_ERR_TIMEOUT;
+        if(!hardware::board::spi_lock(portMAX_DELAY)) return ESP_ERR_TIMEOUT;
         err = spi_device_acquire_bus(spi_handle, portMAX_DELAY);
-        if(err != ESP_OK){ board::spi_unlock(); return err; }
+        if(err != ESP_OK){ hardware::board::spi_unlock(); return err; }
 
-        gpio_set_level(board::pins::LORA_CS, 0);
+        gpio_set_level(hardware::board::pins::LORA_CS, 0);
         err = spi_device_polling_transmit(spi_handle, &transaction);
-        gpio_set_level(board::pins::LORA_CS, 1);
+        gpio_set_level(hardware::board::pins::LORA_CS, 1);
         spi_device_release_bus(spi_handle);
-        board::spi_unlock();
+        hardware::board::spi_unlock();
 
         if(err != ESP_OK) return err;
 
@@ -260,8 +260,8 @@ namespace sx1262 {
         if(err != ESP_OK) return err;
 
         status.device_errors = (static_cast<uint16_t>(rx_errors[2]) << 8) | rx_errors[3];
-        status.busy = gpio_get_level(board::pins::LORA_BUSY) != 0;
-        status.dio1 = gpio_get_level(board::pins::LORA_DIO1) != 0;
+        status.busy = gpio_get_level(hardware::board::pins::LORA_BUSY) != 0;
+        status.dio1 = gpio_get_level(hardware::board::pins::LORA_DIO1) != 0;
         return ESP_OK;
     }
 
@@ -293,16 +293,16 @@ namespace sx1262 {
         return ESP_OK;
     }
 
-    // The SPI2 bus is owned by board::init(); only unregister our device.
+    // The SPI2 bus is owned by hardware::board::init(); only unregister our device.
     static void cleanup(){
         if(irq_registered){
-            gpio_isr_handler_remove(board::pins::LORA_DIO1);
+            gpio_isr_handler_remove(hardware::board::pins::LORA_DIO1);
             irq_registered = false;
         }
 
         if(spi_handle != nullptr){
-            gpio_set_level(board::pins::LORA_CS, 1);
-            gpio_set_level(board::pins::LORA_RST, 0);
+            gpio_set_level(hardware::board::pins::LORA_CS, 1);
+            gpio_set_level(hardware::board::pins::LORA_RST, 0);
             spi_bus_remove_device(spi_handle);
             spi_handle = nullptr;
         }
@@ -344,15 +344,15 @@ namespace sx1262 {
         if(initialized) return ESP_OK;
         ESP_LOGI(TAG, "Initializing SX1262");
 
-        gpio_set_level(board::pins::LORA_RST, 0);
+        gpio_set_level(hardware::board::pins::LORA_RST, 0);
         gpio_config_t reset_config = {};
-        reset_config.pin_bit_mask = 1ULL << board::pins::LORA_RST;
+        reset_config.pin_bit_mask = 1ULL << hardware::board::pins::LORA_RST;
         reset_config.mode = GPIO_MODE_OUTPUT;
         esp_err_t err = gpio_config(&reset_config);
         if(err != ESP_OK) return err;
 
         gpio_config_t input_config = {};
-        input_config.pin_bit_mask = (1ULL << board::pins::LORA_BUSY) | (1ULL << board::pins::LORA_DIO1);
+        input_config.pin_bit_mask = (1ULL << hardware::board::pins::LORA_BUSY) | (1ULL << hardware::board::pins::LORA_DIO1);
         input_config.mode = GPIO_MODE_INPUT;
         input_config.intr_type = GPIO_INTR_DISABLE;
         err = gpio_config(&input_config);
@@ -368,14 +368,14 @@ namespace sx1262 {
             return err;
         }
 
-        // GPIO36 remains controlled by board::init(), avoiding an ESP-IDF GPIO conflict.
+        // GPIO36 remains controlled by hardware::board::init(), avoiding an ESP-IDF GPIO conflict.
         spi_device_interface_config_t device_config = {};
         device_config.clock_speed_hz = SPI_CLOCK_HZ;
         device_config.mode = 0;
         device_config.spics_io_num = -1;
         device_config.queue_size = 4;
 
-        err = spi_bus_add_device(board::spi_host(), &device_config, &spi_handle);
+        err = spi_bus_add_device(hardware::board::spi_host(), &device_config, &spi_handle);
         if(err != ESP_OK){
             ESP_LOGE(TAG, "SPI device registration failed: %s", esp_err_to_name(err));
             cleanup();
@@ -392,9 +392,9 @@ namespace sx1262 {
             return ESP_ERR_NO_MEM;
         }
 
-        gpio_set_level(board::pins::LORA_RST, 0);
+        gpio_set_level(hardware::board::pins::LORA_RST, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
-        gpio_set_level(board::pins::LORA_RST, 1);
+        gpio_set_level(hardware::board::pins::LORA_RST, 1);
         vTaskDelay(pdMS_TO_TICKS(20));
 
         err = wait_busy();
@@ -425,8 +425,8 @@ namespace sx1262 {
             return err != ESP_OK ? err : ESP_ERR_INVALID_RESPONSE;
         }
 
-        err = gpio_set_intr_type(board::pins::LORA_DIO1, GPIO_INTR_POSEDGE);
-        if(err == ESP_OK) err = gpio_isr_handler_add(board::pins::LORA_DIO1, dio1_isr, nullptr);
+        err = gpio_set_intr_type(hardware::board::pins::LORA_DIO1, GPIO_INTR_POSEDGE);
+        if(err == ESP_OK) err = gpio_isr_handler_add(hardware::board::pins::LORA_DIO1, dio1_isr, nullptr);
         if(err != ESP_OK){
             ESP_LOGE(TAG, "DIO1 interrupt setup failed: %s", esp_err_to_name(err));
             cleanup();
@@ -647,7 +647,7 @@ namespace sx1262 {
         // Avoid an SPI transaction on every idle MeshCore loop iteration.
         // Check once per second anyway as a lost-interrupt recovery path.
         const TickType_t now = xTaskGetTickCount();
-        const bool dio1_high = gpio_get_level(board::pins::LORA_DIO1) != 0;
+        const bool dio1_high = gpio_get_level(hardware::board::pins::LORA_DIO1) != 0;
         if (!dio1_high &&
             static_cast<TickType_t>(now - last_rx_irq_check) < pdMS_TO_TICKS(RX_IRQ_RECOVERY_MS)) {
             xSemaphoreGive(radio_mutex);
@@ -945,7 +945,7 @@ namespace sx1262 {
         }else{
             // TX_DONE / TIMEOUT are on DIO1 too. Avoid busy SPI polling,
             // but retain the software TX timeout if the IRQ is lost.
-            if(gpio_get_level(board::pins::LORA_DIO1) == 0 &&
+            if(gpio_get_level(hardware::board::pins::LORA_DIO1) == 0 &&
                 static_cast<TickType_t>(xTaskGetTickCount() - tx_started) < tx_timeout_ticks){
                 xSemaphoreGive(radio_mutex);
                 return ESP_OK;

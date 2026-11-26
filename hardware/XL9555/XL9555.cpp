@@ -79,57 +79,6 @@ namespace XL9555 {
         return 1U << (pin % 8);
     }
 
-    esp_err_t init(){
-        if(io_handle != nullptr){
-            return ESP_OK;
-        }
-
-        if(board::i2c_bus() == nullptr){
-            ESP_LOGE(TAG, "Board I2C bus is not initialized");
-            return ESP_ERR_INVALID_STATE;
-        }
-
-        ESP_LOGD(TAG, "Initializing XL9555");
-
-        i2c_device_config_t config = {};
-        config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-        config.device_address = board::addresses::XL9555;
-        config.scl_speed_hz = 100000;
-
-        esp_err_t err = i2c_master_bus_add_device(board::i2c_bus(), &config, &io_handle);
-
-        if(err != ESP_OK){
-            ESP_LOGE(TAG, "Unable to register XL9555: %s", esp_err_to_name(err));
-            return err;
-        }
-
-        io_mutex = xSemaphoreCreateMutex();
-
-        if(io_mutex == nullptr){
-            i2c_master_bus_rm_device(io_handle);
-            io_handle = nullptr;
-            return ESP_ERR_NO_MEM;
-        }
-
-        // Read the direction registers to verify communication without changing IO states
-        uint8_t direction0 = 0;
-        uint8_t direction1 = 0;
-        err = read_register(REG_CONFIG0, direction0);
-        if(err == ESP_OK) err = read_register(REG_CONFIG0 + 1, direction1);
-
-        if(err != ESP_OK){
-            ESP_LOGE(TAG, "XL9555 register read failed: %s", esp_err_to_name(err));
-            vSemaphoreDelete(io_mutex);
-            io_mutex = nullptr;
-            i2c_master_bus_rm_device(io_handle);
-            io_handle = nullptr;
-            return err;
-        }
-
-        ESP_LOGI(TAG, "XL9555 initialized, directions P0=0x%02X P1=0x%02X", direction0, direction1);
-        return ESP_OK;
-    }
-
     esp_err_t read_pin(uint8_t pin, bool &level){
         if(pin >= 16) return ESP_ERR_INVALID_ARG;
 
@@ -220,7 +169,7 @@ namespace XL9555 {
 
     // Enable or disable the haptic driver
     esp_err_t set_haptic_enabled(bool enabled){
-        esp_err_t err = set_output(board::expander::HAPTIC_EN, enabled);
+        esp_err_t err = set_output(hardware::board::expander::HAPTIC_EN, enabled);
 
         if(err != ESP_OK){
             ESP_LOGE(TAG, "Haptic enable configuration failed: %s", esp_err_to_name(err));
@@ -233,7 +182,7 @@ namespace XL9555 {
 
     // Control the display enable signal
     esp_err_t set_display_enabled(bool enabled){
-        esp_err_t err = set_output(board::expander::DISPLAY_EN, enabled);
+        esp_err_t err = set_output(hardware::board::expander::DISPLAY_EN, enabled);
 
         if(err != ESP_OK){
             ESP_LOGE(TAG, "Display enable configuration failed: %s", esp_err_to_name(err));
@@ -246,7 +195,7 @@ namespace XL9555 {
 
     // Assert or release the touchscreen reset signal
     esp_err_t set_touch_reset(bool released){
-        esp_err_t err = set_output(board::expander::TOUCH_RST, released);
+        esp_err_t err = set_output(hardware::board::expander::TOUCH_RST, released);
 
         if(err != ESP_OK){
             ESP_LOGE(TAG, "Touch reset configuration failed: %s", esp_err_to_name(err));
@@ -260,7 +209,7 @@ namespace XL9555 {
     // Select the external USB RF path or the built-in antenna
     esp_err_t set_lora_antenna(bool external){
         // LOW selects USB RF, HIGH selects the built-in antenna
-        esp_err_t err = set_output(board::expander::LORA_RF_SW, !external);
+        esp_err_t err = set_output(hardware::board::expander::LORA_RF_SW, !external);
 
         if(err != ESP_OK){
             ESP_LOGE(TAG, "LoRa antenna configuration failed: %s", esp_err_to_name(err));
@@ -277,7 +226,7 @@ namespace XL9555 {
         esp_err_t err = read_state(state);
         if(err != ESP_OK) return err;
 
-        uint8_t mask = pin_mask(board::expander::SD_DETECT);
+        uint8_t mask = pin_mask(hardware::board::expander::SD_DETECT);
 
         if((state.direction1 & mask) == 0){
             ESP_LOGE(TAG, "SD detect pin is not configured as input");
@@ -289,6 +238,57 @@ namespace XL9555 {
         inserted = !high;
 
         return ESP_OK;
+    }
+
+    esp_err_t init(){
+        if(io_handle != nullptr){
+            return ESP_OK;
+        }
+
+        if(hardware::board::i2c_bus() == nullptr){
+            ESP_LOGE(TAG, "Board I2C bus is not initialized");
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        ESP_LOGD(TAG, "Initializing XL9555");
+
+        i2c_device_config_t config = {};
+        config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+        config.device_address = hardware::board::addresses::XL9555;
+        config.scl_speed_hz = 100000;
+
+        esp_err_t err = i2c_master_bus_add_device(hardware::board::i2c_bus(), &config, &io_handle);
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "Unable to register XL9555: %s", esp_err_to_name(err));
+            return err;
+        }
+
+        io_mutex = xSemaphoreCreateMutex();
+
+        if(io_mutex == nullptr){
+            i2c_master_bus_rm_device(io_handle);
+            io_handle = nullptr;
+            return ESP_ERR_NO_MEM;
+        }
+
+        // Read the direction registers to verify communication without changing IO states
+        uint8_t direction0 = 0;
+        uint8_t direction1 = 0;
+        err = read_register(REG_CONFIG0, direction0);
+        if(err == ESP_OK) err = read_register(REG_CONFIG0 + 1, direction1);
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "XL9555 register read failed: %s", esp_err_to_name(err));
+            vSemaphoreDelete(io_mutex);
+            io_mutex = nullptr;
+            i2c_master_bus_rm_device(io_handle);
+            io_handle = nullptr;
+            return err;
+        }
+
+        ESP_LOGI(TAG, "XL9555 initialized, directions P0=0x%02X P1=0x%02X", direction0, direction1);
+        return configure();
     }
 
     // Configure the initial GPIO expander state
@@ -304,12 +304,11 @@ namespace XL9555 {
         if(err != ESP_OK) return err;
 
         // Configure SD card detection as an input
-        err = set_input(board::expander::SD_DETECT);
+        err = set_input(hardware::board::expander::SD_DETECT);
         if(err != ESP_OK) return err;
 
         ESP_LOGD(TAG, "SD card detection configured as input");
         ESP_LOGI(TAG, "XL9555 configuration complete");
         return ESP_OK;
     }
-
 }

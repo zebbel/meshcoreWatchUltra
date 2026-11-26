@@ -82,7 +82,7 @@ static void disable_light_sleep(const char *reason, esp_err_t err) {
     (void)esp_pm_configure(&cfg);
     s_auto_light_sleep = false;
     (void)esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
-    (void)esp_sleep_disable_ext1_wakeup_io(1ULL << board::pins::LORA_DIO1);
+    (void)esp_sleep_disable_ext1_wakeup_io(1ULL << hardware::board::pins::LORA_DIO1);
 }
 
 void start_light_sleep(bool meshcore_enabled, bool display_ready, bool radio_receiving) {
@@ -100,9 +100,9 @@ void start_light_sleep(bool meshcore_enabled, bool display_ready, bool radio_rec
 
     // Different IRQ polarities; EXT0 (touch, low) and EXT1 (LoRa, high)
     // leave the digital GPIO interrupt trigger types untouched.
-    err = esp_sleep_enable_ext0_wakeup(board::pins::TOUCH_IRQ, 0);
+    err = esp_sleep_enable_ext0_wakeup(hardware::board::pins::TOUCH_IRQ, 0);
     if (err == ESP_OK)
-        err = esp_sleep_enable_ext1_wakeup_io(1ULL << board::pins::LORA_DIO1,
+        err = esp_sleep_enable_ext1_wakeup_io(1ULL << hardware::board::pins::LORA_DIO1,
                                              ESP_EXT1_WAKEUP_ANY_HIGH);
     if (err != ESP_OK) { disable_light_sleep("Wake source setup failed", err); return; }
     err = esp_pm_light_sleep_register_cbs(&s_sleep_callbacks);
@@ -129,14 +129,14 @@ void start_light_sleep(bool meshcore_enabled, bool display_ready, bool radio_rec
 // timeout remains an independent fallback if the edge occurs while asleep.
 void restore_wakeup_pins_if_needed() {
     if (!s_auto_light_sleep || !s_restore_wake_pins.exchange(false, std::memory_order_acq_rel)) return;
-    esp_err_t err = rtc_gpio_hold_dis(board::pins::TOUCH_IRQ);
-    if (err == ESP_OK) err = rtc_gpio_hold_dis(board::pins::LORA_DIO1);
-    if (err == ESP_OK) err = rtc_gpio_deinit(board::pins::TOUCH_IRQ);
-    if (err == ESP_OK) err = rtc_gpio_deinit(board::pins::LORA_DIO1);
-    if (err == ESP_OK) err = gpio_set_intr_type(board::pins::TOUCH_IRQ, GPIO_INTR_NEGEDGE);
-    if (err == ESP_OK) err = gpio_set_intr_type(board::pins::LORA_DIO1, GPIO_INTR_POSEDGE);
-    if (err == ESP_OK) err = gpio_intr_enable(board::pins::TOUCH_IRQ);
-    if (err == ESP_OK) err = gpio_intr_enable(board::pins::LORA_DIO1);
+    esp_err_t err = rtc_gpio_hold_dis(hardware::board::pins::TOUCH_IRQ);
+    if (err == ESP_OK) err = rtc_gpio_hold_dis(hardware::board::pins::LORA_DIO1);
+    if (err == ESP_OK) err = rtc_gpio_deinit(hardware::board::pins::TOUCH_IRQ);
+    if (err == ESP_OK) err = rtc_gpio_deinit(hardware::board::pins::LORA_DIO1);
+    if (err == ESP_OK) err = gpio_set_intr_type(hardware::board::pins::TOUCH_IRQ, GPIO_INTR_NEGEDGE);
+    if (err == ESP_OK) err = gpio_set_intr_type(hardware::board::pins::LORA_DIO1, GPIO_INTR_POSEDGE);
+    if (err == ESP_OK) err = gpio_intr_enable(hardware::board::pins::TOUCH_IRQ);
+    if (err == ESP_OK) err = gpio_intr_enable(hardware::board::pins::LORA_DIO1);
     if (err != ESP_OK) disable_light_sleep("GPIO restoration failed", err);
 }
 

@@ -63,11 +63,11 @@ namespace hardware::sd {
         // SDSPI may leave GPIO21 reserved after unmount. Release its old
         // ownership before restoring the known-good output-high idle state.
         // gpio_reset_pin() enables a pull-up while output is disabled.
-        esp_err_t err = gpio_reset_pin(board::pins::SD_CS);
+        esp_err_t err = gpio_reset_pin(hardware::board::pins::SD_CS);
         if(err != ESP_OK) return err;
-        err = gpio_set_level(board::pins::SD_CS, 1); // Set latch before enabling output.
+        err = gpio_set_level(hardware::board::pins::SD_CS, 1); // Set latch before enabling output.
         if(err != ESP_OK) return err;
-        err = gpio_set_direction(board::pins::SD_CS, GPIO_MODE_OUTPUT);
+        err = gpio_set_direction(hardware::board::pins::SD_CS, GPIO_MODE_OUTPUT);
         if(err != ESP_OK){
             ESP_LOGE(TAG, "SD CS output restore failed: %s", esp_err_to_name(err));
             return err; // Do not power off without a known deselected CS.
@@ -87,34 +87,34 @@ namespace hardware::sd {
     // output through gpio_set_direction() (which does not re-reserve it),
     // keeping the SD card safely deselected until the SDK unmounts it.
     static esp_err_t release_sd_cs_ownership_for_unmount(){
-        esp_err_t err = gpio_set_level(board::pins::SD_CS, 1);
+        esp_err_t err = gpio_set_level(hardware::board::pins::SD_CS, 1);
         if(err != ESP_OK) return err;
-        err = gpio_reset_pin(board::pins::SD_CS); // Releases ESP-IDF GPIO reservation.
+        err = gpio_reset_pin(hardware::board::pins::SD_CS); // Releases ESP-IDF GPIO reservation.
         if(err != ESP_OK) return err;
-        err = gpio_set_level(board::pins::SD_CS, 1); // Preload latch high.
+        err = gpio_set_level(hardware::board::pins::SD_CS, 1); // Preload latch high.
         if(err != ESP_OK) return err;
-        return gpio_set_direction(board::pins::SD_CS, GPIO_MODE_OUTPUT);
+        return gpio_set_direction(hardware::board::pins::SD_CS, GPIO_MODE_OUTPUT);
     }
 
     static esp_err_t mount(){
         if(!card_present()) return ESP_ERR_NOT_FOUND;
         // Release the idle GPIO21 output reservation before SDSPI attaches.
         // Its internal pull-up maintains CS deasserted during card power-up.
-        esp_err_t err = gpio_reset_pin(board::pins::SD_CS);
+        esp_err_t err = gpio_reset_pin(hardware::board::pins::SD_CS);
         if(err != ESP_OK) return err;
-        err = gpio_set_level(board::pins::SD_CS, 1);
+        err = gpio_set_level(hardware::board::pins::SD_CS, 1);
         if(err != ESP_OK) return err;
         err = AXP2101::enable(AXP2101::rail_t::sd);
         if(err != ESP_OK) return err;
         vTaskDelay(pdMS_TO_TICKS(15));
 
-        // SPI2 is already initialized by board::init(). Never reinitialize it.
+        // SPI2 is already initialized by hardware::board::init(). Never reinitialize it.
         sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-        host.slot = board::spi_host();
+        host.slot = hardware::board::spi_host();
         host.max_freq_khz = 10000;
         sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
-        slot.host_id = board::spi_host();
-        slot.gpio_cs = board::pins::SD_CS;
+        slot.host_id = hardware::board::spi_host();
+        slot.gpio_cs = hardware::board::pins::SD_CS;
         esp_vfs_fat_mount_config_t cfg = {};
         cfg.format_if_mount_failed = false;
         cfg.max_files = 5;
@@ -183,7 +183,7 @@ namespace hardware::sd {
             error_ = ok_ ? ESP_OK : ESP_ERR_INVALID_STATE;
             return;
         }
-        if(!board::spi_lock(pdMS_TO_TICKS(10000))){
+        if(!hardware::board::spi_lock(pdMS_TO_TICKS(10000))){
             --nesting;
             locked_ = false;
             xSemaphoreGiveRecursive(mutex);
@@ -194,7 +194,7 @@ namespace hardware::sd {
         if(error_ == ESP_OK) ok_ = true;
         else {
             --nesting;
-            board::spi_unlock();
+            hardware::board::spi_unlock();
             locked_ = false;
             xSemaphoreGiveRecursive(mutex);
         }
@@ -206,7 +206,7 @@ namespace hardware::sd {
         if(!locked_) return;
         if(--nesting == 0){
             unmount();
-            board::spi_unlock();
+            hardware::board::spi_unlock();
         }
         locked_ = false;
         ok_ = false;

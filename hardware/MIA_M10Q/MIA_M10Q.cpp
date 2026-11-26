@@ -288,7 +288,7 @@ namespace MIA_M10Q {
         if(initialized) return ESP_OK;
 
         uart_config_t config = {};
-        config.baud_rate = board::hardware::GPS_BAUD;
+        config.baud_rate = hardware::board::specs::GPS_BAUD;
         config.data_bits = UART_DATA_8_BITS;
         config.parity = UART_PARITY_DISABLE;
         config.stop_bits = UART_STOP_BITS_1;
@@ -305,7 +305,7 @@ namespace MIA_M10Q {
         err = uart_param_config(GPS_UART, &config);
 
         if(err == ESP_OK){
-            err = uart_set_pin(GPS_UART, board::pins::GPS_TX, board::pins::GPS_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+            err = uart_set_pin(GPS_UART, hardware::board::pins::GPS_TX, hardware::board::pins::GPS_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
         }
 
         if(err != ESP_OK){
@@ -329,7 +329,7 @@ namespace MIA_M10Q {
         ESP_LOGI(TAG, "GPS setting loaded: enabled=%d", gps_enabled);
 
 
-        ESP_LOGI(TAG, "MIA_M10Q initialized at %lu baud", static_cast<unsigned long>(board::hardware::GPS_BAUD));
+        ESP_LOGI(TAG, "MIA_M10Q initialized at %lu baud", static_cast<unsigned long>(hardware::board::specs::GPS_BAUD));
 
         return ESP_OK;
     }

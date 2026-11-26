@@ -33,5 +33,4 @@ namespace AXP2101 {
     esp_err_t set_enabled(rail_t rail, bool enabled);
     esp_err_t enable(rail_t rail);
     esp_err_t disable(rail_t rail);
-
 }

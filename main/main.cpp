@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "hardware.h"
 #include "board.h"
 #include "Power.h"
 #include "GPIO.h"
@@ -22,15 +23,6 @@
 #include "WatchStatus.h"
 
 static const char *TAG = "MeshCoreWatch";
-static esp_err_t init_hardware(){
-    esp_err_t err = board::init();
-    if(err == ESP_OK) err = hardware::power::init();
-    if(err == ESP_OK) err = hardware::power::configure();
-    if(err == ESP_OK) err = hardware::gpio::init();
-    if(err == ESP_OK) err = hardware::gpio::configure();
-    if(err != ESP_OK) ESP_LOGE(TAG, "Hardware init failed: %s", esp_err_to_name(err));
-    return err;
-}
 
 static void update_bluetooth_pairing(){
     static uint32_t last_pin = 0;
@@ -77,17 +69,11 @@ static void publish_watchface_status(bool meshcore_enabled) {
 extern "C" void app_main(){
     ESP_LOGI(TAG, "T-Watch Ultra: MeshCore BLE companion");
 
-    esp_err_t err = hardware::storage::init();
-    if(err != ESP_OK){
-        ESP_LOGE(TAG, "NVS unavailable: %s", esp_err_to_name(err));
-        return;
-    }
-
     services::power_management::configure_startup_scaling();
+    if(hardware::init() != ESP_OK) return;
 
-    if(init_hardware() != ESP_OK) return;
     // Display errors do not prevent the MeshCore/BLE/GPS services from starting.
-    err = ui::watch_display::init();
+    esp_err_t err = ui::watch_display::init();
     if(err != ESP_OK) ESP_LOGW(TAG, "Watch display unavailable: %s", esp_err_to_name(err));
     // Restore persistent UTC before MeshCore creates its RTC adapter.
     err = services::time_service::initialize_utc_clock();

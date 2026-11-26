@@ -42,7 +42,7 @@ namespace {
 
 esp_err_t init() {
     if (s_ready) return ESP_OK;
-    if (board::i2c_bus() == nullptr) return ESP_ERR_INVALID_STATE;
+    if (hardware::board::i2c_bus() == nullptr) return ESP_ERR_INVALID_STATE;
 
     // The touch reset signal is on XL9555 P1.0, not a native ESP32 GPIO.
     esp_err_t err = XL9555::set_touch_reset(false);
@@ -53,7 +53,7 @@ esp_err_t init() {
     vTaskDelay(pdMS_TO_TICKS(100));
 
     esp_lcd_panel_io_i2c_config_t io_cfg = {};
-    io_cfg.dev_addr = board::addresses::TOUCH; // 0x1A on T-Watch Ultra.
+    io_cfg.dev_addr = hardware::board::addresses::TOUCH; // 0x1A on T-Watch Ultra.
     io_cfg.scl_speed_hz = 100000;
     io_cfg.control_phase_bytes = 1;
     io_cfg.dc_bit_offset = 0;
@@ -62,7 +62,7 @@ esp_err_t init() {
     io_cfg.flags.disable_control_phase = 1;
     io_cfg.transaction_timeout_ms = 200;
 
-    err = esp_lcd_new_panel_io_i2c(board::i2c_bus(), &io_cfg, &s_io);
+    err = esp_lcd_new_panel_io_i2c(hardware::board::i2c_bus(), &io_cfg, &s_io);
     if (err != ESP_OK) return err;
 
     esp_lcd_touch_config_t touch_cfg = {};
@@ -77,7 +77,7 @@ esp_err_t init() {
     if (err != ESP_OK) { cleanup(); return err; }
 
     gpio_config_t gpio_cfg = {};
-    gpio_cfg.pin_bit_mask = (1ULL << board::pins::TOUCH_IRQ);
+    gpio_cfg.pin_bit_mask = (1ULL << hardware::board::pins::TOUCH_IRQ);
     gpio_cfg.mode = GPIO_MODE_INPUT;
     gpio_cfg.pull_up_en = GPIO_PULLUP_ENABLE;
     gpio_cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
@@ -87,7 +87,7 @@ esp_err_t init() {
     
     // Register touch IRQ using the shared GPIO ISR service.
     err = gpio_isr_handler_add(
-        board::pins::TOUCH_IRQ, touch_irq, nullptr);
+        hardware::board::pins::TOUCH_IRQ, touch_irq, nullptr);
 
     // Install the service only if it does not exist yet.
     if (err == ESP_ERR_INVALID_STATE) {
@@ -100,7 +100,7 @@ esp_err_t init() {
         }
 
         err = gpio_isr_handler_add(
-            board::pins::TOUCH_IRQ, touch_irq, nullptr);
+            hardware::board::pins::TOUCH_IRQ, touch_irq, nullptr);
     }
 
     if (err != ESP_OK) {
@@ -110,7 +110,7 @@ esp_err_t init() {
 
     s_ready = true;
     ESP_LOGI(TAG, "CST9217 ready at 0x%02X; GPIO%d touch IRQ",
-             board::addresses::TOUCH, static_cast<int>(board::pins::TOUCH_IRQ));
+             hardware::board::addresses::TOUCH, static_cast<int>(hardware::board::pins::TOUCH_IRQ));
     return ESP_OK;
 }
 

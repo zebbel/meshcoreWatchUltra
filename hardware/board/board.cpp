@@ -6,7 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-namespace board {
+namespace hardware::board {
 
     static const char *TAG = "board";
 

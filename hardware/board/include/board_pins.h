@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "driver/gpio.h"
 
-namespace board {
+namespace hardware::board {
 
     namespace pins {
 
@@ -115,7 +115,7 @@ namespace board {
 
     }
 
-    namespace hardware {
+    namespace specs {
 
         // External memory
         constexpr uint32_t FLASH_SIZE = 16 * 1024 * 1024;

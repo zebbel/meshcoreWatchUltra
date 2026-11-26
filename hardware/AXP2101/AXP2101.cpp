@@ -98,45 +98,6 @@ namespace AXP2101 {
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    esp_err_t init(){
-        if(pmu_handle != nullptr)
-            return ESP_OK;
-
-        if(board::i2c_bus() == nullptr){
-            ESP_LOGE(TAG, "Board I2C bus is not initialized");
-            return ESP_ERR_INVALID_STATE;
-        }
-
-        ESP_LOGD(TAG, "Initializing AXP2101");
-
-        i2c_device_config_t config = {};
-        config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-        config.device_address = board::addresses::AXP2101;
-        config.scl_speed_hz = 100000;
-
-        esp_err_t err = i2c_master_bus_add_device(board::i2c_bus(), &config, &pmu_handle);
-
-        if(err != ESP_OK){
-            ESP_LOGE(TAG, "Unable to register AXP2101: %s", esp_err_to_name(err));
-            return err;
-        }
-
-        uint8_t chip_id = 0;
-        err = read_register(REG_CHIP_ID, &chip_id, 1);
-
-        if(err != ESP_OK || chip_id != CHIP_ID){
-            ESP_LOGE(TAG, "AXP2101 identification failed");
-
-            i2c_master_bus_rm_device(pmu_handle);
-            pmu_handle = nullptr;
-
-            return err != ESP_OK ? err : ESP_ERR_INVALID_RESPONSE;
-        }
-
-        ESP_LOGI(TAG, "AXP2101 detected, chip ID: 0x%02X", chip_id);
-        return ESP_OK;
-    }
-
     static esp_err_t write_axp_register(uint8_t reg, uint8_t value){
         if(pmu_handle == nullptr)
             return ESP_ERR_INVALID_STATE;
@@ -404,6 +365,45 @@ namespace AXP2101 {
 #endif
 
         return ESP_OK;
+    }
+
+    esp_err_t init(){
+        if(pmu_handle != nullptr)
+            return ESP_OK;
+
+        if(hardware::board::i2c_bus() == nullptr){
+            ESP_LOGE(TAG, "Board I2C bus is not initialized");
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        ESP_LOGD(TAG, "Initializing AXP2101");
+
+        i2c_device_config_t config = {};
+        config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+        config.device_address = hardware::board::addresses::AXP2101;
+        config.scl_speed_hz = 100000;
+
+        esp_err_t err = i2c_master_bus_add_device(hardware::board::i2c_bus(), &config, &pmu_handle);
+
+        if(err != ESP_OK){
+            ESP_LOGE(TAG, "Unable to register AXP2101: %s", esp_err_to_name(err));
+            return err;
+        }
+
+        uint8_t chip_id = 0;
+        err = read_register(REG_CHIP_ID, &chip_id, 1);
+
+        if(err != ESP_OK || chip_id != CHIP_ID){
+            ESP_LOGE(TAG, "AXP2101 identification failed");
+
+            i2c_master_bus_rm_device(pmu_handle);
+            pmu_handle = nullptr;
+
+            return err != ESP_OK ? err : ESP_ERR_INVALID_RESPONSE;
+        }
+
+        ESP_LOGI(TAG, "AXP2101 detected, chip ID: 0x%02X", chip_id);
+        return configure();
     }
 
     esp_err_t configure(){

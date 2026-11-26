@@ -96,11 +96,11 @@ esp_err_t init() {
     vTaskDelay(pdMS_TO_TICKS(20));
 
     spi_bus_config_t bus_cfg = {};
-    bus_cfg.sclk_io_num = board::pins::DISPLAY_SCK;
-    bus_cfg.data0_io_num = board::pins::DISPLAY_D0;
-    bus_cfg.data1_io_num = board::pins::DISPLAY_D1;
-    bus_cfg.data2_io_num = board::pins::DISPLAY_D2;
-    bus_cfg.data3_io_num = board::pins::DISPLAY_D3;
+    bus_cfg.sclk_io_num = hardware::board::pins::DISPLAY_SCK;
+    bus_cfg.data0_io_num = hardware::board::pins::DISPLAY_D0;
+    bus_cfg.data1_io_num = hardware::board::pins::DISPLAY_D1;
+    bus_cfg.data2_io_num = hardware::board::pins::DISPLAY_D2;
+    bus_cfg.data3_io_num = hardware::board::pins::DISPLAY_D3;
     bus_cfg.data4_io_num = -1;
     bus_cfg.data5_io_num = -1;
     bus_cfg.data6_io_num = -1;
@@ -112,7 +112,7 @@ esp_err_t init() {
     s_spi_ready = true;
 
     esp_lcd_panel_io_spi_config_t io_cfg = {};
-    io_cfg.cs_gpio_num = board::pins::DISPLAY_CS;
+    io_cfg.cs_gpio_num = hardware::board::pins::DISPLAY_CS;
     io_cfg.dc_gpio_num = GPIO_NUM_NC;
     io_cfg.spi_mode = 0;
     io_cfg.pclk_hz = kSpiClockHz;
@@ -132,7 +132,7 @@ esp_err_t init() {
     vendor.flags.use_qspi_interface = true;
 
     esp_lcd_panel_dev_config_t panel_cfg = {};
-    panel_cfg.reset_gpio_num = board::pins::DISPLAY_RST;
+    panel_cfg.reset_gpio_num = hardware::board::pins::DISPLAY_RST;
     panel_cfg.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
     panel_cfg.bits_per_pixel = 16;
     panel_cfg.vendor_config = &vendor;

@@ -69,14 +69,14 @@ namespace {
 
 esp_err_t init() {
     if(device != nullptr) return ESP_OK;
-    if(board::i2c_bus() == nullptr) return ESP_ERR_INVALID_STATE;
+    if(hardware::board::i2c_bus() == nullptr) return ESP_ERR_INVALID_STATE;
 
     i2c_device_config_t cfg = {};
     cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-    cfg.device_address = board::addresses::RTC;
+    cfg.device_address = hardware::board::addresses::RTC;
     cfg.scl_speed_hz = 100000;
 
-    esp_err_t err = i2c_master_bus_add_device(board::i2c_bus(), &cfg, &device);
+    esp_err_t err = i2c_master_bus_add_device(hardware::board::i2c_bus(), &cfg, &device);
     if(err != ESP_OK) return err;
 
     uint8_t ctrl = 0;
@@ -86,7 +86,7 @@ esp_err_t init() {
         device = nullptr;
         return err;
     }
-    ESP_LOGI("PCF85063A", "RTC accessible at 0x%02X", board::addresses::RTC);
+    ESP_LOGI("PCF85063A", "RTC accessible at 0x%02X", hardware::board::addresses::RTC);
     return ESP_OK;
 }
 
