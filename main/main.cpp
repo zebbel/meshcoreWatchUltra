@@ -1,5 +1,4 @@
 #include "PowerManagement.h"
-#include "PositionSync.h"
 #include "TimeService.h"
 #include "MeshCorePort.h"
 #include "CompanionBluetooth.h"
@@ -10,15 +9,15 @@
 #include "Storage.h"
 
 #include "hardware.h"
+#include "services.h"
+#include "watch.h"
 #include "board.h"
 #include "Power.h"
 #include "GPIO.h"
 #include "LoRa.h"
-#include "GPS.h"
 #include "BluetoothTransport.h"
 #include "SDStorage.h"
 #include "WatchDisplay.h"
-#include "WatchStatus.h"
 
 static const char *TAG = "MeshCoreWatch";
 
@@ -57,18 +56,11 @@ extern "C" void app_main() {
     services::power_management::configure_task_wakeups(meshcore_enabled);
 
     while(true){
-        services::power_management::restore_wakeup_pins_if_needed();
-        watch::display::update_bluetooth_pairing();
-        hardware::gps::loop();
-        services::position_sync::synchronize();
-        if(meshcore_enabled) meshcore::loop();
-        meshcore_bluetooth.loop();
-        watch::status::update(meshcore_enabled);
-        hardware::gps::status_t gps{};
-        hardware::gps::get_status(gps);
-        const bool screen_awake = watch::display::screen_awake();
-        const bool ble_active = meshcore_bluetooth.link_active();
-        services::power_management::update_light_sleep_guard(screen_awake, gps.powered, ble_active);
-        services::power_management::wait_for_events();
+        services::restore_wakup_pins();
+        hardware::loop();
+        services::loop();
+        meshcore::loop();
+        watch::loop();
+        services::sleep_guard();
     }
 }

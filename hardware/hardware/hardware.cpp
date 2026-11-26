@@ -13,6 +13,8 @@ namespace hardware {
 
     static constexpr const char *TAG = "Hardware";
 
+    void loop() { gps::loop(); }
+
     esp_err_t init() {
         esp_err_t err = storage::init();
 

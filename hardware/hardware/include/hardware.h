@@ -5,4 +5,5 @@
 
 namespace hardware {
     esp_err_t init();
+    void loop();
 }

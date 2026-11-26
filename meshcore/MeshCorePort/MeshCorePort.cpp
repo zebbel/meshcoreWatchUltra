@@ -138,7 +138,9 @@ namespace meshcore {
         return ESP_OK;
     }
 
-    void loop(){
+    bool is_initialized(){ return initialized; }
+
+    static void process_meshcore(){
         if(!initialized) return;
         if(!hardware::sd::ready()){
             static bool reported = false;
@@ -148,6 +150,12 @@ namespace meshcore {
         node->loop();
         companion->loop();
         contact_store->flush_due();
+    }
+
+    // BLE transport must run even when MeshCore initialization failed.
+    void loop(){
+        process_meshcore();
+        hardware::bluetooth::transport().loop();
     }
 
     uint32_t received_packet_count(){
