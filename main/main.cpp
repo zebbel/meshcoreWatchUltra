@@ -45,8 +45,8 @@ extern "C" void app_main() {
     if(!meshcore_enabled) ESP_LOGW(TAG, "MeshCore unavailable: %s", esp_err_to_name(err));
 
     // Start MeshCore Bluetooth companion.
-    auto &bluetooth = hardware::bluetooth::transport();
-    err = bluetooth.begin("MeshCore-Watch", meshcore::companion::UUIDS);
+    auto &meshcore_bluetooth = hardware::bluetooth::transport();
+    err = meshcore_bluetooth.begin("MeshCore-Watch", meshcore::companion::UUIDS);
     if(err != ESP_OK){
         ESP_LOGE(TAG, "Bluetooth initialization failed: %s", esp_err_to_name(err));
         return;
@@ -58,7 +58,7 @@ extern "C" void app_main() {
     // shared LoRa/BLE event wakeups.
     // Idle connected BLE no longer forces a 10-ms CPU polling loop.
     if(meshcore_enabled) hardware::lora::set_wakeup_task(xTaskGetCurrentTaskHandle());
-    bluetooth.set_wakeup_task(xTaskGetCurrentTaskHandle());
+    meshcore_bluetooth.set_wakeup_task(xTaskGetCurrentTaskHandle());
     constexpr uint32_t kMainLoopWaitMs = 50;
     constexpr uint32_t kActiveBleWaitMs = 10;
 
@@ -68,12 +68,12 @@ extern "C" void app_main() {
         hardware::gps::loop();
         services::position_sync::synchronize();
         if(meshcore_enabled) meshcore::loop();
-        bluetooth.loop();
+        meshcore_bluetooth.loop();
         watch::status::update(meshcore_enabled);
         hardware::gps::status_t gps{};
         hardware::gps::get_status(gps);
         const bool screen_awake = watch::display::screen_awake();
-        const bool ble_active = bluetooth.link_active();
+        const bool ble_active = meshcore_bluetooth.link_active();
         services::power_management::update_light_sleep_guard(screen_awake, gps.powered, ble_active);
         // Incoming BLE writes and LoRa IRQs wake immediately.
         const uint32_t wait_ms = (bluetooth.has_pending_tx() || bluetooth.recent_activity()) ? kActiveBleWaitMs : kMainLoopWaitMs;
