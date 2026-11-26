@@ -39,9 +39,6 @@ extern "C" void app_main() {
     err = services::time_service::initialize_utc_clock();
     if(err != ESP_OK) ESP_LOGW(TAG, "Hardware RTC unavailable: %s", esp_err_to_name(err));
 
-    // Synchronize system clock and RTC with valid GPS time.
-    hardware::gps::set_utc_callback(services::time_service::sync_gps_utc);
-
     // Initialize MeshCore if SD storage is available.
     bool meshcore_enabled = false;
     if(hardware::sd::ready()){

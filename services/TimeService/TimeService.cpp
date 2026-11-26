@@ -1,5 +1,6 @@
 #include "TimeService.h"
 #include "PCF85063A.h"
+#include "GPS.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include <sys/time.h>
@@ -40,6 +41,10 @@ namespace services::time_service {
         } else {
             ESP_LOGW("Time", "RTC has no trusted time; waiting for GPS or companion (%s)", esp_err_to_name(err));
         }
+
+        // Synchronize system clock and RTC with valid GPS time.
+        hardware::gps::set_utc_callback(services::time_service::sync_gps_utc);
+
         return ESP_OK;
     }
 
