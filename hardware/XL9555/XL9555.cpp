@@ -241,8 +241,14 @@ namespace XL9555 {
     }
 
     esp_err_t init(){
+        static bool configured = false;
+
         if(io_handle != nullptr){
-            return ESP_OK;
+            if(configured) return ESP_OK;
+
+            esp_err_t err = configure();
+            configured = (err == ESP_OK);
+            return err;
         }
 
         if(hardware::board::i2c_bus() == nullptr){
@@ -288,7 +294,10 @@ namespace XL9555 {
         }
 
         ESP_LOGI(TAG, "XL9555 initialized, directions P0=0x%02X P1=0x%02X", direction0, direction1);
-        return configure();
+
+        err = configure();
+        configured = (err == ESP_OK);
+        return err;
     }
 
     // Configure the initial GPIO expander state

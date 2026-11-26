@@ -7,12 +7,7 @@ idf_component_register(
         board
         AXP2101
         XL9555
-        WatchDisplay
-        TimeService
         MIA_M10Q
-        Bluetooth
         SD
-        MeshCorePort
-        SX1262
         log
 )

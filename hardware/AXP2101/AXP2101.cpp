@@ -367,9 +367,16 @@ namespace AXP2101 {
         return ESP_OK;
     }
 
-    esp_err_t init(){
-        if(pmu_handle != nullptr)
-            return ESP_OK;
+   esp_err_t init(){
+        static bool configured = false;
+
+        if(pmu_handle != nullptr){
+            if(configured) return ESP_OK;
+
+            esp_err_t err = configure();
+            configured = (err == ESP_OK);
+            return err;
+        }
 
         if(hardware::board::i2c_bus() == nullptr){
             ESP_LOGE(TAG, "Board I2C bus is not initialized");
@@ -403,7 +410,10 @@ namespace AXP2101 {
         }
 
         ESP_LOGI(TAG, "AXP2101 detected, chip ID: 0x%02X", chip_id);
-        return configure();
+
+        err = configure();
+        configured = (err == ESP_OK);
+        return err;
     }
 
     esp_err_t configure(){
