@@ -2,6 +2,7 @@
 #include "Power.h"
 #include "DisplayPower.h"
 #include "WatchDisplay.h"
+#include "WatchStatus.h"
 #include "CO5300Panel.h"
 #include "BluetoothTransport.h"
 #include "esp_log.h"
@@ -32,12 +33,9 @@ int32_t s_battery = -1;
 char s_time[6] = "--:--";
 uint32_t s_last_battery = 0;
 uint32_t s_last_clock = 0;
-std::atomic<uint32_t> s_status{0};
-std::atomic<uint32_t> s_rx{0};
 std::atomic<uint32_t> s_pairing_pin{0};
 char s_pairing_pin_text[7] = "";
 bool s_pairing_page_active = false;
-constexpr uint32_t GPS_ENABLED=1U, GPS_FIX=2U, BLE=4U, MESH=8U;
 void sample_time() {
     const time_t epoch = std::time(nullptr);
     struct tm local{};
@@ -113,22 +111,22 @@ int32_t get_var_battery_percent() { return s_battery; }
 void set_var_battery_percent(int32_t) {}
 const char *get_var_clock_time() { return s_time; }
 void set_var_clock_time(const char *) {}
-bool get_var_gps_enabled() { return (s_status.load() & GPS_ENABLED) != 0; }
+bool get_var_gps_enabled() { return watch::get_status().gps_enabled; }
 void set_var_gps_enabled(bool) {}
-bool get_var_gps_fix() { return (s_status.load() & GPS_FIX) != 0; }
+bool get_var_gps_fix() { return watch::get_status().gps_has_fix; }
 void set_var_gps_fix(bool) {}
-int32_t get_var_gps_satellites() { return (s_status.load() >> 8) & 255U; }
+int32_t get_var_gps_satellites() { return watch::get_status().gps_satellites; }
 void set_var_gps_satellites(int32_t) {}
-bool get_var_ble_connected() { return (s_status.load() & BLE) != 0; }
+bool get_var_ble_connected() { return watch::get_status().ble_connected; }
 void set_var_ble_connected(bool) {}
-bool get_var_meshcore_active() { return (s_status.load() & MESH) != 0; }
+bool get_var_meshcore_active() { return watch::get_status().meshcore_active; }
 void set_var_meshcore_active(bool) {}
 int32_t get_var_meshcore_rx_packets() {
-    const uint32_t count = s_rx.load();
+    const uint32_t count = watch::get_status().meshcore_rx_packets;
     return count > INT32_MAX ? INT32_MAX : static_cast<int32_t>(count);
 }
 void set_var_meshcore_rx_packets(int32_t) {}
-int32_t get_var_sleep_percent() { return (s_status.load() >> 16) & 255U; }
+int32_t get_var_sleep_percent() { return watch::get_status().sleep_percent; }
 void set_var_sleep_percent(int32_t) {}
 int32_t get_var_brightness() { return hardware::co5300::brightness(); }
 void set_var_brightness(int32_t value) {
@@ -162,16 +160,6 @@ void set_var_ble_pairing_pin(const char *) {}
 }
 
 namespace ui::watch_display {
-void publish_watch_status(const watch::WatchStatus &status) {
-    const uint32_t bits = (status.gps_enabled ? GPS_ENABLED : 0U) |
-        (status.gps_has_fix ? GPS_FIX : 0U) | (status.ble_connected ? BLE : 0U) |
-        (status.meshcore_active ? MESH : 0U) |
-        (static_cast<uint32_t>(status.gps_satellites) << 8) |
-        (static_cast<uint32_t>(status.sleep_percent) << 16);
-    s_rx.store(status.meshcore_rx_packets);
-    s_status.store(bits);
-}
-
 void update_bluetooth_pairing() {
     const uint32_t pin =
         hardware::bluetooth::transport().active_pairing_pin();
