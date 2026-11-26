@@ -23,7 +23,6 @@ idf_component_register(
         "${MESHCORE_ROOT}/src/Utils.cpp"
         "${MESHCORE_ROOT}/src/Identity.cpp"
         "${MESHCORE_ROOT}/src/helpers/StaticPoolPacketManager.cpp"
-
         "${MESHCORE_ROOT}/lib/ed25519/fe.c"
         "${MESHCORE_ROOT}/lib/ed25519/ge.c"
         "${MESHCORE_ROOT}/lib/ed25519/sc.c"
@@ -31,24 +30,19 @@ idf_component_register(
         "${MESHCORE_ROOT}/lib/ed25519/keypair.c"
         "${MESHCORE_ROOT}/lib/ed25519/key_exchange.c"
         "${MESHCORE_ROOT}/lib/ed25519/sign.c"
-
         "${MONOCYPHER_ROOT}/src/monocypher.c"
         "${MONOCYPHER_ROOT}/src/optional/monocypher-ed25519.c"
-
         "MeshCorePort.cpp"
         "adapters/PlatformAdapters.cpp"
         "network/Routing.cpp"
         "network/Node.cpp"
         "data/IdentityStore.cpp"
-
-
         "companion/Companion.cpp"
         "data/Contacts.cpp"
         "data/Settings.cpp"
         "telemetry/Telemetry.cpp"
         "adapters/RadioAdapter.cpp"
         "crypto/Ed25519.cpp"
-
     INCLUDE_DIRS
         "include"
         "compat"
@@ -56,7 +50,6 @@ idf_component_register(
         "${MESHCORE_ROOT}/lib/ed25519"
         "${MONOCYPHER_ROOT}/src"
         "${MONOCYPHER_ROOT}/src/optional"
-
     REQUIRES
         Bluetooth
         SD
@@ -75,7 +68,8 @@ idf_component_register(
         bt
         bootloader_support
         freertos
-    PRIV_REQUIRES heap
+    PRIV_REQUIRES
+        heap
 )
 
 target_compile_options(

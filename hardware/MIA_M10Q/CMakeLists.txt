@@ -1,11 +1,8 @@
-
 idf_component_register(
     SRCS
-        "GPS.cpp" "MIA_M10Q.cpp"
-
-    INCLUDE_DIRS
-        "include"
-
+        "GPS.cpp"
+        "MIA_M10Q.cpp"
+    INCLUDE_DIRS "include"
     PRIV_REQUIRES
         board
         AXP2101
