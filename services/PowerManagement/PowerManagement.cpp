@@ -1,4 +1,8 @@
 #include "PowerManagement.h"
+#include "LoRa.h"
+#include "BluetoothTransport.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "esp_pm.h"
@@ -12,6 +16,26 @@
 
 namespace services::power_management {
 static const char *TAG = "PowerManagement";
+
+static constexpr uint32_t kMainLoopWaitMs = 50;
+static constexpr uint32_t kActiveBleWaitMs = 10;
+
+// Register the calling application task after LoRa and BLE initialization.
+void configure_task_wakeups(bool meshcore_enabled){
+    const auto task = xTaskGetCurrentTaskHandle();
+    if(meshcore_enabled) hardware::lora::set_wakeup_task(task);
+    hardware::bluetooth::transport().set_wakeup_task(task);
+}
+
+// Incoming BLE writes and LoRa IRQs wake the task immediately.
+// Keep the fallback timeout even when automatic light sleep is disabled.
+void wait_for_events(){
+    auto &bluetooth = hardware::bluetooth::transport();
+    const uint32_t wait_ms = (bluetooth.has_pending_tx() || bluetooth.recent_activity())
+        ? kActiveBleWaitMs : kMainLoopWaitMs;
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
+}
+
 void configure_startup_scaling() {
 #if CONFIG_PM_ENABLE
     // Enable DFS first; automatic light sleep starts after wake hardware is ready.

@@ -1,7 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[WatchUI.eez-project]:/userPages/2",
-    "selectedGlobalVariableObject": "[WatchUI.eez-project]:/variables/globalVariables/-1",
+    "selectedUserPageObject": "[WatchUI.eez-project]:/userPages/0",
     "subnavigationSelectedItems": {
       "variables-tab/sub-navigation/selected-item": "Global"
     }
@@ -181,7 +180,8 @@
                       "enableClose": false,
                       "icon": "svg:variable"
                     }
-                  ]
+                  ],
+                  "active": true
                 }
               ]
             },
@@ -208,16 +208,15 @@
                 {
                   "type": "tab",
                   "id": "#ffa3d415-60bc-431b-bf9c-8887328ada12",
-                  "name": "pairing",
+                  "name": "Main",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[WatchUI.eez-project]:/userPages/2",
+                    "objectPath": "[WatchUI.eez-project]:/userPages/0",
                     "permanent": false
                   },
                   "icon": "svg:page"
                 }
-              ],
-              "active": true
+              ]
             },
             {
               "type": "row",

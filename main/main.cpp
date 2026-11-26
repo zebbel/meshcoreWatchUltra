@@ -8,8 +8,6 @@
 #include "esp_log.h"
 #include "HardwareSystem.h"
 #include "Storage.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 #include "hardware.h"
 #include "board.h"
@@ -55,12 +53,8 @@ extern "C" void app_main() {
     // configure wake sources after LoRa, touch and BLE init.
     services::power_management::start_light_sleep(meshcore_enabled, watch::display::ready(), meshcore_enabled && hardware::lora::is_in_receive_mode());
 
-    // shared LoRa/BLE event wakeups.
-    // Idle connected BLE no longer forces a 10-ms CPU polling loop.
-    if(meshcore_enabled) hardware::lora::set_wakeup_task(xTaskGetCurrentTaskHandle());
-    meshcore_bluetooth.set_wakeup_task(xTaskGetCurrentTaskHandle());
-    constexpr uint32_t kMainLoopWaitMs = 50;
-    constexpr uint32_t kActiveBleWaitMs = 10;
+    // Configure event-driven task wakeups.
+    services::power_management::configure_task_wakeups(meshcore_enabled);
 
     while(true){
         services::power_management::restore_wakeup_pins_if_needed();
@@ -75,8 +69,6 @@ extern "C" void app_main() {
         const bool screen_awake = watch::display::screen_awake();
         const bool ble_active = meshcore_bluetooth.link_active();
         services::power_management::update_light_sleep_guard(screen_awake, gps.powered, ble_active);
-        // Incoming BLE writes and LoRa IRQs wake immediately.
-        const uint32_t wait_ms = (bluetooth.has_pending_tx() || bluetooth.recent_activity()) ? kActiveBleWaitMs : kMainLoopWaitMs;
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
+        services::power_management::wait_for_events();
     }
 }
