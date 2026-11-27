@@ -20,41 +20,41 @@
 namespace hardware::co5300 {
     namespace {
         constexpr auto kSpiHost = SPI3_HOST; // SPI2 belongs to LoRa/SD/NFC.
-        constexpr int kSpiClockHz = 40 * 1000 * 1000;
-        constexpr uint8_t kInitialBrightness = 0; // blank until EEZ sets brightness
-        constexpr size_t kDmaStageBytes = 4096;
-        uint8_t *s_dma_stage = nullptr;
+        constexpr int spi_clock_hz = 40 * 1000 * 1000;
+        constexpr uint8_t initial_brightness = 0; // blank until EEZ sets brightness
+        constexpr size_t dma_stage_bytes = 4096;
+        uint8_t *dma_stage = nullptr;
 
         const char *const TAG = "CO5300Panel";
         esp_lcd_panel_io_handle_t s_io = nullptr;
         esp_lcd_panel_handle_t s_panel = nullptr;
-        bool s_spi_ready = false;
+        bool spi_ready = false;
         bool s_ready = false;
-        bool s_screen_enabled = true;
-        bool s_output_hidden_for_redraw = false;
+        bool screen_enabled = true;
+        bool output_hidden_for_redraw = false;
         // Deep standby replays the panel init table, including brightness=0.
         // Keep the last requested brightness for an exact wake restoration.
-        uint8_t s_brightness = kInitialBrightness;
+        uint8_t s_brightness = initial_brightness;
 
         // The working T-Watch Ultra sequence is intentionally sent twice.
         // COLMOD 0x3A / MADCTL 0x36 are provided by the Espressif panel config;
         // omitting them here avoids the duplicate-command warnings.
         static constexpr uint8_t kPage[]       = {0x00};
         static constexpr uint8_t kC4[]         = {0x80};
-        static constexpr uint8_t kTeEnable[]   = {0x00};
+        static constexpr uint8_t te_enable[]   = {0x00};
         static constexpr uint8_t kCtrl[]       = {0x20};
         static constexpr uint8_t kFull[]       = {0xFF};
-        static constexpr uint8_t kColumns[]    = {0x00, 0x16, 0x01, 0xAF};
+        static constexpr uint8_t columns[]    = {0x00, 0x16, 0x01, 0xAF};
         static constexpr uint8_t kRows[]       = {0x00, 0x00, 0x01, 0xF5};
         static constexpr uint8_t kBrightness[] = {0x00};
 
 #define WATCH_PANEL_INIT_PASS \
         {0xFE, kPage, sizeof(kPage), 0},                   \
         {0xC4, kC4, sizeof(kC4), 0},                       \
-        {0x35, kTeEnable, sizeof(kTeEnable), 0},           \
+        {0x35, te_enable, sizeof(te_enable), 0},           \
         {0x53, kCtrl, sizeof(kCtrl), 0},                   \
         {0x63, kFull, sizeof(kFull), 0},                   \
-        {0x2A, kColumns, sizeof(kColumns), 0},             \
+        {0x2A, columns, sizeof(columns), 0},             \
         {0x2B, kRows, sizeof(kRows), 0},                   \
         {0x11, nullptr, 0, 120},                          \
         {0x29, nullptr, 0, 0},                          \
@@ -78,12 +78,12 @@ namespace hardware::co5300 {
                 esp_lcd_panel_io_del(s_io);
                 s_io = nullptr;
             }
-            if(s_spi_ready){
+            if(spi_ready){
                 spi_bus_free(kSpiHost);
-                s_spi_ready = false;
+                spi_ready = false;
             }
-            heap_caps_free(s_dma_stage);
-            s_dma_stage = nullptr;
+            heap_caps_free(dma_stage);
+            dma_stage = nullptr;
             hardware::xl9555::set_display_enabled(false);
             hardware::axp2101::disable(hardware::axp2101::rail_t::display);
         }
@@ -114,17 +114,17 @@ namespace hardware::co5300 {
         bus_cfg.data5_io_num = -1;
         bus_cfg.data6_io_num = -1;
         bus_cfg.data7_io_num = -1;
-        bus_cfg.max_transfer_sz = kDmaStageBytes;
+        bus_cfg.max_transfer_sz = dma_stage_bytes;
 
         err = spi_bus_initialize(kSpiHost, &bus_cfg, SPI_DMA_CH_AUTO);
         if(err != ESP_OK){ rollback_hardware(); return err; }
-        s_spi_ready = true;
+        spi_ready = true;
 
         esp_lcd_panel_io_spi_config_t io_cfg = {};
         io_cfg.cs_gpio_num = hardware::board::pins::DISPLAY_CS;
         io_cfg.dc_gpio_num = GPIO_NUM_NC;
         io_cfg.spi_mode = 0;
-        io_cfg.pclk_hz = kSpiClockHz;
+        io_cfg.pclk_hz = spi_clock_hz;
         // Single queued transfer; use internal DMA RAM, never direct PSRAM DMA.
         io_cfg.trans_queue_depth = 1;
         io_cfg.flags.psram_dma_direct = false;
@@ -150,20 +150,20 @@ namespace hardware::co5300 {
         if(err == ESP_OK) err = esp_lcd_panel_init(s_panel);
         if(err == ESP_OK) err = esp_lcd_panel_set_gap(s_panel, x_gap, 0);
         if(err == ESP_OK) err = esp_lcd_panel_disp_on_off(s_panel, true);
-        if(err == ESP_OK) err = esp_lcd_panel_co5300_set_brightness(s_panel, kInitialBrightness);
+        if(err == ESP_OK) err = esp_lcd_panel_co5300_set_brightness(s_panel, initial_brightness);
         if(err != ESP_OK){ rollback_hardware(); return err; }
 
-        s_screen_enabled = true;
-        s_output_hidden_for_redraw = false;
-        s_brightness = kInitialBrightness;
-        s_dma_stage = static_cast<uint8_t *>(heap_caps_aligned_alloc( 64, kDmaStageBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
-        if(!s_dma_stage){
+        screen_enabled = true;
+        output_hidden_for_redraw = false;
+        s_brightness = initial_brightness;
+        dma_stage = static_cast<uint8_t *>(heap_caps_aligned_alloc( 64, dma_stage_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
+        if(!dma_stage){
             ESP_LOGE(TAG, "Unable to reserve internal display DMA buffer");
             rollback_hardware();
             return ESP_ERR_NO_MEM;
         }
         s_ready = true;
-        ESP_LOGI(TAG, "Panel ready: %ux%u portrait, QSPI %d MHz, %zu-byte DMA stage", static_cast<unsigned>(width), static_cast<unsigned>(height), kSpiClockHz / 1000000, kDmaStageBytes);
+        ESP_LOGI(TAG, "Panel ready: %ux%u portrait, QSPI %d MHz, %zu-byte DMA stage", static_cast<unsigned>(width), static_cast<unsigned>(height), spi_clock_hz / 1000000, dma_stage_bytes);
         return ESP_OK;
     }
 
@@ -173,9 +173,9 @@ namespace hardware::co5300 {
 
     esp_err_t set_screen_enabled(bool enabled, bool defer_display_on){
         if(!s_ready || s_panel == nullptr) return ESP_ERR_INVALID_STATE;
-        if(s_screen_enabled == enabled){
+        if(screen_enabled == enabled){
             // A retry of an interrupted wake should not leave the panel blank.
-            if(enabled && !defer_display_on && s_output_hidden_for_redraw) return reveal_after_full_refresh();
+            if(enabled && !defer_display_on && output_hidden_for_redraw) return reveal_after_full_refresh();
             return ESP_OK;
         }
 
@@ -195,8 +195,8 @@ namespace hardware::co5300 {
                 return err;
             }
 #endif
-            s_screen_enabled = false;
-            s_output_hidden_for_redraw = false;
+            screen_enabled = false;
+            output_hidden_for_redraw = false;
             return ESP_OK;
         }
 
@@ -213,8 +213,8 @@ namespace hardware::co5300 {
             // picture can appear until after the complete LVGL frame DMA drain.
             err = esp_lcd_panel_disp_on_off(s_panel, false);
             if(err == ESP_OK){
-                s_screen_enabled = true;
-                s_output_hidden_for_redraw = true;
+                screen_enabled = true;
+                output_hidden_for_redraw = true;
             }
             return err;
         }
@@ -222,14 +222,14 @@ namespace hardware::co5300 {
         if(err != ESP_OK) return err;
         err = esp_lcd_panel_disp_on_off(s_panel, true);
         if(err == ESP_OK){
-            s_screen_enabled = true;
-            s_output_hidden_for_redraw = false;
+            screen_enabled = true;
+            output_hidden_for_redraw = false;
         }
         return err;
     }
 
     esp_err_t reveal_after_full_refresh(){
-        if(!s_ready || s_panel == nullptr || !s_screen_enabled || !s_output_hidden_for_redraw) return ESP_ERR_INVALID_STATE;
+        if(!s_ready || s_panel == nullptr || !screen_enabled || !output_hidden_for_redraw) return ESP_ERR_INVALID_STATE;
 
         // Important: ESP-IDF 6.1.1 panel_io_spi_tx_param drains every queued
         // tx_color DMA before issuing this display-on command. Thus the panel
@@ -239,7 +239,7 @@ namespace hardware::co5300 {
         if(err != ESP_OK) return err;
         err = esp_lcd_panel_co5300_set_brightness(s_panel, s_brightness);
         if(err == ESP_OK){
-            s_output_hidden_for_redraw = false;
+            output_hidden_for_redraw = false;
         }
         return err;
     }
@@ -251,19 +251,19 @@ namespace hardware::co5300 {
     esp_err_t draw_rgb565(int x_start, int y_start, int x_end, int y_end, const void *color_map){
         // Source is packed RGB565 in panel byte order; caller serializes drawing.
         if(x_start < 0 || y_start < 0 || x_end > width || y_end > height) return ESP_ERR_INVALID_ARG;
-        if(!s_dma_stage || !s_panel || !color_map || x_end <= x_start || y_end <= y_start){
+        if(!dma_stage || !s_panel || !color_map || x_end <= x_start || y_end <= y_start){
             return ESP_ERR_INVALID_ARG;
         }
         const size_t row_bytes = static_cast<size_t>(x_end - x_start) * 2U;
-        if(row_bytes > kDmaStageBytes) return ESP_ERR_INVALID_SIZE;
-        const int max_rows = static_cast<int>(kDmaStageBytes / row_bytes);
+        if(row_bytes > dma_stage_bytes) return ESP_ERR_INVALID_SIZE;
+        const int max_rows = static_cast<int>(dma_stage_bytes / row_bytes);
         const uint8_t *src = static_cast<const uint8_t *>(color_map);
         for(int y = y_start; y < y_end;){
             const int remaining = y_end - y;
             const int rows = remaining < max_rows ? remaining : max_rows;
             const size_t n = static_cast<size_t>(rows) * row_bytes;
-            std::memcpy(s_dma_stage, src + static_cast<size_t>(y - y_start) * row_bytes, n);
-            esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel, x_start, y, x_end, y + rows, s_dma_stage);
+            std::memcpy(dma_stage, src + static_cast<size_t>(y - y_start) * row_bytes, n);
+            esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel, x_start, y, x_end, y + rows, dma_stage);
             if(err != ESP_OK){
                 (void)esp_lcd_panel_io_tx_param(s_io, -1, nullptr, 0);
                 return err;

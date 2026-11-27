@@ -32,20 +32,20 @@ namespace {
     // ------------------------------------------------------------------------
 
     // Only the pairing PIN is shared with the main application task.
-    constexpr uint32_t kFlowTickMs = 50;
-    constexpr uint32_t kBatteryMs = 60000;
-    constexpr uint32_t kChargingBatteryMs = 10000;
-    constexpr time_t kEarliestTrustedTime = 1577836800;
+    constexpr uint32_t flow_tick_ms = 50;
+    constexpr uint32_t battery_ms = 60000;
+    constexpr uint32_t charging_battery_ms = 10000;
+    constexpr time_t earliest_trusted_time = 1577836800;
     constexpr const char *TAG = "WatchFlow";
-    lv_timer_t *s_timer = nullptr;
-    bool s_charging = false;
+    lv_timer_t *timer = nullptr;
+    bool charging_active = false;
     int32_t s_battery = -1;
     char s_time[6] = "--:--";
-    uint32_t s_last_battery = 0;
-    uint32_t s_last_clock = 0;
+    uint32_t last_battery = 0;
+    uint32_t last_clock = 0;
     std::atomic<uint32_t> s_pairing_pin{0};
-    char s_pairing_pin_text[7] = "";
-    bool s_pairing_page_active = false;
+    char pairing_pin_text[7] = "";
+    bool pairing_page_active = false;
     // ------------------------------------------------------------------------
     // Clock and battery sampling
     // ------------------------------------------------------------------------
@@ -54,19 +54,19 @@ namespace {
     void sample_time(){
         const time_t epoch = std::time(nullptr);
         struct tm local{};
-        if(epoch >= kEarliestTrustedTime && localtime_r(&epoch, &local) && local.tm_hour >= 0 && local.tm_hour < 24 && local.tm_min >= 0 && local.tm_min < 60){
+        if(epoch >= earliest_trusted_time && localtime_r(&epoch, &local) && local.tm_hour >= 0 && local.tm_hour < 24 && local.tm_min >= 0 && local.tm_min < 60){
             std::snprintf(s_time, sizeof(s_time), "%02u:%02u", static_cast<unsigned>(local.tm_hour), static_cast<unsigned>(local.tm_min));
         }else{
             std::snprintf(s_time, sizeof(s_time), "--:--");
         }
-        s_last_clock = lv_tick_get();
+        last_clock = lv_tick_get();
     }
     void sample_battery(){
         hardware::power::battery_info_t battery{};
         if(hardware::power::read_battery(battery) == ESP_OK && battery.percent_valid && static_cast<unsigned>(battery.percentage) <= 100U){
             s_battery = static_cast<int32_t>(battery.percentage);
         }
-        s_last_battery = lv_tick_get();
+        last_battery = lv_tick_get();
     }
     // ------------------------------------------------------------------------
     // Pairing page navigation
@@ -76,12 +76,12 @@ namespace {
     void update_pairing_page(){
         const bool pairing = s_pairing_pin.load() != 0;
 
-        if(pairing && !s_pairing_page_active){
-            s_pairing_page_active = true;
+        if(pairing && !pairing_page_active){
+            pairing_page_active = true;
 
             eez_flow_push_screen(SCREEN_ID_PAIRING, LV_SCR_LOAD_ANIM_NONE, 0, 0);
-        }else if(!pairing && s_pairing_page_active){
-            s_pairing_page_active = false;
+        }else if(!pairing && pairing_page_active){
+            pairing_page_active = false;
 
             if(eez_flow_get_current_screen() == SCREEN_ID_PAIRING){
                 eez_flow_pop_screen(LV_SCR_LOAD_ANIM_NONE, 0, 0);
@@ -97,9 +97,9 @@ namespace {
 
         const uint32_t now = lv_tick_get();
 
-        if(now - s_last_clock >= 1000U) sample_time();
+        if(now - last_clock >= 1000U) sample_time();
 
-        if(now - s_last_battery >= (s_charging ? kChargingBatteryMs : kBatteryMs)) sample_battery();
+        if(now - last_battery >= (charging_active ? charging_battery_ms : battery_ms)) sample_battery();
 
         update_pairing_page();
 
@@ -120,7 +120,7 @@ extern "C" {
     // Read-only EEZ sensor variables
     // ------------------------------------------------------------------------
 
-    bool get_var_is_charging(){ return s_charging; }
+    bool get_var_is_charging(){ return charging_active; }
     void set_var_is_charging(bool){}
     int32_t get_var_battery_percent(){ return s_battery; }
     void set_var_battery_percent(int32_t){}
@@ -168,12 +168,12 @@ extern "C" {
         const uint32_t pin = s_pairing_pin.load();
 
         if(pin >= 100000 && pin <= 999999){
-            std::snprintf(s_pairing_pin_text, sizeof(s_pairing_pin_text), "%06lu", static_cast<unsigned long>(pin));
+            std::snprintf(pairing_pin_text, sizeof(pairing_pin_text), "%06lu", static_cast<unsigned long>(pin));
         }else{
-            s_pairing_pin_text[0] = '\0';
+            pairing_pin_text[0] = '\0';
         }
 
-        return s_pairing_pin_text;
+        return pairing_pin_text;
     }
 
     void set_var_ble_pairing_pin(const char *){}
@@ -199,9 +199,9 @@ namespace watch::display {
     // ------------------------------------------------------------------------
 
     void refresh_flow(bool charging){
-        if(!s_timer) return;
+        if(!timer) return;
 
-        s_charging = charging;
+        charging_active = charging;
 
         sample_battery();
         sample_time();
@@ -211,11 +211,11 @@ namespace watch::display {
         settle_flow();
     }
     esp_err_t init_flow(){
-        if(s_timer) return ESP_OK;
+        if(timer) return ESP_OK;
         setenv("TZ", CONFIG_MCW_WATCH_CLOCK_TIMEZONE, 1);
         tzset();
         // Seed native values before the generated runtime evaluates expressions.
-        s_charging = services::display_power::is_charging();
+        charging_active = services::display_power::is_charging();
         sample_time();
         sample_battery();
         lv_obj_t *initial_screen = lv_screen_active();
@@ -226,8 +226,8 @@ namespace watch::display {
             ESP_LOGE(TAG, "EEZ Flow did not load a generated screen");
             return ESP_ERR_INVALID_STATE;
         }
-        s_timer = lv_timer_create(tick, kFlowTickMs, nullptr);
-        if(!s_timer) return ESP_ERR_NO_MEM;
+        timer = lv_timer_create(tick, flow_tick_ms, nullptr);
+        if(!timer) return ESP_ERR_NO_MEM;
         if(hardware::co5300::brightness() == 0) ESP_LOGW(TAG, "EEZ has not set brightness yet; panel remains blank until a valid request");
         ESP_LOGI(TAG, "EEZ Flow ready (50 ms tick; native hardware variables)");
         return ESP_OK;

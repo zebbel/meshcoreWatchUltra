@@ -10,8 +10,8 @@
 
 namespace services::position_sync {
     static const char *TAG = "PositionSync";
-    static constexpr int64_t kPositionThresholdMicrodegrees = 100;
-    static constexpr uint32_t kSaveIntervalMs = 300000U;
+    static constexpr int64_t position_threshold_microdegrees = 100;
+    static constexpr uint32_t save_interval_ms = 300000U;
 
     // ------------------------------------------------------------------------
     // Persist fresh GPS position
@@ -35,10 +35,10 @@ namespace services::position_sync {
         if(longitude_difference < 0) longitude_difference = -longitude_difference;
 
         const bool position_missing = current_latitude == 0 && current_longitude == 0;
-        const bool position_changed = latitude_difference >= kPositionThresholdMicrodegrees || longitude_difference >= kPositionThresholdMicrodegrees;
+        const bool position_changed = latitude_difference >= position_threshold_microdegrees || longitude_difference >= position_threshold_microdegrees;
         const uint32_t now = static_cast<uint32_t>(hardware::system::millis());
 
-        if((position_missing || position_changed) && (last_save_ms == 0 || now - last_save_ms >= kSaveIntervalMs)){
+        if((position_missing || position_changed) && (last_save_ms == 0 || now - last_save_ms >= save_interval_ms)){
             esp_err_t err = meshcore::set_position(gps_latitude, gps_longitude);
 
             if(err == ESP_OK){

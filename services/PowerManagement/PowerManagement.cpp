@@ -22,8 +22,8 @@
 namespace services::power_management {
     static const char *TAG = "PowerManagement";
 
-    static constexpr uint32_t kMainLoopWaitMs = 50;
-    static constexpr uint32_t kActiveBleWaitMs = 10;
+    static constexpr uint32_t main_loop_wait_ms = 50;
+    static constexpr uint32_t active_ble_wait_ms = 10;
 
     // ------------------------------------------------------------------------
     // Application task notifications
@@ -40,7 +40,7 @@ namespace services::power_management {
     // Keep the fallback timeout even when automatic light sleep is disabled.
     void wait_for_events(){
         auto &bluetooth = hardware::bluetooth::transport();
-        const uint32_t wait_ms = (bluetooth.has_pending_tx() || bluetooth.recent_activity()) ? kActiveBleWaitMs : kMainLoopWaitMs;
+        const uint32_t wait_ms = (bluetooth.has_pending_tx() || bluetooth.recent_activity()) ? active_ble_wait_ms : main_loop_wait_ms;
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
     }
 
@@ -65,17 +65,17 @@ namespace services::power_management {
 #if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && CONFIG_MCW_AUTO_LIGHT_SLEEP && CONFIG_PM_LIGHT_SLEEP_CALLBACKS
     // Kconfig booleans set to 'n' are undefined; use a real compile-time bool.
 #if defined(CONFIG_MCW_CONNECTED_BLE_LIGHT_SLEEP)
-    static constexpr bool kConnectedBleLightSleep = true;
+    static constexpr bool connected_ble_light_sleep = true;
 #else
-    static constexpr bool kConnectedBleLightSleep = false;
+    static constexpr bool connected_ble_light_sleep = false;
 #endif
     // keep GPS UART, LVGL/panel traffic awake;
     // allow tickless idle only when screen and GNSS are both inactive.
     static esp_pm_lock_handle_t s_sleep_guard = nullptr;
-    static bool s_sleep_guard_held = false;
-    static bool s_auto_light_sleep = false;
-    static bool s_sensor_wake_enabled = false;
-    static std::atomic<bool> s_restore_wake_pins{false};
+    static bool sleep_guard_held = false;
+    static bool auto_light_sleep = false;
+    static bool sensor_wake_enabled = false;
+    static std::atomic<bool> restore_wake_pins{false};
 
     // ------------------------------------------------------------------------
     // Light sleep callbacks
@@ -83,10 +83,10 @@ namespace services::power_management {
 
     // PM callbacks run in a critical path: no logs, allocations, I2C or SPI.
     static esp_err_t IRAM_ATTR on_light_sleep_exit(int64_t, void *){
-        s_restore_wake_pins.store(true, std::memory_order_release);
+        restore_wake_pins.store(true, std::memory_order_release);
         return ESP_OK;
     }
-    static esp_pm_sleep_cbs_register_config_t s_sleep_callbacks = {
+    static esp_pm_sleep_cbs_register_config_t sleep_callbacks = {
         .enter_cb = nullptr,
         .exit_cb = on_light_sleep_exit,
         .enter_cb_user_arg = nullptr,
@@ -106,12 +106,12 @@ namespace services::power_management {
         cfg.min_freq_mhz = 80;
         cfg.light_sleep_enable = false;
         (void)esp_pm_configure(&cfg);
-        s_auto_light_sleep = false;
+        auto_light_sleep = false;
         (void)esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
         uint64_t wake_mask = 1ULL << hardware::board::pins::LORA_DIO1;
-        if(s_sensor_wake_enabled) wake_mask |= 1ULL << hardware::board::pins::SENSOR_IRQ;
+        if(sensor_wake_enabled) wake_mask |= 1ULL << hardware::board::pins::SENSOR_IRQ;
         (void)esp_sleep_disable_ext1_wakeup_io(wake_mask);
-        s_sensor_wake_enabled = false;
+        sensor_wake_enabled = false;
     }
 
     // ------------------------------------------------------------------------
@@ -128,7 +128,7 @@ namespace services::power_management {
         if(err != ESP_OK){ ESP_LOGW(TAG, "PM lock unavailable: %s", esp_err_to_name(err)); return; }
         err = esp_pm_lock_acquire(s_sleep_guard);
         if(err != ESP_OK){ ESP_LOGW(TAG, "PM lock acquire failed: %s", esp_err_to_name(err)); return; }
-        s_sleep_guard_held = true;
+        sleep_guard_held = true;
 
         // Different IRQ polarities; EXT0 (touch, low) and EXT1 (LoRa, high)
         // leave the digital GPIO interrupt trigger types untouched.
@@ -141,11 +141,11 @@ namespace services::power_management {
         // Keep touch and LoRa wake sources if this optional registration fails.
         if(hardware::bhi260ap::ready() && hardware::bhi260ap::get_status().wrist_tilt_available){
             const esp_err_t sensor_err = esp_sleep_enable_ext1_wakeup_io(1ULL << hardware::board::pins::SENSOR_IRQ, ESP_EXT1_WAKEUP_ANY_HIGH);
-            s_sensor_wake_enabled = (sensor_err == ESP_OK);
-            if(!s_sensor_wake_enabled) ESP_LOGW(TAG, "BHI260AP EXT1 wake unavailable: %s; retaining timer polling", esp_err_to_name(sensor_err));
+            sensor_wake_enabled = (sensor_err == ESP_OK);
+            if(!sensor_wake_enabled) ESP_LOGW(TAG, "BHI260AP EXT1 wake unavailable: %s; retaining timer polling", esp_err_to_name(sensor_err));
         }
 #endif
-        err = esp_pm_light_sleep_register_cbs(&s_sleep_callbacks);
+        err = esp_pm_light_sleep_register_cbs(&sleep_callbacks);
         if(err != ESP_OK){ disable_light_sleep("Light sleep callback setup failed", err); return; }
 
         // The main application loop already has an IRQ-assisted 50-ms timeout;
@@ -156,9 +156,9 @@ namespace services::power_management {
         cfg.light_sleep_enable = true;
         err = esp_pm_configure(&cfg);
         if(err != ESP_OK){ disable_light_sleep("esp_pm_configure failed", err); return; }
-        s_auto_light_sleep = true;
-        ESP_LOGI(TAG, "Auto light sleep enabled; touch/LoRa wake and display/GPS guards; connected BLE light sleep %s", kConnectedBleLightSleep ? "allowed" : "blocked");
-        ESP_LOGI(TAG, "BHI260AP EXT1 wake: %s", s_sensor_wake_enabled ? "enabled (GPIO8)" : "disabled");
+        auto_light_sleep = true;
+        ESP_LOGI(TAG, "Auto light sleep enabled; touch/LoRa wake and display/GPS guards; connected BLE light sleep %s", connected_ble_light_sleep ? "allowed" : "blocked");
+        ESP_LOGI(TAG, "BHI260AP EXT1 wake: %s", sensor_wake_enabled ? "enabled (GPIO8)" : "disabled");
     }
 
     // ------------------------------------------------------------------------
@@ -169,7 +169,7 @@ namespace services::power_management {
     // LoRa IRQ is level-latched until SX1262 clears it, so the 50-ms application
     // timeout remains an independent fallback if the edge occurs while asleep.
     void restore_wakeup_pins_if_needed(){
-        if(!s_auto_light_sleep || !s_restore_wake_pins.exchange(false, std::memory_order_acq_rel)) return;
+        if(!auto_light_sleep || !restore_wake_pins.exchange(false, std::memory_order_acq_rel)) return;
         esp_err_t err = rtc_gpio_hold_dis(hardware::board::pins::TOUCH_IRQ);
         if(err == ESP_OK) err = rtc_gpio_hold_dis(hardware::board::pins::LORA_DIO1);
         if(err == ESP_OK) err = rtc_gpio_deinit(hardware::board::pins::TOUCH_IRQ);
@@ -179,7 +179,7 @@ namespace services::power_management {
         if(err == ESP_OK) err = gpio_intr_enable(hardware::board::pins::TOUCH_IRQ);
         if(err == ESP_OK) err = gpio_intr_enable(hardware::board::pins::LORA_DIO1);
         // Restore the optional RTC pad before the hardware loop checks HIRQ.
-        if(err == ESP_OK && s_sensor_wake_enabled){
+        if(err == ESP_OK && sensor_wake_enabled){
             err = rtc_gpio_hold_dis(hardware::board::pins::SENSOR_IRQ);
             if(err == ESP_OK) err = rtc_gpio_deinit(hardware::board::pins::SENSOR_IRQ);
             if(err == ESP_OK) err = gpio_set_direction(hardware::board::pins::SENSOR_IRQ, GPIO_MODE_INPUT);
@@ -195,14 +195,14 @@ namespace services::power_management {
     // ------------------------------------------------------------------------
 
     void update_light_sleep_guard(bool screen_awake, bool gps_powered, bool ble_active){
-        if(!s_auto_light_sleep || s_sleep_guard == nullptr) return;
+        if(!auto_light_sleep || s_sleep_guard == nullptr) return;
         // The BLE controller owns PM locks during connection events. An app-wide lock is optional for connected BLE.
         // DisplayPower holds a separate lock during panel reset, redraw and active display time.
-        const bool ble_guard = !kConnectedBleLightSleep && ble_active;
+        const bool ble_guard = !connected_ble_light_sleep && ble_active;
         const bool must_stay_awake = screen_awake || gps_powered || ble_guard;
-        if(must_stay_awake == s_sleep_guard_held) return;
+        if(must_stay_awake == sleep_guard_held) return;
         const esp_err_t err = must_stay_awake ? esp_pm_lock_acquire(s_sleep_guard) : esp_pm_lock_release(s_sleep_guard);
-        if(err == ESP_OK) s_sleep_guard_held = must_stay_awake;
+        if(err == ESP_OK) sleep_guard_held = must_stay_awake;
         else disable_light_sleep("PM lock transition failed", err);
     }
 

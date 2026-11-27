@@ -36,9 +36,9 @@ namespace hardware::bluetooth {
     static ble_uuid128_t rx_uuid = {};
     static ble_uuid128_t tx_uuid = {};
     // Fast initial discovery and notification pacing (milliseconds).
-    static constexpr uint32_t kFastAdvDurationMs = 30000;
-    static constexpr uint32_t kNotificationGapMs = 10;
-    static constexpr uint32_t kNotifyRetryGapMs = 30;
+    static constexpr uint32_t fast_adv_duration_ms = 30000;
+    static constexpr uint32_t notification_gap_ms = 10;
+    static constexpr uint32_t notify_retry_gap_ms = 30;
 
     // -------------------------------------------------------------------------
     // NimBLE callbacks and singleton
@@ -223,7 +223,7 @@ namespace hardware::bluetooth {
         params.itvl_min = fast ? 160 : 400;
         params.itvl_max = fast ? 240 : 560;
         if(rc == 0){
-            rc = ble_gap_adv_start(own_addr_type_, nullptr, fast ? kFastAdvDurationMs : BLE_HS_FOREVER, &params, bluetooth_gap_callback, nullptr);
+            rc = ble_gap_adv_start(own_addr_type_, nullptr, fast ? fast_adv_duration_ms : BLE_HS_FOREVER, &params, bluetooth_gap_callback, nullptr);
         }
         if(rc != 0) ESP_LOGE(TAG, "Advertising failed: %d", rc);
     }
@@ -485,7 +485,7 @@ namespace hardware::bluetooth {
         if(!can_send(frame.length)) return;
         auto mbuf = ble_hs_mbuf_from_flat(frame.data, frame.length);
         if(mbuf == nullptr){
-            notification_gap_ms_ = kNotifyRetryGapMs;
+            notification_gap_ms_ = notify_retry_gap_ms;
             last_notification_ms_ = now;
             ++tx_retries_;
             return;
@@ -495,10 +495,10 @@ namespace hardware::bluetooth {
         last_notification_ms_ = now;
         if(rc == 0){
             xQueueReceive(tx_queue_, &frame, 0);
-            notification_gap_ms_ = kNotificationGapMs;
+            notification_gap_ms_ = notification_gap_ms;
             tx_retries_ = 0;
         }else{
-            notification_gap_ms_ = kNotifyRetryGapMs;
+            notification_gap_ms_ = notify_retry_gap_ms;
             ++tx_retries_;
             if(tx_retries_ == 1 || (tx_retries_ % 32) == 0) ESP_LOGW(TAG, "BLE notify backpressure: rc=%d, retries=%lu", rc, static_cast<unsigned long>(tx_retries_));
         }

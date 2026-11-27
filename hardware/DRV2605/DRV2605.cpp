@@ -30,18 +30,18 @@ namespace hardware::drv2605 {
     static constexpr uint8_t LIBRARY_ERM = 1;
     static constexpr uint8_t MAX_EFFECT = 117;
     static constexpr size_t MAX_SEQUENCE = 8;
-    static constexpr int64_t kPollUs = 50000;
-    static constexpr int64_t kPlaybackLimitUs = 10000000;
+    static constexpr int64_t poll_us = 50000;
+    static constexpr int64_t playback_limit_us = 10000000;
     // Temporary boot test: ROM effect 2 (strong click, 60%).
-    static constexpr bool kStartupTest = true;
-    static constexpr uint8_t kStartupEffect = 15;
+    static constexpr bool startup_test = true;
+    static constexpr uint8_t startup_effect = 15;
 
     static i2c_master_dev_handle_t s_device = nullptr;
     static bool s_ready = false;
     static bool s_busy = false;
-    static bool s_fault = false;
-    static int64_t s_started_us = 0;
-    static int64_t s_next_poll_us = 0;
+    static bool fault = false;
+    static int64_t started_us = 0;
+    static int64_t next_poll_us = 0;
 
     // ------------------------------------------------------------------------
     // Shared I2C register access
@@ -69,7 +69,7 @@ namespace hardware::drv2605 {
     static esp_err_t fail_safe(esp_err_t cause){
         s_ready = false;
         s_busy = false;
-        s_fault = true;
+        fault = true;
         const esp_err_t off = xl9555::set_haptic_enabled(false);
         if(off != ESP_OK) ESP_LOGE(TAG, "Haptic EN disable failed: %s", esp_err_to_name(off));
         ESP_LOGW(TAG, "Haptic operation failed: %s", esp_err_to_name(cause));
@@ -81,7 +81,7 @@ namespace hardware::drv2605 {
     // ------------------------------------------------------------------------
 
     esp_err_t configure(){
-        if(!s_device || s_fault || s_busy) return ESP_ERR_INVALID_STATE;
+        if(!s_device || fault || s_busy) return ESP_ERR_INVALID_STATE;
         // Match LilyGoUltra::initDrv and SensorLib's ERM open-loop profile.
         // Preserve rated voltage and overdrive clamp; motor rating is unverified.
         esp_err_t err = write_register(REG_MODE, MODE_INTERNAL);
@@ -104,7 +104,7 @@ namespace hardware::drv2605 {
 
     esp_err_t init(){
         if(s_ready) return ESP_OK;
-        if(s_device || s_fault){
+        if(s_device || fault){
             const esp_err_t err = shutdown();
             if(err != ESP_OK) return err;
         }
@@ -147,8 +147,8 @@ namespace hardware::drv2605 {
         if(err == ESP_OK) err = write_register(REG_GO, 1);
         if(err != ESP_OK) return fail_safe(err);
         s_busy = true;
-        s_started_us = esp_timer_get_time();
-        s_next_poll_us = s_started_us + kPollUs;
+        started_us = esp_timer_get_time();
+        next_poll_us = started_us + poll_us;
         return ESP_OK;
     }
 
@@ -166,28 +166,28 @@ namespace hardware::drv2605 {
 
     void loop(){
         // Retry hardware disable after an unsuccessful communication recovery.
-        if(s_fault){
+        if(fault){
             const int64_t now = esp_timer_get_time();
-            if(now < s_next_poll_us) return;
-            s_next_poll_us = now + 1000000;
-            if(xl9555::set_haptic_enabled(false) == ESP_OK) s_fault = false;
+            if(now < next_poll_us) return;
+            next_poll_us = now + 1000000;
+            if(xl9555::set_haptic_enabled(false) == ESP_OK) fault = false;
             return;
         }
         if(!s_ready) return;
         static bool startup_test_attempted = false;
-        if(kStartupTest && !startup_test_attempted){
+        if(startup_test && !startup_test_attempted){
             startup_test_attempted = true;
             if(!s_busy){
-                const esp_err_t err = play_effect(kStartupEffect);
+                const esp_err_t err = play_effect(startup_effect);
                 if(err == ESP_OK) ESP_LOGI(TAG, "Startup vibration requested");
                 else ESP_LOGW(TAG, "Startup vibration failed: %s", esp_err_to_name(err));
             }
         }
         if(!s_busy) return;
         const int64_t now = esp_timer_get_time();
-        if(now < s_next_poll_us) return;
-        s_next_poll_us = now + kPollUs;
-        if(now - s_started_us >= kPlaybackLimitUs){
+        if(now < next_poll_us) return;
+        next_poll_us = now + poll_us;
+        if(now - started_us >= playback_limit_us){
             ESP_LOGW(TAG, "Playback timeout; stopping motor");
             (void)stop();
             return;
@@ -214,7 +214,7 @@ namespace hardware::drv2605 {
         const esp_err_t off = xl9555::set_haptic_enabled(false);
         s_ready = false;
         s_busy = false;
-        s_fault = (off != ESP_OK);
+        fault = (off != ESP_OK);
         if(s_device){
             const esp_err_t err = i2c_master_bus_rm_device(s_device);
             if(err != ESP_OK) return err;

@@ -13,8 +13,8 @@
 #include "Storage.h"
 
 namespace hardware::mia_m10q {
-    static UtcCallback s_utc_callback = nullptr;
-    void set_utc_callback(UtcCallback callback){ s_utc_callback = callback; }
+    static UtcCallback utc_callback = nullptr;
+    void set_utc_callback(UtcCallback callback){ utc_callback = callback; }
 
     static const char *TAG = "MIA_M10Q";
     static constexpr uart_port_t GPS_UART = UART_NUM_1;
@@ -373,7 +373,7 @@ namespace hardware::mia_m10q {
             uint32_t utc_seconds = 0;
             if(parse_rmc_utc(sentence, utc_seconds)){
                 // The UTC callback owner throttles synchronization and RTC writes.
-                if(s_utc_callback) (void)s_utc_callback(utc_seconds);
+                if(utc_callback) (void)utc_callback(utc_seconds);
             }
 
             if(valid_fix){

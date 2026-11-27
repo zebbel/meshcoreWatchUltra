@@ -19,13 +19,13 @@ namespace watch::display {
         // Restrict one LVGL render operation to bounded rows so scaled-font
         // rasterization cannot monopolize CPU0 for a full 410x502 frame.
         // Keep PARTIAL mode for inexpensive small dirty regions.
-        constexpr int kDrawRows = 32;
+        constexpr int draw_rows = 32;
         const char *const TAG = "WatchDisplay";
-        bool s_adapter_ready = false;
+        bool adapter_ready = false;
         bool s_ready = false;
         // No LVGL tick or render task activity while AMOLED is off.
-        bool s_adapter_paused = false;
-        uint32_t s_flush_events = 0;
+        bool adapter_paused = false;
+        uint32_t flush_events = 0;
 
         // ------------------------------------------------------------------------
         // Touch input adapter
@@ -47,14 +47,14 @@ namespace watch::display {
         }
 
         void init_touch_input(lv_display_t *disp){
-            lv_indev_t *s_touch_indev = lv_indev_create();
-            if(!s_touch_indev){
+            lv_indev_t *touch_indev = lv_indev_create();
+            if(!touch_indev){
                 ESP_LOGW(TAG, "LVGL touch input allocation failed; touch wake still available");
                 return;
             }
-            lv_indev_set_type(s_touch_indev, LV_INDEV_TYPE_POINTER);
-            lv_indev_set_display(s_touch_indev, disp);
-            lv_indev_set_read_cb(s_touch_indev, read_touch);
+            lv_indev_set_type(touch_indev, LV_INDEV_TYPE_POINTER);
+            lv_indev_set_display(touch_indev, disp);
+            lv_indev_set_read_cb(touch_indev, read_touch);
             ESP_LOGI(TAG, "LVGL touch pointer registered (IRQ-driven reports)");
         }
         // ------------------------------------------------------------------------
@@ -83,7 +83,7 @@ namespace watch::display {
         // for one scheduler tick after every second PARTIAL flush so IDLE0 can
         // run and service the watchdog. No effect when display power is off.
         void on_flush_submitted(lv_event_t *){
-            if((++s_flush_events & 1U) == 0U) vTaskDelay(1);
+            if((++flush_events & 1U) == 0U) vTaskDelay(1);
         }
 
         // ------------------------------------------------------------------------
@@ -112,7 +112,7 @@ namespace watch::display {
                 ESP_LOGW(TAG, "LVGL pause failed: %s", esp_err_to_name(err));
                 return err;
             }
-            s_adapter_paused = true;
+            adapter_paused = true;
             // The CO5300 DISPOFF command is an SPI tx_param operation.
             // ESP-IDF drains queued color DMA before issuing that command,
             // replacing the earlier unverified 30ms settling delay.
@@ -121,7 +121,7 @@ namespace watch::display {
                 // Do not stop the UI worker if the panel failed to sleep.
                 (void)hardware::co5300::set_screen_enabled(true);
                 if(esp_lv_adapter_resume() == ESP_OK){
-                    s_adapter_paused = false;
+                    adapter_paused = false;
                     if(esp_lv_adapter_lock(500) == ESP_OK){
                         lv_obj_invalidate(lv_screen_active());
                         esp_lv_adapter_unlock();
@@ -149,7 +149,7 @@ namespace watch::display {
                 (void)hardware::co5300::reveal_after_full_refresh();
                 return err;
             }
-            if(s_adapter_paused){
+            if(adapter_paused){
                 err = esp_lv_adapter_resume();
                 if(err != ESP_OK){
                     esp_lv_adapter_unlock();
@@ -157,7 +157,7 @@ namespace watch::display {
                     ESP_LOGE(TAG, "LVGL resume failed: %s", esp_err_to_name(err));
                     return err;
                 }
-                s_adapter_paused = false;
+                adapter_paused = false;
             }
             lv_display_t *disp = lv_display_get_default();
             if(disp == nullptr){
@@ -196,9 +196,9 @@ namespace watch::display {
 
     esp_err_t init(){
         if(s_ready) return ESP_OK;
-        if(s_adapter_ready) return ESP_ERR_INVALID_STATE;
+        if(adapter_ready) return ESP_ERR_INVALID_STATE;
 
-        constexpr size_t kDrawBufferBytes = static_cast<size_t>(hardware::co5300::width) * kDrawRows * 2;
+        constexpr size_t draw_buffer_bytes = static_cast<size_t>(hardware::co5300::width) * draw_rows * 2;
         esp_err_t err = hardware::co5300::init();
         if(err != ESP_OK){
             ESP_LOGW(TAG, "CO5300 panel initialization failed: %s", esp_err_to_name(err));
@@ -219,7 +219,7 @@ namespace watch::display {
             hardware::co5300::shutdown();
             return err;
         }
-        s_adapter_ready = true;
+        adapter_ready = true;
 
         esp_lv_adapter_display_config_t display_cfg = {};
         display_cfg.panel = hardware::co5300::panel();
@@ -228,7 +228,7 @@ namespace watch::display {
         display_cfg.profile.rotation = ESP_LV_ADAPTER_ROTATE_0;
         display_cfg.profile.hor_res = hardware::co5300::width;
         display_cfg.profile.ver_res = hardware::co5300::height;
-        display_cfg.profile.buffer_height = kDrawRows;
+        display_cfg.profile.buffer_height = draw_rows;
         display_cfg.profile.use_psram = true; // Verified on the device.
         display_cfg.profile.enable_ppa_accel = false;
         // Single 32-row PSRAM draw buffer: LVGL waits for a completed flush
@@ -262,7 +262,7 @@ namespace watch::display {
         }
         if(err != ESP_OK){
             esp_lv_adapter_deinit();
-            s_adapter_ready = false;
+            adapter_ready = false;
             hardware::co5300::shutdown();
             ESP_LOGW(TAG, "LVGL adapter start failed: %s", esp_err_to_name(err));
             return err;
@@ -289,7 +289,7 @@ namespace watch::display {
         if(touch_err != ESP_OK){
             ESP_LOGW(TAG, "Touch wake service unavailable: %s; keeping panel on", esp_err_to_name(touch_err));
         }
-        ESP_LOGI(TAG, "LVGL ready: %u-row PSRAM buffer (%zu bytes), full-width updates", static_cast<unsigned>(kDrawRows), kDrawBufferBytes);
+        ESP_LOGI(TAG, "LVGL ready: %u-row PSRAM buffer (%zu bytes), full-width updates", static_cast<unsigned>(draw_rows), draw_buffer_bytes);
         return ESP_OK;
     }
 

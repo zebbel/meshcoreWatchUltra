@@ -10,9 +10,9 @@
 
 namespace watch::status {
     namespace {
-        constexpr uint32_t kStatusUpdateMs = 1000U;
+        constexpr uint32_t status_update_ms = 1000U;
         WatchStatus s_status{};
-        portMUX_TYPE s_status_mux = portMUX_INITIALIZER_UNLOCKED;
+        portMUX_TYPE status_mux = portMUX_INITIALIZER_UNLOCKED;
     }
 
     // ------------------------------------------------------------------------
@@ -24,7 +24,7 @@ namespace watch::status {
     void update(bool meshcore_enabled){
         static uint32_t last_update_ms = 0;
         const uint32_t now = hardware::system::millis();
-        if(last_update_ms != 0 && now - last_update_ms < kStatusUpdateMs) return;
+        if(last_update_ms != 0 && now - last_update_ms < status_update_ms) return;
         last_update_ms = now;
 
         WatchStatus snapshot{};
@@ -40,9 +40,9 @@ namespace watch::status {
         snapshot.meshcore_active = meshcore_enabled && hardware::sd::ready();
         if(snapshot.meshcore_active) snapshot.meshcore_rx_packets = meshcore::received_packet_count();
         snapshot.ble_connected = hardware::bluetooth::transport().connected();
-        portENTER_CRITICAL(&s_status_mux);
+        portENTER_CRITICAL(&status_mux);
         s_status = snapshot;
-        portEXIT_CRITICAL(&s_status_mux);
+        portEXIT_CRITICAL(&status_mux);
     }
 
     // ------------------------------------------------------------------------
@@ -50,9 +50,9 @@ namespace watch::status {
     // ------------------------------------------------------------------------
 
     WatchStatus get(){
-        portENTER_CRITICAL(&s_status_mux);
+        portENTER_CRITICAL(&status_mux);
         const WatchStatus snapshot = s_status;
-        portEXIT_CRITICAL(&s_status_mux);
+        portEXIT_CRITICAL(&status_mux);
         return snapshot;
     }
 } // namespace watch::status

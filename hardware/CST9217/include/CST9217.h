@@ -18,7 +18,7 @@ namespace hardware::cst9217 {
 
     esp_err_t init();
     // Display policy task notification bits (not a counting semaphore).
-    constexpr uint32_t kTouchIrqNotification = 1U << 0;
+    constexpr uint32_t touch_irq_notification = 1U << 0;
     void set_notification_task(TaskHandle_t task);
     // Main task only: after RTC pad restoration, recheck a latched IRQ level.
     void recheck_pending_irq();

@@ -17,8 +17,8 @@ namespace hardware::cst9217 {
     namespace {
         const char *const TAG = "CST9217Hardware";
         esp_lcd_panel_io_handle_t s_io = nullptr;
-        esp_lcd_touch_handle_t s_touch = nullptr;
-        TaskHandle_t s_notification_task = nullptr;
+        esp_lcd_touch_handle_t touch = nullptr;
+        TaskHandle_t notification_task = nullptr;
         bool s_ready = false;
 
         // ------------------------------------------------------------------------
@@ -26,9 +26,9 @@ namespace hardware::cst9217 {
         // ------------------------------------------------------------------------
 
         void cleanup(){
-            if(s_touch != nullptr){
-                esp_lcd_touch_del(s_touch);
-                s_touch = nullptr;
+            if(touch != nullptr){
+                esp_lcd_touch_del(touch);
+                touch = nullptr;
             }
             if(s_io != nullptr){
                 esp_lcd_panel_io_del(s_io);
@@ -42,10 +42,10 @@ namespace hardware::cst9217 {
 
         // Wake the consumer task; never perform I2C operations inside the ISR.
         void IRAM_ATTR touch_irq(void *){
-            TaskHandle_t task = s_notification_task;
+            TaskHandle_t task = notification_task;
             if(task == nullptr) return;
             BaseType_t higher_priority_woken = pdFALSE;
-            xTaskNotifyFromISR(task, kTouchIrqNotification, eSetBits, &higher_priority_woken);
+            xTaskNotifyFromISR(task, touch_irq_notification, eSetBits, &higher_priority_woken);
             if(higher_priority_woken == pdTRUE) portYIELD_FROM_ISR();
         }
     } // namespace
@@ -87,7 +87,7 @@ namespace hardware::cst9217 {
         touch_cfg.levels.reset = 0;
         touch_cfg.levels.interrupt = 0;
 
-        err = esp_lcd_touch_new_i2c_cst9217(s_io, &touch_cfg, &s_touch);
+        err = esp_lcd_touch_new_i2c_cst9217(s_io, &touch_cfg, &touch);
         if(err != ESP_OK){ cleanup(); return err; }
 
         gpio_config_t gpio_cfg = {};
@@ -128,12 +128,12 @@ namespace hardware::cst9217 {
     // Interrupt-driven touch reports
     // ------------------------------------------------------------------------
 
-    void set_notification_task(TaskHandle_t task){ s_notification_task = task; }
+    void set_notification_task(TaskHandle_t task){ notification_task = task; }
 
     void recheck_pending_irq(){
         // Wake the policy task without fabricating a new touch edge. It reads
         // the live IRQ level again before attempting an off-screen touch ACK.
-        const TaskHandle_t task = s_notification_task;
+        const TaskHandle_t task = notification_task;
         if(task != nullptr && gpio_get_level(hardware::board::pins::TOUCH_IRQ) == 0) (void)xTaskNotify(task, 0, eNoAction);
     }
 
@@ -142,13 +142,13 @@ namespace hardware::cst9217 {
         if(!s_ready) return ESP_ERR_INVALID_STATE;
 
         // Only read following GPIO12 IRQ: idle reads can lack the CST92xx 0xAB marker.
-        const esp_err_t read_err = esp_lcd_touch_read_data(s_touch);
+        const esp_err_t read_err = esp_lcd_touch_read_data(touch);
         esp_err_t point_err = ESP_OK;
         if(read_err == ESP_OK){
             esp_lcd_touch_point_data_t data[1] = {};
             uint8_t count = 0;
 
-            point_err = esp_lcd_touch_get_data(s_touch, data, &count, 1);
+            point_err = esp_lcd_touch_get_data(touch, data, &count, 1);
             if(point_err == ESP_OK){
                 point.report_valid = true;
                 if(count > 0){
