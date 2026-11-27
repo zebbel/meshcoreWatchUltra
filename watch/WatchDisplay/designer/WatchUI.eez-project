@@ -199,6 +199,22 @@
         "defaultValue": "true",
         "persistent": false,
         "native": true
+      },
+      {
+        "objID": "0084bf2b-ea4e-4eb3-f1c3-8f4eae1f31fd",
+        "name": "boot_button_count",
+        "type": "integer",
+        "defaultValue": "0",
+        "persistent": false,
+        "native": true
+      },
+      {
+        "objID": "81321064-95e6-4f07-a1c5-56da93ef345f",
+        "name": "power_button_count",
+        "type": "integer",
+        "defaultValue": "0",
+        "persistent": false,
+        "native": true
       }
     ],
     "structures": [],

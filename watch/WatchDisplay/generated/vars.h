@@ -40,6 +40,10 @@ extern bool get_var_gps_failed();
 extern void set_var_gps_failed(bool value);
 extern bool get_var_gps_acquiring();
 extern void set_var_gps_acquiring(bool value);
+extern int32_t get_var_boot_button_count();
+extern void set_var_boot_button_count(int32_t value);
+extern int32_t get_var_power_button_count();
+extern void set_var_power_button_count(int32_t value);
 
 #ifdef __cplusplus
 }

@@ -17,6 +17,7 @@ namespace services {
 
     void restore_wakup_pins(){
         power_management::restore_wakeup_pins_if_needed();
+        display_power::recheck_buttons();
     }
     // ------------------------------------------------------------------------
     // Service polling

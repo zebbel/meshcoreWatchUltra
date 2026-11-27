@@ -8,6 +8,7 @@ idf_component_register(
         CST9217
         esp_timer
         esp_pm
+        esp_hw_support
         freertos
         board
         esp_driver_gpio

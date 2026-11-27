@@ -4,6 +4,8 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_pm.h"
+#include "esp_sleep.h"
+#include "AXP2101.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -41,6 +43,23 @@ namespace services::display_power {
         std::atomic<bool> wrist_wake_pending{false};
         std::atomic<uint32_t> last_activity_ms{0};
         bool s_started = false;
+        // Side buttons: event counters survive a paused EEZ renderer.
+        constexpr uint32_t button_timeout_ms = 30000;
+        constexpr uint32_t button_debounce_ms = 30;
+        constexpr uint32_t button_poll_ms = 25;
+        constexpr uint32_t boot_button_notification = 1U << 2;
+        constexpr uint32_t power_button_notification = 1U << 3;
+        static_assert(((boot_button_notification | power_button_notification) & (wrist_wake_notification | hardware::cst9217::touch_irq_notification)) == 0, "Button notification collision");
+        std::atomic<bool> extended_timeout{false};
+        std::atomic<int32_t> boot_count{0};
+        std::atomic<int32_t> power_count{0};
+        std::atomic<bool> boot_ready{false};
+        std::atomic<bool> power_ready{false};
+        // Debounce state belongs exclusively to the display policy task.
+        bool boot_latched = false;
+        bool boot_release_pending = false;
+        uint32_t boot_release_ms = 0;
+
         // Touch reports pass from the policy task to LVGL through this buffer.
         detail::TouchInputBuffer touch_buffer;
         portMUX_TYPE touch_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -158,9 +177,16 @@ namespace services::display_power {
 
         uint32_t uptime_ms(){ return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL); }
 
+        // Extended mode lasts until the next successful display standby.
+        // Touch activity also restarts the selected inactivity timeout.
+        uint32_t active_timeout_ms(){
+            return extended_timeout.load() && inactivity_timeout_ms < button_timeout_ms ? button_timeout_ms : inactivity_timeout_ms;
+        }
+
         uint32_t next_wait_ms(){
             const uint32_t idle_ms = static_cast<uint32_t>(uptime_ms() - last_activity_ms.load());
-            const uint32_t remaining_ms = idle_ms < inactivity_timeout_ms ? inactivity_timeout_ms - idle_ms : 1;
+            const uint32_t active_timeout = active_timeout_ms();
+            const uint32_t remaining_ms = idle_ms < active_timeout ? active_timeout - idle_ms : 1;
             // Screen awake: wake at its timeout. Screen off: touch and wrist
             // notifications wake immediately; retain a bounded IRQ-level fallback.
             uint32_t wait_ms = screen_off_recheck_ms;
@@ -171,6 +197,7 @@ namespace services::display_power {
             // A bounded release watchdog only while tracking a contact. No
             // additional I2C reads: all coordinate reads remain IRQ-driven.
             if(s_screen_awake.load() && touch_tracking() && wait_ms > touch_release_check_ms) wait_ms = touch_release_check_ms;
+            if((boot_ready.load() || power_ready.load()) && wait_ms > button_poll_ms) wait_ms = button_poll_ms;
             return wait_ms;
         }
 
@@ -269,13 +296,103 @@ namespace services::display_power {
             const uint32_t now = uptime_ms();
             touch_expire(now);
             // Fail safe: keep AMOLED on if touch ACK isn't reliable.
-            if(s_screen_awake.load() && !charging_active.load() && !keep_awake.load() && touch_communication_ok && static_cast<uint32_t>(now - last_activity_ms.load()) >= inactivity_timeout_ms){
+            if(s_screen_awake.load() && !charging_active.load() && !keep_awake.load() && touch_communication_ok && static_cast<uint32_t>(now - last_activity_ms.load()) >= active_timeout_ms()){
                 (void)set_screen_awake(false);
             }
         }
 
+        // ------------------------------------------------------------------------
+        // Side buttons: GPIO interrupts, PMU acknowledgement and debounce
+        // ------------------------------------------------------------------------
+
+        // Configure active-low inputs for polling. We intentionally avoid
+        // registering additional GPIO ISRs here because the previous ISR-based
+        // implementation caused unstable startup behavior on the watch.
+        bool init_button_pin(gpio_num_t pin){
+            gpio_config_t cfg{};
+            cfg.pin_bit_mask = 1ULL << pin;
+            cfg.mode = GPIO_MODE_INPUT;
+            cfg.pull_up_en = GPIO_PULLUP_ENABLE;
+            cfg.intr_type = GPIO_INTR_DISABLE;
+            esp_err_t err = gpio_config(&cfg);
+            if(err != ESP_OK){
+                ESP_LOGW(TAG, "Button GPIO%d setup failed: %s", static_cast<int>(pin), esp_err_to_name(err));
+                return false;
+            }
+#if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && CONFIG_MCW_AUTO_LIGHT_SLEEP && CONFIG_PM_LIGHT_SLEEP_CALLBACKS
+            // Digital GPIO light-sleep wake supports active-low buttons without
+            // changing the existing EXT0 touch or EXT1 LoRa/sensor configuration.
+            err = gpio_wakeup_enable(pin, GPIO_INTR_LOW_LEVEL);
+            if(err == ESP_OK) err = esp_sleep_enable_gpio_wakeup();
+            if(err != ESP_OK){
+                (void)gpio_wakeup_disable(pin);
+                ESP_LOGW(TAG, "Button GPIO%d sleep wake unavailable: %s", static_cast<int>(pin), esp_err_to_name(err));
+            }
+#endif
+            return true;
+        }
+
+        // Run inside the policy task before its first wait. Ignore a BOOT key
+        // held during startup so the first user release does not create an event.
+        void init_buttons(){
+            boot_ready.store(init_button_pin(hardware::board::pins::BOOT_BUTTON));
+            boot_latched = boot_ready.load() && gpio_get_level(hardware::board::pins::BOOT_BUTTON) == 0;
+            if(hardware::axp2101::configure_power_key_irq() == ESP_OK){
+                power_ready.store(init_button_pin(hardware::board::pins::PMU_IRQ));
+            }else{
+                ESP_LOGW(TAG, "Power-key IRQ configuration failed");
+            }
+            ESP_LOGI(TAG, "Buttons ready (polled): boot=%d power=%d", boot_ready.load(), power_ready.load());
+        }
+
+        // Publish after the wake callback so EEZ has resumed and its Watch
+        // components can observe the increment, including the wake press.
+        void publish_button(std::atomic<int32_t> &counter){
+            extended_timeout.store(true);
+            const esp_err_t err = set_screen_awake(true);
+            notify_activity();
+            const int32_t previous = counter.load();
+            counter.store(previous == INT32_MAX ? 1 : previous + 1);
+            if(err != ESP_OK) ESP_LOGW(TAG, "Button display wake failed: %s", esp_err_to_name(err));
+        }
+
+        bool consume_boot_button(){
+            if(!boot_ready.load()) return false;
+            const bool low = gpio_get_level(hardware::board::pins::BOOT_BUTTON) == 0;
+            const uint32_t now = uptime_ms();
+            if(boot_latched){
+                // Require a stable release before accepting another press.
+                if(low){
+                    boot_release_pending = false;
+                }else if(!boot_release_pending){
+                    boot_release_pending = true;
+                    boot_release_ms = now;
+                }else if(now - boot_release_ms >= button_debounce_ms){
+                    boot_latched = false;
+                    boot_release_pending = false;
+                }
+                return false;
+            }
+            if(!low) return false;
+            boot_latched = true;
+            boot_release_pending = false;
+            return true;
+        }
+
+        void process_buttons(uint32_t /*events*/){
+            const bool boot = consume_boot_button();
+            bool power = false;
+            if(power_ready.load() && gpio_get_level(hardware::board::pins::PMU_IRQ) == 0){
+                const esp_err_t err = hardware::axp2101::consume_power_key(power);
+                if(err != ESP_OK) ESP_LOGW(TAG, "Power-key IRQ read failed: %s", esp_err_to_name(err));
+            }
+            if(boot) publish_button(boot_count);
+            if(power) publish_button(power_count);
+        }
+
         // Display policy: event-driven orchestration
         void policy_task(void *){
+            init_buttons();
             bool touch_communication_ok = true;
             uint32_t last_charger_poll = uptime_ms() - charger_poll_ms;
             unsigned charger_read_failures = 0;
@@ -287,6 +404,7 @@ namespace services::display_power {
                 // Touch takes priority over wrist wake. Check timeout last.
                 process_touch(events, touch_communication_ok);
                 process_wrist_wake();
+                process_buttons(events);
                 process_inactivity_timeout(touch_communication_ok);
             }
         }
@@ -395,6 +513,7 @@ namespace services::display_power {
             }
             wrist_wake_pending.store(false);
             s_screen_awake.store(false);
+            extended_timeout.store(false);
             display_lock_release();
             return ESP_OK;
         }
@@ -435,6 +554,16 @@ namespace services::display_power {
         wrist_wake_pending.store(true);
         (void)xTaskNotify(task_handle, wrist_wake_notification, eSetBits);
     }
+
+    void recheck_buttons(){
+        if(!s_started || task_handle == nullptr) return;
+        if((boot_ready.load() && gpio_get_level(hardware::board::pins::BOOT_BUTTON) == 0) || (power_ready.load() && gpio_get_level(hardware::board::pins::PMU_IRQ) == 0)){
+            (void)xTaskNotify(task_handle, 0, eNoAction);
+        }
+    }
+
+    int32_t boot_button_count(){ return boot_count.load(); }
+    int32_t power_button_count(){ return power_count.load(); }
 
     bool is_screen_awake(){ return s_screen_awake.load(); }
     bool is_charging(){ return charging_active.load(); }

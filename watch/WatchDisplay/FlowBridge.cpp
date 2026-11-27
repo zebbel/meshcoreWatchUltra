@@ -128,6 +128,11 @@ extern "C" {
     void set_var_clock_time(const char *){}
     bool get_var_gps_enabled(){ return watch::status::get().gps_enabled; }
     void set_var_gps_enabled(bool){}
+    // Persistent event counters, not short-lived button levels.
+    int32_t get_var_boot_button_count(){ return services::display_power::boot_button_count(); }
+    void set_var_boot_button_count(int32_t){}
+    int32_t get_var_power_button_count(){ return services::display_power::power_button_count(); }
+    void set_var_power_button_count(int32_t){}
     bool get_var_gps_fix(){ return watch::status::get().gps_has_fix; }
     void set_var_gps_fix(bool){}
     bool get_var_gps_acquiring(){ return watch::status::get().gps_acquiring; }

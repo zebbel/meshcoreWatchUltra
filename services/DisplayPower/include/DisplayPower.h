@@ -15,6 +15,11 @@ namespace services::display_power {
     esp_err_t set_screen_awake(bool awake);
     // Main task only: queue a nonblocking wake without resetting an awake display's timeout.
     void request_wrist_wake();
+    // Main task fallback after light sleep: notify if a button IRQ is latched.
+    void recheck_buttons();
+    // Read-only event sequence numbers for EEZ; zero means no event since boot.
+    int32_t boot_button_count();
+    int32_t power_button_count();
     bool is_screen_awake();
     bool is_charging();
     void notify_activity();

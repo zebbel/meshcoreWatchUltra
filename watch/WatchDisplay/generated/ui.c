@@ -296,6 +296,8 @@ native_var_t native_vars[] = {
     { NATIVE_VAR_TYPE_INTEGER, get_var_gps_satellites, set_var_gps_satellites }, 
     { NATIVE_VAR_TYPE_BOOLEAN, get_var_gps_failed, set_var_gps_failed }, 
     { NATIVE_VAR_TYPE_BOOLEAN, get_var_gps_acquiring, set_var_gps_acquiring }, 
+    { NATIVE_VAR_TYPE_INTEGER, get_var_boot_button_count, set_var_boot_button_count }, 
+    { NATIVE_VAR_TYPE_INTEGER, get_var_power_button_count, set_var_power_button_count }, 
 };
 
 ActionExecFunc actions[] = {

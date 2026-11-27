@@ -89,6 +89,26 @@ namespace hardware::axp2101 {
     // Battery and charger measurements
     // ------------------------------------------------------------------------
 
+    // AXP2101 IRQ bank 1: short power-key press is bit 3.
+    // Status bits are write-one-to-clear. Never acknowledge unrelated IRQs.
+    esp_err_t configure_power_key_irq(){
+        constexpr uint8_t short_press = 1U << 3;
+        esp_err_t err = write_axp_register(0x49, short_press);
+        if(err == ESP_OK) err = update_axp_register(0x41, short_press, short_press);
+        return err;
+    }
+
+    esp_err_t consume_power_key(bool &pressed){
+        constexpr uint8_t short_press = 1U << 3;
+        pressed = false;
+        uint8_t status = 0;
+        esp_err_t err = read_register(0x49, &status, 1);
+        if(err != ESP_OK || !(status & short_press)) return err;
+        err = write_axp_register(0x49, short_press);
+        if(err == ESP_OK) pressed = true;
+        return err;
+    }
+
     esp_err_t read_charging(bool &charging){
         // PMU status2: bits 6:5 indicate battery current direction;
         // bits 2:0 identify the charger phase (0-3 active, 4 done, 5 idle).
