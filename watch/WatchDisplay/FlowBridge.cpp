@@ -130,6 +130,10 @@ extern "C" {
     void set_var_gps_enabled(bool){}
     bool get_var_gps_fix(){ return watch::status::get().gps_has_fix; }
     void set_var_gps_fix(bool){}
+    bool get_var_gps_acquiring(){ return watch::status::get().gps_acquiring; }
+    void set_var_gps_acquiring(bool){}
+    bool get_var_gps_failed(){ return watch::status::get().gps_failed; }
+    void set_var_gps_failed(bool){}
     int32_t get_var_gps_satellites(){ return watch::status::get().gps_satellites; }
     void set_var_gps_satellites(int32_t){}
     bool get_var_ble_connected(){ return watch::status::get().ble_connected; }

@@ -13,7 +13,7 @@
 objects_t objects;
 
 static const char *screen_names[] = { "Main", "charging", "pairing" };
-static const char *object_names[] = { "main", "charging", "pairing", "battery_label", "time_label", "battery_bar", "charge_lightning_icon_1", "bluetooth_icon", "charge_percent_label", "charge_prcentage_arc", "obj0" };
+static const char *object_names[] = { "main", "charging", "pairing", "battery_label", "time_label", "battery_bar", "charge_lightning_icon", "bluetooth_icon", "gps_icon", "obj0", "charge_percent_label", "charge_prcentage_arc", "obj1" };
 
 //
 // Event handlers
@@ -125,9 +125,9 @@ void create_screen_main() {
             lv_obj_set_style_radius(obj, 2, LV_PART_INDICATOR | LV_STATE_DEFAULT);
         }
         {
-            // charge_lightning_icon_1
+            // charge_lightning_icon
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.charge_lightning_icon_1 = obj;
+            objects.charge_lightning_icon = obj;
             lv_obj_set_pos(obj, 213, 17);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -139,11 +139,31 @@ void create_screen_main() {
             // bluetooth_icon
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.bluetooth_icon = obj;
-            lv_obj_set_pos(obj, 154, 12);
+            lv_obj_set_pos(obj, 120, 13);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &lv_font_montserrat_30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x3399ff), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "");
+        }
+        {
+            // gps_icon
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.gps_icon = obj;
+            lv_obj_set_pos(obj, 288, 12);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_font(obj, &lv_font_montserrat_30, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_color(obj, lv_color_hex(0x0108ff), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text(obj, "");
+        }
+        {
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.obj0 = obj;
+            lv_obj_set_pos(obj, 295, 50);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_style_text_color(obj, lv_color_hex(0xcdd8df), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text(obj, "");
         }
     }
     
@@ -182,10 +202,28 @@ void tick_screen_main() {
     }
     {
         const char *new_val = evalTextProperty(flowState, 4, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.charge_lightning_icon_1);
+        const char *cur_val = lv_label_get_text(objects.charge_lightning_icon);
         if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.charge_lightning_icon_1;
-            lv_label_set_text(objects.charge_lightning_icon_1, new_val);
+            tick_value_change_obj = objects.charge_lightning_icon;
+            lv_label_set_text(objects.charge_lightning_icon, new_val);
+            tick_value_change_obj = NULL;
+        }
+    }
+    {
+        const char *new_val = evalTextProperty(flowState, 6, 3, "Failed to evaluate Text in Label widget");
+        const char *cur_val = lv_label_get_text(objects.gps_icon);
+        if (strcmp(new_val, cur_val) != 0) {
+            tick_value_change_obj = objects.gps_icon;
+            lv_label_set_text(objects.gps_icon, new_val);
+            tick_value_change_obj = NULL;
+        }
+    }
+    {
+        const char *new_val = evalTextProperty(flowState, 7, 3, "Failed to evaluate Text in Label widget");
+        const char *cur_val = lv_label_get_text(objects.obj0);
+        if (strcmp(new_val, cur_val) != 0) {
+            tick_value_change_obj = objects.obj0;
+            lv_label_set_text(objects.obj0, new_val);
             tick_value_change_obj = NULL;
         }
     }
@@ -277,7 +315,7 @@ void create_screen_pairing() {
         lv_obj_t *parent_obj = obj;
         {
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj0 = obj;
+            objects.obj1 = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xebe9e9), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -295,10 +333,10 @@ void tick_screen_pairing() {
     (void)flowState;
     {
         const char *new_val = evalTextProperty(flowState, 0, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.obj0);
+        const char *cur_val = lv_label_get_text(objects.obj1);
         if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.obj0;
-            lv_label_set_text(objects.obj0, new_val);
+            tick_value_change_obj = objects.obj1;
+            lv_label_set_text(objects.obj1, new_val);
             tick_value_change_obj = NULL;
         }
     }

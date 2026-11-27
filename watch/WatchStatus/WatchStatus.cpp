@@ -34,7 +34,8 @@ namespace watch::status {
         hardware::gps::status_t gps_info{};
         hardware::gps::get_status(gps_info);
         snapshot.gps_acquiring = snapshot.gps_enabled && gps_info.powered;
-        if(snapshot.gps_has_fix) snapshot.gps_satellites = gps_info.satellites;
+        snapshot.gps_failed = snapshot.gps_enabled && gps_info.failed;
+        if(snapshot.gps_enabled) snapshot.gps_satellites = gps_info.satellites;
 
         snapshot.meshcore_active = meshcore_enabled && hardware::sd::ready();
         if(snapshot.meshcore_active) snapshot.meshcore_rx_packets = meshcore::received_packet_count();

@@ -24,11 +24,13 @@ typedef struct _objects_t {
     lv_obj_t *battery_label;
     lv_obj_t *time_label;
     lv_obj_t *battery_bar;
-    lv_obj_t *charge_lightning_icon_1;
+    lv_obj_t *charge_lightning_icon;
     lv_obj_t *bluetooth_icon;
+    lv_obj_t *gps_icon;
+    lv_obj_t *obj0;
     lv_obj_t *charge_percent_label;
     lv_obj_t *charge_prcentage_arc;
-    lv_obj_t *obj0;
+    lv_obj_t *obj1;
 } objects_t;
 
 extern objects_t objects;

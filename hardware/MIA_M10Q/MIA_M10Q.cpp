@@ -307,7 +307,7 @@ namespace hardware::mia_m10q {
         have_cycle_fix = false;
         first_fix_ms = 0;
         started_ms = now;
-
+        diagnostics.failed = false;
     }
 
     static void stop_acquisition(uint32_t now){
@@ -322,6 +322,9 @@ namespace hardware::mia_m10q {
 
         powered = false;
         stopped_ms = now;
+
+        // Report unsuccessful acquisition while waiting for retry.
+        diagnostics.failed = gps_enabled && !have_cycle_fix;
 
         // Failed acquisition: 30, 60, then 120 minutes between attempts.
         // Any valid fix returns the wait to 15 minutes. Disabling GPS
@@ -479,6 +482,7 @@ namespace hardware::mia_m10q {
         gps_enabled = enabled;
         latest = {};
         sentence_length = 0;
+        diagnostics.failed = false;
 
         if(enabled){
             consecutive_misses = 0;

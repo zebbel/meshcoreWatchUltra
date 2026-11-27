@@ -17,6 +17,7 @@ namespace hardware::mia_m10q {
     struct status_t {
         bool initialized = false;
         bool powered = false;
+        bool failed = false;
         bool has_gga = false;
         uint32_t gga_count = 0;
         uint32_t last_gga_ms = 0;

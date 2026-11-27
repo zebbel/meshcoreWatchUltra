@@ -159,6 +159,46 @@
         "defaultValue": "\"\"",
         "persistent": false,
         "native": true
+      },
+      {
+        "objID": "66d1b3fe-1e66-4cc1-b60a-b3765e62ae87",
+        "name": "gps_enabled",
+        "type": "boolean",
+        "defaultValue": "true",
+        "persistent": false,
+        "native": true
+      },
+      {
+        "objID": "5eb47210-ede5-4247-80e4-2d574b81e443",
+        "name": "gps_fix",
+        "type": "boolean",
+        "defaultValue": "false",
+        "persistent": false,
+        "native": true
+      },
+      {
+        "objID": "b67561e7-abfa-47b9-cac4-65fb87c975ca",
+        "name": "gps_satellites",
+        "type": "integer",
+        "defaultValue": "0",
+        "persistent": false,
+        "native": true
+      },
+      {
+        "objID": "1b82cdc1-2f19-481c-eada-fc373f56aa10",
+        "name": "gps_failed",
+        "type": "boolean",
+        "defaultValue": "false",
+        "persistent": false,
+        "native": true
+      },
+      {
+        "objID": "0e361fe2-b061-4a81-9855-14dbdcc8dd08",
+        "name": "gps_acquiring",
+        "type": "boolean",
+        "defaultValue": "true",
+        "persistent": false,
+        "native": true
       }
     ],
     "structures": [],
@@ -392,7 +432,7 @@
               },
               "timeline": [],
               "eventHandlers": [],
-              "identifier": "charge_lightning_icon_1",
+              "identifier": "charge_lightning_icon",
               "leftUnit": "px",
               "topUnit": "px",
               "widthUnit": "content",
@@ -432,8 +472,8 @@
             {
               "objID": "115bc5dd-4e6f-4907-f146-98b99a74c71b",
               "type": "LVGLLabelWidget",
-              "left": 154,
-              "top": 12,
+              "left": 120,
+              "top": 13,
               "width": 26,
               "height": 33,
               "customInputs": [],
@@ -481,6 +521,113 @@
               "recolor": false,
               "previewValue": "",
               "useStaticText": true
+            },
+            {
+              "objID": "7960f46c-dd27-498e-be9a-f9e58ea6b644",
+              "type": "LVGLLabelWidget",
+              "left": 288,
+              "top": 12,
+              "width": 30,
+              "height": 33,
+              "customInputs": [],
+              "customOutputs": [],
+              "style": {
+                "objID": "86ef71f4-9e0c-4c54-8ebb-c986fb23b2d9",
+                "useStyle": "default",
+                "conditionalStyles": [],
+                "childStyles": []
+              },
+              "timeline": [],
+              "eventHandlers": [],
+              "identifier": "gps_icon",
+              "leftUnit": "px",
+              "topUnit": "px",
+              "widthUnit": "content",
+              "heightUnit": "content",
+              "children": [],
+              "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
+              "hiddenFlag": false,
+              "hiddenFlagType": "literal",
+              "clickableFlagType": "literal",
+              "flagScrollbarMode": "",
+              "flagScrollDirection": "",
+              "scrollSnapX": "",
+              "scrollSnapY": "",
+              "checkedStateType": "literal",
+              "disabledStateType": "literal",
+              "states": "",
+              "localStyles": {
+                "objID": "1ca5a8ec-9c69-49ca-fd45-594fcc545e86",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "text_font": "MONTSERRAT_30",
+                      "text_color": "#0108ff"
+                    }
+                  }
+                }
+              },
+              "group": "",
+              "groupIndex": 0,
+              "text": "gps_enabled == true ? \"\" : \"\"",
+              "textType": "expression",
+              "longMode": "WRAP",
+              "recolor": false,
+              "previewValue": "",
+              "useStaticText": false
+            },
+            {
+              "objID": "d2914e18-8811-4764-e836-e804d4eb94f5",
+              "type": "LVGLLabelWidget",
+              "left": 295,
+              "top": 50,
+              "width": 16,
+              "height": 30,
+              "customInputs": [],
+              "customOutputs": [],
+              "style": {
+                "objID": "32a87ce3-7919-4022-e0a3-aa9728e54e7d",
+                "useStyle": "default",
+                "conditionalStyles": [],
+                "childStyles": []
+              },
+              "timeline": [],
+              "eventHandlers": [],
+              "leftUnit": "px",
+              "topUnit": "px",
+              "widthUnit": "content",
+              "heightUnit": "content",
+              "children": [],
+              "widgetFlags": "CLICK_FOCUSABLE|GESTURE_BUBBLE|PRESS_LOCK|SCROLLABLE|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_WITH_ARROW|SNAPPABLE",
+              "hiddenFlagType": "literal",
+              "clickableFlagType": "literal",
+              "flagScrollbarMode": "",
+              "flagScrollDirection": "",
+              "scrollSnapX": "",
+              "scrollSnapY": "",
+              "checkedStateType": "literal",
+              "disabledStateType": "literal",
+              "states": "",
+              "localStyles": {
+                "objID": "b9f6df55-5307-415c-8bb7-6fb531cb86d1",
+                "definition": {
+                  "MAIN": {
+                    "DEFAULT": {
+                      "text_color": "#CDD8DF",
+                      "text_font": "MONTSERRAT_28",
+                      "text_align": "CENTER"
+                    }
+                  }
+                }
+              },
+              "group": "",
+              "groupIndex": 0,
+              "text": "gps_enabled == true ? gps_satellites : \"\"",
+              "textType": "expression",
+              "longMode": "WRAP",
+              "recolor": false,
+              "previewValue": "5",
+              "useStaticText": true
             }
           ],
           "widgetFlags": "CLICKABLE|PRESS_LOCK|CLICK_FOCUSABLE|GESTURE_BUBBLE|SNAPPABLE|SCROLL_ELASTIC|SCROLL_MOMENTUM|SCROLL_CHAIN_HOR|SCROLL_CHAIN_VER",
@@ -517,8 +664,8 @@
           "type": "WatchVariableActionComponent",
           "left": 184,
           "top": 536,
-          "width": 142,
-          "height": 54,
+          "width": 141,
+          "height": 53,
           "customInputs": [],
           "customOutputs": [],
           "variable": "is_charging"
@@ -529,7 +676,7 @@
           "left": 457,
           "top": 536,
           "width": 116,
-          "height": 70,
+          "height": 68,
           "customInputs": [],
           "customOutputs": [],
           "value": "is_charging"
@@ -540,7 +687,7 @@
           "left": 765,
           "top": 534,
           "width": 366,
-          "height": 54,
+          "height": 53,
           "customInputs": [],
           "customOutputs": [],
           "actions": [
@@ -566,7 +713,7 @@
           "left": 600,
           "top": 236,
           "width": 87,
-          "height": 54,
+          "height": 53,
           "customInputs": [],
           "customOutputs": [],
           "milliseconds": "5000"
@@ -577,7 +724,7 @@
           "left": 438,
           "top": 236,
           "width": 116,
-          "height": 70,
+          "height": 68,
           "customInputs": [],
           "customOutputs": [],
           "value": "is_charging"
@@ -605,7 +752,7 @@
           "left": 184,
           "top": 631,
           "width": 154,
-          "height": 54,
+          "height": 53,
           "customInputs": [],
           "customOutputs": [],
           "variable": "ble_connected"
@@ -615,8 +762,8 @@
           "type": "IsTrueActionComponent",
           "left": 457,
           "top": 624,
-          "width": 129,
-          "height": 70,
+          "width": 128,
+          "height": 68,
           "customInputs": [],
           "customOutputs": [],
           "value": "ble_connected"
@@ -626,8 +773,8 @@
           "type": "LVGLActionComponent",
           "left": 706,
           "top": 624,
-          "width": 348,
-          "height": 54,
+          "width": 347,
+          "height": 53,
           "customInputs": [],
           "customOutputs": [],
           "actions": [
@@ -652,8 +799,8 @@
           "type": "LVGLActionComponent",
           "left": 706,
           "top": 684,
-          "width": 348,
-          "height": 54,
+          "width": 347,
+          "height": 53,
           "customInputs": [],
           "customOutputs": [],
           "actions": [
@@ -670,6 +817,158 @@
               "partType": "literal",
               "state": "DEFAULT",
               "stateType": "literal"
+            }
+          ]
+        },
+        {
+          "objID": "ba08433d-f7d5-44af-c1dd-fead23ee2b51",
+          "type": "LVGLActionComponent",
+          "left": 991,
+          "top": 930,
+          "width": 310,
+          "height": 53,
+          "customInputs": [],
+          "customOutputs": [],
+          "actions": [
+            {
+              "objID": "af8e1133-fb13-4afc-fdf2-7426683c3af8",
+              "action": "objStyleSetProperty",
+              "object": "gps_icon",
+              "objectType": "literal",
+              "property": "text_color",
+              "propertyType": "literal",
+              "value": "#808080",
+              "valueType": "literal",
+              "part": "MAIN",
+              "partType": "literal",
+              "state": "DEFAULT",
+              "stateType": "literal"
+            }
+          ]
+        },
+        {
+          "objID": "e6e1092d-c01d-4d30-88b4-c632ef6c02c2",
+          "type": "LVGLActionComponent",
+          "left": 991,
+          "top": 766,
+          "width": 310,
+          "height": 53,
+          "customInputs": [],
+          "customOutputs": [],
+          "actions": [
+            {
+              "objID": "eccc9a5d-3dd0-4f0e-afca-7016569b4cb7",
+              "action": "objStyleSetProperty",
+              "object": "gps_icon",
+              "objectType": "literal",
+              "property": "text_color",
+              "propertyType": "literal",
+              "value": "#00cc66",
+              "valueType": "literal",
+              "part": "MAIN",
+              "partType": "literal",
+              "state": "DEFAULT",
+              "stateType": "literal"
+            }
+          ]
+        },
+        {
+          "objID": "e29a6a6d-d2b7-4dd1-8b10-e36e2bbc1633",
+          "type": "LVGLActionComponent",
+          "left": 991,
+          "top": 877,
+          "width": 310,
+          "height": 53,
+          "customInputs": [],
+          "customOutputs": [],
+          "description": "",
+          "actions": [
+            {
+              "objID": "3eb91a5b-58da-425e-e0eb-d9509434e9e1",
+              "action": "objStyleSetProperty",
+              "object": "gps_icon",
+              "objectType": "literal",
+              "property": "text_color",
+              "propertyType": "literal",
+              "value": "#e27e09",
+              "valueType": "literal",
+              "part": "MAIN",
+              "partType": "literal",
+              "state": "DEFAULT",
+              "stateType": "literal"
+            }
+          ]
+        },
+        {
+          "objID": "34b74b67-1b43-45a1-dddc-484393c0085d",
+          "type": "LVGLActionComponent",
+          "left": 991,
+          "top": 824,
+          "width": 310,
+          "height": 53,
+          "customInputs": [],
+          "customOutputs": [],
+          "actions": [
+            {
+              "objID": "394e1fce-3dda-4876-a2ef-7a5ce802ae5f",
+              "action": "objStyleSetProperty",
+              "object": "gps_icon",
+              "objectType": "literal",
+              "property": "text_color",
+              "propertyType": "literal",
+              "value": "#F60000",
+              "valueType": "literal",
+              "part": "MAIN",
+              "partType": "literal",
+              "state": "DEFAULT",
+              "stateType": "literal"
+            }
+          ]
+        },
+        {
+          "objID": "71c08853-9e30-4c73-ac34-8da747a09391",
+          "type": "WatchVariableActionComponent",
+          "left": 184,
+          "top": 766,
+          "width": 510,
+          "height": 53,
+          "customInputs": [],
+          "customOutputs": [],
+          "variable": "!gps_enabled ? 0 : gps_fix ? 1 : gps_failed ? 2 : gps_acquiring ? 3 : 4"
+        },
+        {
+          "objID": "582383e5-f9fc-4a9b-b3b8-aeccc0f10e40",
+          "type": "SwitchActionComponent",
+          "left": 728,
+          "top": 766,
+          "width": 215,
+          "height": 114,
+          "customInputs": [],
+          "customOutputs": [],
+          "tests": [
+            {
+              "objID": "b1a355cd-cdc5-412d-c2e2-232d4251983a",
+              "condition": "gps_fix",
+              "outputName": "Fix",
+              "outputValue": "1"
+            },
+            {
+              "objID": "b481f82d-257b-4851-9cac-e39614afb697",
+              "condition": "gps_failed",
+              "outputName": "Failed",
+              "outputValue": "1"
+            },
+            {
+              "objID": "06d1c9e1-f611-4339-a31a-4626a129759a",
+              "condition": "gps_acquiring",
+              "outputName": "Acquiring",
+              "outputValue": "1"
+            },
+            {
+              "objID": "c12cad95-1894-4016-910c-aed5b74660f0",
+              "condition": "true",
+              "outputName": "Idle",
+              "outputValue": "1"
             }
           ]
         }
@@ -750,6 +1049,48 @@
           "source": "f63efc7f-f60d-4fed-e6f6-e119b57de9cd",
           "output": "False",
           "target": "f711567d-24c1-433f-bb5f-01767b124a0a",
+          "input": "@seqin"
+        },
+        {
+          "objID": "c2e49653-6ea5-4c22-f770-8701aa750bb8",
+          "source": "2f6524fa-f46a-46de-ba45-1bcf9afd85d7",
+          "output": "@seqout",
+          "target": "71c08853-9e30-4c73-ac34-8da747a09391",
+          "input": "@seqin"
+        },
+        {
+          "objID": "cf9e0147-3bf7-48cd-b9d5-75658b66bce7",
+          "source": "71c08853-9e30-4c73-ac34-8da747a09391",
+          "output": "variable",
+          "target": "582383e5-f9fc-4a9b-b3b8-aeccc0f10e40",
+          "input": "@seqin"
+        },
+        {
+          "objID": "56629344-f612-4130-a3bc-d7ca60810f83",
+          "source": "582383e5-f9fc-4a9b-b3b8-aeccc0f10e40",
+          "output": "Fix",
+          "target": "e6e1092d-c01d-4d30-88b4-c632ef6c02c2",
+          "input": "@seqin"
+        },
+        {
+          "objID": "00a37425-eabf-454e-dd26-829486866a1b",
+          "source": "582383e5-f9fc-4a9b-b3b8-aeccc0f10e40",
+          "output": "Failed",
+          "target": "34b74b67-1b43-45a1-dddc-484393c0085d",
+          "input": "@seqin"
+        },
+        {
+          "objID": "702c7a01-bbdd-4ef9-8fd4-f76cfd1be58d",
+          "source": "582383e5-f9fc-4a9b-b3b8-aeccc0f10e40",
+          "output": "Acquiring",
+          "target": "e29a6a6d-d2b7-4dd1-8b10-e36e2bbc1633",
+          "input": "@seqin"
+        },
+        {
+          "objID": "edd1cab5-ed81-45fe-a5b3-ffa1ac5956b9",
+          "source": "582383e5-f9fc-4a9b-b3b8-aeccc0f10e40",
+          "output": "Idle",
+          "target": "ba08433d-f7d5-44af-c1dd-fead23ee2b51",
           "input": "@seqin"
         }
       ],
@@ -979,8 +1320,8 @@
           "type": "WatchVariableActionComponent",
           "left": 571,
           "top": 380,
-          "width": 142,
-          "height": 54,
+          "width": 141,
+          "height": 53,
           "customInputs": [],
           "customOutputs": [],
           "variable": "is_charging"
@@ -991,7 +1332,7 @@
           "left": 753,
           "top": 373,
           "width": 116,
-          "height": 70,
+          "height": 68,
           "customInputs": [],
           "customOutputs": [],
           "value": "is_charging"
@@ -1001,8 +1342,8 @@
           "type": "LVGLActionComponent",
           "left": 900,
           "top": 373,
-          "width": 342,
-          "height": 54,
+          "width": 341,
+          "height": 53,
           "customInputs": [],
           "customOutputs": [],
           "actions": [
