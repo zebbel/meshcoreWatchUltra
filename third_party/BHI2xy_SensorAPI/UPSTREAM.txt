@@ -1,0 +1,3 @@
+Source: https://github.com/boschsensortec/BHI2xy_SensorAPI.git
+Revision: 177681d120ac42760c9f19505697ccd5c7103e87
+Only the core SensorAPI and standard BHI260AP RAM image are vendored.

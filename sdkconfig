@@ -4120,6 +4120,13 @@ CONFIG_MCW_SX1262_SPI_4M=y
 # end of MeshcoreWatch SX1262 Radio
 
 #
+# MeshCore Watch motion features
+#
+# default:
+CONFIG_MCW_RAISE_TO_WAKE=y
+# end of MeshCore Watch motion features
+
+#
 # meshcoreWatchUltra watch clock
 #
 # default:

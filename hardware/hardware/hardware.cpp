@@ -7,6 +7,7 @@
 #include "Power.h"
 #include "GPIO.h"
 #include "GPS.h"
+#include "BHI260AP.h"
 #include "SDStorage.h"
 #include "BluetoothTransport.h"
 
@@ -34,6 +35,10 @@ namespace hardware {
         err = gps::init();
         if(err != ESP_OK) ESP_LOGW(TAG, "GPS unavailable: %s", esp_err_to_name(err));
 
+        // Optional motion sensor; a failed firmware boot must not prevent MeshCore startup.
+        err = bhi260ap::init();
+        if(err != ESP_OK) ESP_LOGW(TAG, "Motion sensor unavailable: %s", esp_err_to_name(err));
+
         // Initialize SD storage subsystem.
         err = sd::init();
         if(err != ESP_OK) ESP_LOGE(TAG, "SD subsystem failed: %s", esp_err_to_name(err));
@@ -52,5 +57,8 @@ namespace hardware {
     // Application-task hardware polling
     // ------------------------------------------------------------------------
 
-    void loop(){ gps::loop(); }
+    void loop(){
+        gps::loop();
+        bhi260ap::loop();
+    }
 }

@@ -10,4 +10,5 @@ idf_component_register(
         freertos
         SX1262
         Bluetooth
+        BHI260AP
 )

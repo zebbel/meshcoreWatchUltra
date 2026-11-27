@@ -32,6 +32,8 @@ namespace services::display_power {
         TaskHandle_t s_task = nullptr;
         uint32_t s_timeout_ms = 10000;
         std::atomic<bool> s_screen_awake{true};
+        // Main-task request; consumed by the display policy task, never an ISR.
+        std::atomic<bool> s_wrist_wake_pending{false};
         std::atomic<uint32_t> s_last_activity_ms{0};
         bool s_started = false;
         detail::TouchInputBuffer s_touch_buffer;
@@ -188,7 +190,15 @@ namespace services::display_power {
                     notify_activity();
                 }
 
-                // Take the clock snapshot only after all touch processing.
+                // Touch retains priority. Do not treat a wrist request as a touch IRQ.
+                // Ignore gestures while awake so they cannot refresh the inactivity timeout.
+                if(s_wrist_wake_pending.exchange(false) && !s_screen_awake.load()){
+                    const esp_err_t err = set_screen_awake(true);
+                    if(err == ESP_OK) ESP_LOGI(TAG, "Display wake requested by wrist tilt");
+                    else ESP_LOGW(TAG, "Wrist wake failed: %s", esp_err_to_name(err));
+                }
+
+                // Take the clock snapshot only after all touch and wrist processing.
                 const uint32_t now = uptime_ms();
                 touch_expire(now);
                 // Fail safe: keep AMOLED on if touch ACK isn't reliable.
@@ -288,6 +298,7 @@ namespace services::display_power {
             if(err == ESP_OK && !awake) touch_set_awake(false);
             if(err == ESP_OK) err = s_screen_control(awake);
             if(err == ESP_OK){
+                s_wrist_wake_pending.store(false);
                 s_screen_awake.store(awake);
                 if(awake){
                     touch_set_awake(true);
@@ -320,6 +331,12 @@ namespace services::display_power {
         const TouchInput input = s_touch_buffer.read();
         portEXIT_CRITICAL(&s_touch_mux);
         return input;
+    }
+
+    // Queue only while asleep; the existing 250-ms screen-off recheck consumes it.
+    // Do not notify the task: its notification channel belongs to the touch IRQ.
+    void request_wrist_wake(){
+        if(s_started && !s_screen_awake.load()) s_wrist_wake_pending.store(true);
     }
 
     bool is_screen_awake(){ return s_screen_awake.load(); }

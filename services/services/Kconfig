@@ -1,0 +1,12 @@
+menu "MeshCore Watch motion features"
+
+    config MCW_RAISE_TO_WAKE
+        bool "Raise wrist to wake display"
+        default y
+        help
+            Wake the display on a BHI260AP wrist tilt event while the screen is off.
+            Enable GPIO8 as an additional EXT1 light-sleep wake source when available.
+            Gestures while the display is awake do not extend its inactivity timeout.
+            Disabling this option keeps step, wrist and motion sensor processing active.
+
+endmenu

@@ -7,6 +7,7 @@ idf_component_register(
         AXP2101
         XL9555
         MIA_M10Q
+        BHI260AP
         SD
         Bluetooth
         log

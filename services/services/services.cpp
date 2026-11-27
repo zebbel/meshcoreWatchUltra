@@ -1,10 +1,13 @@
 #include "services.h"
 
+#include "sdkconfig.h"
+
 #include "PowerManagement.h"
 #include "PositionSync.h"
 #include "GPS.h"
 #include "BluetoothTransport.h"
 #include "DisplayPower.h"
+#include "BHI260AP.h"
 
 namespace services {
     // ------------------------------------------------------------------------
@@ -19,6 +22,13 @@ namespace services {
     // ------------------------------------------------------------------------
 
     void loop(){
+        // Consume each wrist event, even when the display is already awake.
+        const bool wrist = hardware::bhi260ap::wrist_tilt_detected();
+#if defined(CONFIG_MCW_RAISE_TO_WAKE)
+        if(wrist) display_power::request_wrist_wake();
+#else
+        (void)wrist;
+#endif
         position_sync::synchronize();
     }
     // ------------------------------------------------------------------------

@@ -16,6 +16,7 @@
 #include "LoRa.h"
 #include "BluetoothTransport.h"
 #include "board_pins.h"
+#include "BHI260AP.h"
 
 namespace services::power_management {
     static const char *TAG = "PowerManagement";
@@ -72,6 +73,7 @@ namespace services::power_management {
     static esp_pm_lock_handle_t s_sleep_guard = nullptr;
     static bool s_sleep_guard_held = false;
     static bool s_auto_light_sleep = false;
+    static bool s_sensor_wake_enabled = false;
     static std::atomic<bool> s_restore_wake_pins{false};
 
     // ------------------------------------------------------------------------
@@ -105,7 +107,10 @@ namespace services::power_management {
         (void)esp_pm_configure(&cfg);
         s_auto_light_sleep = false;
         (void)esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
-        (void)esp_sleep_disable_ext1_wakeup_io(1ULL << hardware::board::pins::LORA_DIO1);
+        uint64_t wake_mask = 1ULL << hardware::board::pins::LORA_DIO1;
+        if(s_sensor_wake_enabled) wake_mask |= 1ULL << hardware::board::pins::SENSOR_IRQ;
+        (void)esp_sleep_disable_ext1_wakeup_io(wake_mask);
+        s_sensor_wake_enabled = false;
     }
 
     // ------------------------------------------------------------------------
@@ -130,6 +135,15 @@ namespace services::power_management {
         if(err == ESP_OK)
             err = esp_sleep_enable_ext1_wakeup_io(1ULL << hardware::board::pins::LORA_DIO1, ESP_EXT1_WAKEUP_ANY_HIGH);
         if(err != ESP_OK){ disable_light_sleep("Wake source setup failed", err); return; }
+#if defined(CONFIG_MCW_RAISE_TO_WAKE)
+        // BHI260AP HIRQ is active-high and latched until the FIFO is serviced.
+        // Keep touch and LoRa wake sources if this optional registration fails.
+        if(hardware::bhi260ap::ready() && hardware::bhi260ap::get_status().wrist_tilt_available){
+            const esp_err_t sensor_err = esp_sleep_enable_ext1_wakeup_io(1ULL << hardware::board::pins::SENSOR_IRQ, ESP_EXT1_WAKEUP_ANY_HIGH);
+            s_sensor_wake_enabled = (sensor_err == ESP_OK);
+            if(!s_sensor_wake_enabled) ESP_LOGW(TAG, "BHI260AP EXT1 wake unavailable: %s; retaining timer polling", esp_err_to_name(sensor_err));
+        }
+#endif
         err = esp_pm_light_sleep_register_cbs(&s_sleep_callbacks);
         if(err != ESP_OK){ disable_light_sleep("Light sleep callback setup failed", err); return; }
 
@@ -143,6 +157,7 @@ namespace services::power_management {
         if(err != ESP_OK){ disable_light_sleep("esp_pm_configure failed", err); return; }
         s_auto_light_sleep = true;
         ESP_LOGI(TAG, "Auto light sleep enabled; touch/LoRa wake and display/GPS guards; connected BLE light sleep %s", kConnectedBleLightSleep ? "allowed" : "blocked");
+        ESP_LOGI(TAG, "BHI260AP EXT1 wake: %s", s_sensor_wake_enabled ? "enabled (GPIO8)" : "disabled");
     }
 
     // ------------------------------------------------------------------------
@@ -162,6 +177,14 @@ namespace services::power_management {
         if(err == ESP_OK) err = gpio_set_intr_type(hardware::board::pins::LORA_DIO1, GPIO_INTR_POSEDGE);
         if(err == ESP_OK) err = gpio_intr_enable(hardware::board::pins::TOUCH_IRQ);
         if(err == ESP_OK) err = gpio_intr_enable(hardware::board::pins::LORA_DIO1);
+        // Restore the optional RTC pad before the hardware loop checks HIRQ.
+        if(err == ESP_OK && s_sensor_wake_enabled){
+            err = rtc_gpio_hold_dis(hardware::board::pins::SENSOR_IRQ);
+            if(err == ESP_OK) err = rtc_gpio_deinit(hardware::board::pins::SENSOR_IRQ);
+            if(err == ESP_OK) err = gpio_set_direction(hardware::board::pins::SENSOR_IRQ, GPIO_MODE_INPUT);
+            if(err == ESP_OK) err = gpio_set_intr_type(hardware::board::pins::SENSOR_IRQ, GPIO_INTR_POSEDGE);
+            if(err == ESP_OK) err = gpio_intr_enable(hardware::board::pins::SENSOR_IRQ);
+        }
         if(err != ESP_OK) disable_light_sleep("GPIO restoration failed", err);
     }
 

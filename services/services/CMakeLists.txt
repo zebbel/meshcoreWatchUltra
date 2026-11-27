@@ -7,4 +7,5 @@ idf_component_register(
         MIA_M10Q
         Bluetooth
         DisplayPower
+        BHI260AP
 )
