@@ -19,7 +19,6 @@
 #include "lvgl.h"
 #include "ui.h"
 #include "vars.h"
-#include "screens.h"
 #include "eez-flow.h"
 
 #ifndef CONFIG_MCW_WATCH_CLOCK_TIMEZONE
@@ -45,7 +44,6 @@ namespace {
     uint32_t last_clock = 0;
     std::atomic<uint32_t> s_pairing_pin{0};
     char pairing_pin_text[7] = "";
-    bool pairing_page_active = false;
     // ------------------------------------------------------------------------
     // Clock and battery sampling
     // ------------------------------------------------------------------------
@@ -69,25 +67,9 @@ namespace {
         last_battery = lv_tick_get();
     }
     // ------------------------------------------------------------------------
-    // Pairing page navigation
+    // Periodic hardware state and EEZ processing
     // ------------------------------------------------------------------------
 
-    // Run on the LVGL task or while holding the adapter lock.
-    void update_pairing_page(){
-        const bool pairing = s_pairing_pin.load() != 0;
-
-        if(pairing && !pairing_page_active){
-            pairing_page_active = true;
-
-            eez_flow_push_screen(SCREEN_ID_PAIRING, LV_SCR_LOAD_ANIM_NONE, 0, 0);
-        }else if(!pairing && pairing_page_active){
-            pairing_page_active = false;
-
-            if(eez_flow_get_current_screen() == SCREEN_ID_PAIRING){
-                eez_flow_pop_screen(LV_SCR_LOAD_ANIM_NONE, 0, 0);
-            }
-        }
-    }
     // ------------------------------------------------------------------------
     // Periodic EEZ processing
     // ------------------------------------------------------------------------
@@ -95,13 +77,13 @@ namespace {
     void tick(lv_timer_t *){
         if(!services::display_power::is_screen_awake()) return;
 
+        charging_active = services::display_power::is_charging();
         const uint32_t now = lv_tick_get();
 
         if(now - last_clock >= 1000U) sample_time();
 
         if(now - last_battery >= (charging_active ? charging_battery_ms : battery_ms)) sample_battery();
 
-        update_pairing_page();
 
         ui_tick();
     }
@@ -120,7 +102,7 @@ extern "C" {
     // Read-only EEZ sensor variables
     // ------------------------------------------------------------------------
 
-    bool get_var_is_charging(){ return charging_active; }
+    bool get_var_is_charging(){ return services::display_power::is_charging(); }
     void set_var_is_charging(bool){}
     int32_t get_var_battery_percent(){ return s_battery; }
     void set_var_battery_percent(int32_t){}
@@ -133,6 +115,19 @@ extern "C" {
     void set_var_boot_button_count(int32_t){}
     int32_t get_var_power_button_count(){ return services::display_power::power_button_count(); }
     void set_var_power_button_count(int32_t){}
+    int32_t get_var_touch_count(){ return services::display_power::touch_count(); }
+    void set_var_touch_count(int32_t){}
+    int32_t get_var_wrist_count(){ return services::display_power::wrist_count(); }
+    void set_var_wrist_count(int32_t){}
+    int32_t get_var_display_wake_count(){ return services::display_power::display_wake_count(); }
+    void set_var_display_wake_count(int32_t){}
+    bool get_var_display_awake(){ return services::display_power::is_screen_awake(); }
+    void set_var_display_awake(bool){}
+    bool get_var_display_sleep_request(){ return services::display_power::sleep_request_pending(); }
+    void set_var_display_sleep_request(bool value){ services::display_power::request_sleep(value); }
+    // EEZ decides whether to show a pairing page or inhibit its own timer.
+    bool get_var_ble_pairing_active(){ return s_pairing_pin.load() != 0; }
+    void set_var_ble_pairing_active(bool){}
     bool get_var_gps_fix(){ return watch::status::get().gps_has_fix; }
     void set_var_gps_fix(bool){}
     bool get_var_gps_acquiring(){ return watch::status::get().gps_acquiring; }
@@ -196,7 +191,7 @@ namespace watch::display {
         if(pin == s_pairing_pin.load()) return;
 
         s_pairing_pin.store(pin);
-        services::display_power::set_keep_awake(pin != 0);
+        if(pin != 0) services::display_power::request_external_wake();
     }
 
     // ------------------------------------------------------------------------
@@ -211,7 +206,6 @@ namespace watch::display {
         sample_battery();
         sample_time();
 
-        update_pairing_page();
 
         settle_flow();
     }

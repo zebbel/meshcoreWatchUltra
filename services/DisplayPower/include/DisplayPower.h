@@ -5,15 +5,14 @@
 #include <stdint.h>
 
 // UI supplies a callback that safely serializes panel operations with its
-// renderer. The service owns only inactivity policy and state, not LVGL.
+// renderer. EEZ owns inactivity and page policy; this service executes hardware transitions.
 namespace services::display_power {
     using ScreenControl = esp_err_t (*)(bool awake);
-    using ChargingDisplayControl = esp_err_t (*)(bool charging);
 
-    esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms = 5000, ChargingDisplayControl charging_display = nullptr);
-    // Serialize panel transitions and enforce charging/keep-awake policy.
+    esp_err_t start(ScreenControl apply_screen_awake);
+    // Task-context panel transition; never call from the LVGL worker.
     esp_err_t set_screen_awake(bool awake);
-    // Main task only: queue a nonblocking wake without resetting an awake display's timeout.
+    // Main task: queue a wrist event without touching the renderer.
     void request_wrist_wake();
     // Main task fallback after light sleep: notify if a button IRQ is latched.
     void recheck_buttons();
@@ -22,8 +21,13 @@ namespace services::display_power {
     int32_t power_button_count();
     bool is_screen_awake();
     bool is_charging();
-    void notify_activity();
-    void set_keep_awake(bool enabled);
+    int32_t touch_count();
+    int32_t wrist_count();
+    int32_t display_wake_count();
+    // Asynchronous command interface for EEZ; false cancels a queued request.
+    bool sleep_request_pending();
+    void request_sleep(bool requested);
+    void request_external_wake();
 
     // Nonblocking, RAM-only pointer samples for the UI. No hardware I/O.
     struct TouchInput {

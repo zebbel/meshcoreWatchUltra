@@ -31,26 +31,28 @@ namespace services::display_power {
         constexpr uint32_t touch_release_check_ms = 25;
         // Callbacks implemented by WatchDisplay: policy does not render pixels.
         ScreenControl screen_control = nullptr;
-        ChargingDisplayControl charging_display_callback = nullptr;
         // Shared policy state: atomic values cross FreeRTOS task boundaries.
         std::atomic<bool> charging_active{false};
-        std::atomic<bool> keep_awake{false};
-        bool charging_display_applied = false; // protected by transition mutex
         TaskHandle_t task_handle = nullptr;
-        uint32_t inactivity_timeout_ms = 10000;
-        std::atomic<bool> s_screen_awake{true};
+        std::atomic<bool> screen_awake{true};
         // Main-task request; notification wakes the policy task immediately.
         std::atomic<bool> wrist_wake_pending{false};
-        std::atomic<uint32_t> last_activity_ms{0};
-        bool s_started = false;
+        std::atomic<bool> started{false};
+        // EEZ owns all inactivity policy. Its setter queues a command only.
+        std::atomic<bool> sleep_requested{false};
+        std::atomic<bool> external_wake_pending{false};
+        std::atomic<int32_t> touch_events{0};
+        std::atomic<int32_t> wrist_events{0};
+        std::atomic<int32_t> wake_events{0};
+        // Only the display task changes this revision; input wins over a
+        // standby command captured in the same service iteration.
+        uint32_t input_revision = 0;
+        constexpr uint32_t sleep_request_notification = 1U << 4;
+        constexpr uint32_t external_wake_notification = 1U << 5;
         // Side buttons: event counters survive a paused EEZ renderer.
-        constexpr uint32_t button_timeout_ms = 30000;
         constexpr uint32_t button_debounce_ms = 30;
         constexpr uint32_t button_poll_ms = 25;
-        constexpr uint32_t boot_button_notification = 1U << 2;
-        constexpr uint32_t power_button_notification = 1U << 3;
-        static_assert(((boot_button_notification | power_button_notification) & (wrist_wake_notification | hardware::cst9217::touch_irq_notification)) == 0, "Button notification collision");
-        std::atomic<bool> extended_timeout{false};
+        static_assert(((sleep_request_notification | external_wake_notification) & (wrist_wake_notification | hardware::cst9217::touch_irq_notification)) == 0, "Display notification collision");
         std::atomic<int32_t> boot_count{0};
         std::atomic<int32_t> power_count{0};
         std::atomic<bool> boot_ready{false};
@@ -172,67 +174,58 @@ namespace services::display_power {
         }
 
         // ------------------------------------------------------------------------
-        // Policy scheduling
+        // Hardware event scheduling
         // ------------------------------------------------------------------------
 
         uint32_t uptime_ms(){ return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL); }
 
-        // Extended mode lasts until the next successful display standby.
-        // Touch activity also restarts the selected inactivity timeout.
-        uint32_t active_timeout_ms(){
-            return extended_timeout.load() && inactivity_timeout_ms < button_timeout_ms ? button_timeout_ms : inactivity_timeout_ms;
-        }
 
+        // Poll hardware only; there is no display inactivity timer here.
         uint32_t next_wait_ms(){
-            const uint32_t idle_ms = static_cast<uint32_t>(uptime_ms() - last_activity_ms.load());
-            const uint32_t active_timeout = active_timeout_ms();
-            const uint32_t remaining_ms = idle_ms < active_timeout ? active_timeout - idle_ms : 1;
-            // Screen awake: wake at its timeout. Screen off: touch and wrist
-            // notifications wake immediately; retain a bounded IRQ-level fallback.
             uint32_t wait_ms = screen_off_recheck_ms;
-            if(s_screen_awake.load()){
-                wait_ms = (charging_active.load() || keep_awake.load()) ? charger_poll_ms : remaining_ms;
-            }
-            if(charging_display_callback && wait_ms > charger_poll_ms) wait_ms = charger_poll_ms;
-            // A bounded release watchdog only while tracking a contact. No
-            // additional I2C reads: all coordinate reads remain IRQ-driven.
-            if(s_screen_awake.load() && touch_tracking() && wait_ms > touch_release_check_ms) wait_ms = touch_release_check_ms;
+            if(screen_awake.load() && touch_tracking() && wait_ms > touch_release_check_ms) wait_ms = touch_release_check_ms;
             if((boot_ready.load() || power_ready.load()) && wait_ms > button_poll_ms) wait_ms = button_poll_ms;
             return wait_ms;
         }
 
-        // ------------------------------------------------------------------------
-        // Display policy task
-        // ------------------------------------------------------------------------
-
-        // Policy task helpers. Only this task owns charger polling and touch health.
-
-        // Wake for external requests (for example BLE pairing).
-        void process_keep_awake(){
-            if(keep_awake.load() && !s_screen_awake.load()){
-                (void)set_screen_awake(true);
-            }
+        // Sequence values remain representable by EEZ's signed Integer type.
+        void increment_event(std::atomic<int32_t> &counter){
+            const int32_t previous = counter.load();
+            counter.store(previous == INT32_MAX ? 1 : previous + 1);
         }
 
-        // Read the PMU periodically and reconcile charging display mode.
+        // Publish the event before waking the panel so the hidden Flow refresh
+        // can select a page without briefly displaying the previous one.
+        void record_input(std::atomic<int32_t> &counter){
+            ++input_revision;
+            sleep_requested.store(false);
+            increment_event(counter);
+        }
+
+        // ------------------------------------------------------------------------
+        // Hardware event handlers
+        // ------------------------------------------------------------------------
+
+        // Only the display task owns charger polling and touch health.
+
+
+        // Publish charger state; wake on charge start so EEZ can react.
         void process_charging(uint32_t &last_charger_poll, unsigned &charger_read_failures){
-            const uint32_t poll_now = uptime_ms();
-            if(charging_display_callback && poll_now - last_charger_poll >= charger_poll_ms){
-                last_charger_poll = poll_now;
-                bool charging = false;
-                if(hardware::power::read_charging(charging) == ESP_OK){
-                    charger_read_failures = 0;
-                    charging_active.store(charging);
-                }else if(++charger_read_failures >= 3){
-                    // Do not keep the display on indefinitely with unknown charger state.
-                    charger_read_failures = 3;
-                    charging_active.store(false);
-                }
-                // Reconcile the mode under the existing transition mutex. Retry
-                // transient wake/brightness failures on the next poll.
-                if(charging_active.load() || s_screen_awake.load()){
+            const uint32_t now = uptime_ms();
+            if(now - last_charger_poll < charger_poll_ms) return;
+            last_charger_poll = now;
+            bool charging = false;
+            if(hardware::power::read_charging(charging) == ESP_OK){
+                charger_read_failures = 0;
+                const bool previous = charging_active.exchange(charging);
+                if(charging && !previous){
+                    ++input_revision;
+                    sleep_requested.store(false);
                     (void)set_screen_awake(true);
                 }
+            }else if(++charger_read_failures >= 3){
+                charger_read_failures = 3;
+                charging_active.store(false);
             }
         }
 
@@ -249,7 +242,7 @@ namespace services::display_power {
         void process_touch(uint32_t events, bool &touch_communication_ok){
             // EXT0 can wake before digital IRQ is
             // restored. A latched active-low GPIO12 still needs an I2C ACK.
-            const bool pending_touch_level = !s_screen_awake.load() && gpio_get_level(hardware::board::pins::TOUCH_IRQ) == 0;
+            const bool pending_touch_level = !screen_awake.load() && gpio_get_level(hardware::board::pins::TOUCH_IRQ) == 0;
             if((events & hardware::cst9217::touch_irq_notification) || pending_touch_level){
                 hardware::cst9217::TouchPoint point{};
                 const esp_err_t err = hardware::cst9217::read_interrupt(point);
@@ -265,7 +258,10 @@ namespace services::display_power {
 
                 // The wake contact is consumed until its release (or a quiet
                 // interval); it must not activate a widget on the new screen.
-                const bool wake_contact = !s_screen_awake.load();
+                const bool wake_contact = !screen_awake.load();
+                // Count a wake contact even without coordinates. While awake,
+                // count valid pressed reports (including movement), not releases.
+                if(wake_contact || (err == ESP_OK && point.report_valid && point.pressed)) record_input(touch_events);
                 if(wake_contact){
                     if(set_screen_awake(true) == ESP_OK){
                         touch_report(point, err, true, uptime_ms());
@@ -273,36 +269,30 @@ namespace services::display_power {
                 }else{
                     touch_report(point, err, false, uptime_ms());
                 }
-                // Start a fresh inactivity timeout after the wake command finishes.
-                // Sample the clock afterward to avoid unsigned underflow.
-                notify_activity();
             }
         }
 
-        // Consume a wrist request without extending an already awake screen.
+        // Forward wrist events even while awake; EEZ chooses whether to react.
         void process_wrist_wake(){
-            // Touch retains priority. Do not treat a wrist request as a touch IRQ.
-            // Ignore gestures while awake so they cannot refresh the inactivity timeout.
-            if(wrist_wake_pending.exchange(false) && !s_screen_awake.load()){
+            if(!wrist_wake_pending.exchange(false)) return;
+            record_input(wrist_events);
+            if(!screen_awake.load()){
                 const esp_err_t err = set_screen_awake(true);
-                if(err == ESP_OK) ESP_LOGI(TAG, "Display wake requested by wrist tilt");
-                else ESP_LOGW(TAG, "Wrist wake failed: %s", esp_err_to_name(err));
+                if(err != ESP_OK) ESP_LOGW(TAG, "Wrist wake failed: %s", esp_err_to_name(err));
             }
         }
 
-        // Expire buffered contacts and enter standby only when policy permits.
-        void process_inactivity_timeout(bool touch_communication_ok){
-            // Take the clock snapshot only after all touch and wrist processing.
-            const uint32_t now = uptime_ms();
-            touch_expire(now);
-            // Fail safe: keep AMOLED on if touch ACK isn't reliable.
-            if(s_screen_awake.load() && !charging_active.load() && !keep_awake.load() && touch_communication_ok && static_cast<uint32_t>(now - last_activity_ms.load()) >= active_timeout_ms()){
-                (void)set_screen_awake(false);
-            }
+        // Pairing can wake the display, but does not select or lock a page.
+        void process_external_wake(){
+            if(!external_wake_pending.exchange(false)) return;
+            ++input_revision;
+            sleep_requested.store(false);
+            (void)set_screen_awake(true);
         }
+
 
         // ------------------------------------------------------------------------
-        // Side buttons: GPIO interrupts, PMU acknowledgement and debounce
+        // Side buttons: GPIO polling, PMU acknowledgement and debounce
         // ------------------------------------------------------------------------
 
         // Configure active-low inputs for polling. We intentionally avoid
@@ -345,14 +335,10 @@ namespace services::display_power {
             ESP_LOGI(TAG, "Buttons ready (polled): boot=%d power=%d", boot_ready.load(), power_ready.load());
         }
 
-        // Publish after the wake callback so EEZ has resumed and its Watch
-        // components can observe the increment, including the wake press.
+        // Publish before the hidden Flow refresh so the first press is visible.
         void publish_button(std::atomic<int32_t> &counter){
-            extended_timeout.store(true);
+            record_input(counter);
             const esp_err_t err = set_screen_awake(true);
-            notify_activity();
-            const int32_t previous = counter.load();
-            counter.store(previous == INT32_MAX ? 1 : previous + 1);
             if(err != ESP_OK) ESP_LOGW(TAG, "Button display wake failed: %s", esp_err_to_name(err));
         }
 
@@ -379,7 +365,7 @@ namespace services::display_power {
             return true;
         }
 
-        void process_buttons(uint32_t /*events*/){
+        void process_buttons(){
             const bool boot = consume_boot_button();
             bool power = false;
             if(power_ready.load() && gpio_get_level(hardware::board::pins::PMU_IRQ) == 0){
@@ -390,7 +376,7 @@ namespace services::display_power {
             if(power) publish_button(power_count);
         }
 
-        // Display policy: event-driven orchestration
+        // Hardware event dispatcher: EEZ alone decides when to request standby.
         void policy_task(void *){
             init_buttons();
             bool touch_communication_ok = true;
@@ -398,14 +384,27 @@ namespace services::display_power {
             unsigned charger_read_failures = 0;
 
             while(true){
-                process_keep_awake();
-                process_charging(last_charger_poll, charger_read_failures);
                 const uint32_t events = wait_for_events();
-                // Touch takes priority over wrist wake. Check timeout last.
+                // Capture commands before processing inputs. A new input in
+                // this iteration supersedes a pending standby command.
+                const bool sleep = sleep_requested.exchange(false);
+                const uint32_t revision = input_revision;
                 process_touch(events, touch_communication_ok);
                 process_wrist_wake();
-                process_buttons(events);
-                process_inactivity_timeout(touch_communication_ok);
+                process_buttons();
+                process_charging(last_charger_poll, charger_read_failures);
+                process_external_wake();
+                touch_expire(uptime_ms());
+                if(sleep && revision == input_revision && screen_awake.load()){
+                    // Preserve the hardware safety guard against an unusable
+                    // touch controller. No charging or pairing UI policy here.
+                    if(touch_communication_ok){
+                        const esp_err_t err = set_screen_awake(false);
+                        if(err != ESP_OK) ESP_LOGW(TAG, "EEZ standby failed: %s", esp_err_to_name(err));
+                    }else{
+                        ESP_LOGW(TAG, "EEZ standby refused: touch communication unavailable");
+                    }
+                }
             }
         }
     } // namespace
@@ -414,9 +413,9 @@ namespace services::display_power {
     // Service initialization
     // ------------------------------------------------------------------------
 
-    esp_err_t start(ScreenControl apply_screen_awake, uint32_t timeout_ms, ChargingDisplayControl charging_display){
-        if(s_started) return ESP_OK;
-        if(apply_screen_awake == nullptr || timeout_ms == 0) return ESP_ERR_INVALID_ARG;
+    esp_err_t start(ScreenControl apply_screen_awake){
+        if(started) return ESP_OK;
+        if(apply_screen_awake == nullptr) return ESP_ERR_INVALID_ARG;
 
         esp_err_t err = hardware::cst9217::init();
         if(err != ESP_OK) return err;
@@ -443,10 +442,7 @@ namespace services::display_power {
 #endif
 
         screen_control = apply_screen_awake;
-        charging_display_callback = charging_display;
-        inactivity_timeout_ms = timeout_ms;
-        last_activity_ms.store(uptime_ms());
-        s_screen_awake.store(true);
+        screen_awake.store(true);
         touch_set_awake(true);
 
         if(xTaskCreate(policy_task, "display_power", 8192, nullptr, 4, &task_handle) != pdPASS){
@@ -464,8 +460,8 @@ namespace services::display_power {
             return ESP_ERR_NO_MEM;
         }
         hardware::cst9217::set_notification_task(task_handle);
-        s_started = true;
-        ESP_LOGI(TAG, "Display timeout %lu ms; touch wake enabled", static_cast<unsigned long>(inactivity_timeout_ms));
+        started = true;
+        ESP_LOGI(TAG, "Display hardware ready; standby controlled by EEZ");
         return ESP_OK;
     }
 
@@ -476,29 +472,23 @@ namespace services::display_power {
     namespace {
         // All transition helpers below require the transition mutex.
         // The public function owns the mutex; helpers must never take it again.
-        esp_err_t update_charging_mode(bool charging){
-            const esp_err_t err = charging_display_callback(charging);
-            if(err == ESP_OK){
-                charging_display_applied = charging;
-                notify_activity(); // Fresh normal timeout after charge completion.
-            }
-            return err;
-        }
 
         // Prevent CPU sleep before touching the panel or resuming LVGL.
-        esp_err_t wake_screen(bool charging){
+        esp_err_t wake_screen(){
             esp_err_t err = display_lock_acquire();
-            if(err == ESP_OK) err = apply_screen_control(true);
+            if(err == ESP_OK){
+                // Count the start of a wake cycle, before EEZ's hidden redraw.
+                sleep_requested.store(false);
+                increment_event(wake_events);
+                err = apply_screen_control(true);
+            }
             if(err != ESP_OK){
                 // A partially initialized panel must remain protected for retry.
                 ESP_LOGW(TAG, "AMOLED wake incomplete; keeping CPU light sleep blocked");
                 return err;
             }
-            wrist_wake_pending.store(false);
-            s_screen_awake.store(true);
+            screen_awake.store(true);
             touch_set_awake(true);
-            charging_display_applied = charging;
-            notify_activity();
             return ESP_OK;
         }
 
@@ -511,19 +501,15 @@ namespace services::display_power {
                 touch_set_awake(true);
                 return err;
             }
-            wrist_wake_pending.store(false);
-            s_screen_awake.store(false);
-            extended_timeout.store(false);
+            screen_awake.store(false);
+            sleep_requested.store(false);
             display_lock_release();
             return ESP_OK;
         }
 
-        // Decide which operation is needed, using one charging snapshot.
+        // Serialize the requested hardware state; no UI mode or timer policy.
         esp_err_t apply_transition(bool awake){
-            const bool charging = charging_active.load();
-            if(!awake && (charging || keep_awake.load())) return ESP_ERR_INVALID_STATE;
-            if(awake && s_screen_awake.load() && charging_display_callback && charging_display_applied != charging) return update_charging_mode(charging);
-            if(s_screen_awake.load() != awake) return awake ? wake_screen(charging) : sleep_screen();
+            if(screen_awake.load() != awake) return awake ? wake_screen() : sleep_screen();
             return ESP_OK;
         }
     } // namespace
@@ -548,15 +534,15 @@ namespace services::display_power {
         return input;
     }
 
-    // Queue only while asleep. Wake the policy task without generating a touch read.
+    // Queue a gesture in task context; never perform panel I/O here.
     void request_wrist_wake(){
-        if(!s_started || s_screen_awake.load() || task_handle == nullptr) return;
+        if(!started.load() || task_handle == nullptr) return;
         wrist_wake_pending.store(true);
         (void)xTaskNotify(task_handle, wrist_wake_notification, eSetBits);
     }
 
     void recheck_buttons(){
-        if(!s_started || task_handle == nullptr) return;
+        if(!started || task_handle == nullptr) return;
         if((boot_ready.load() && gpio_get_level(hardware::board::pins::BOOT_BUTTON) == 0) || (power_ready.load() && gpio_get_level(hardware::board::pins::PMU_IRQ) == 0)){
             (void)xTaskNotify(task_handle, 0, eNoAction);
         }
@@ -565,15 +551,29 @@ namespace services::display_power {
     int32_t boot_button_count(){ return boot_count.load(); }
     int32_t power_button_count(){ return power_count.load(); }
 
-    bool is_screen_awake(){ return s_screen_awake.load(); }
+    bool is_screen_awake(){ return screen_awake.load(); }
     bool is_charging(){ return charging_active.load(); }
-    void notify_activity(){ last_activity_ms.store(uptime_ms()); }
 
-    void set_keep_awake(bool enabled){
-        if(keep_awake.load() == enabled) return;
+    int32_t touch_count(){ return touch_events.load(); }
+    int32_t wrist_count(){ return wrist_events.load(); }
+    int32_t display_wake_count(){ return wake_events.load(); }
 
-        notify_activity();
-        keep_awake.store(enabled);
+    bool sleep_request_pending(){ return sleep_requested.load(); }
+
+    // Called by EEZ under the LVGL lock. Never pause or lock the renderer here.
+    void request_sleep(bool requested){
+        if(!requested){ sleep_requested.store(false); return; }
+        // Reject stale timer actions during startup or the hidden wake refresh.
+        if(!started.load() || !screen_awake.load() || task_handle == nullptr) return;
+        sleep_requested.store(true);
+        (void)xTaskNotify(task_handle, sleep_request_notification, eSetBits);
+    }
+
+    // An incoming pairing request may need the UI, even when it is asleep.
+    void request_external_wake(){
+        if(!started.load() || task_handle == nullptr) return;
+        external_wake_pending.store(true);
+        (void)xTaskNotify(task_handle, external_wake_notification, eSetBits);
     }
 
 } // namespace services::display_power

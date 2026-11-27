@@ -12,13 +12,15 @@ extern "C" {
 enum ScreensEnum {
     _SCREEN_ID_FIRST = 1,
     SCREEN_ID_MAIN = 1,
-    SCREEN_ID_CHARGING = 2,
-    SCREEN_ID_PAIRING = 3,
-    _SCREEN_ID_LAST = 3
+    SCREEN_ID_WATCH_FACE = 2,
+    SCREEN_ID_CHARGING = 3,
+    SCREEN_ID_PAIRING = 4,
+    _SCREEN_ID_LAST = 4
 };
 
 typedef struct _objects_t {
     lv_obj_t *main;
+    lv_obj_t *watch_face;
     lv_obj_t *charging;
     lv_obj_t *pairing;
     lv_obj_t *battery_label;
@@ -28,15 +30,25 @@ typedef struct _objects_t {
     lv_obj_t *bluetooth_icon;
     lv_obj_t *gps_icon;
     lv_obj_t *obj0;
+    lv_obj_t *battery_label_1;
+    lv_obj_t *time_label_1;
+    lv_obj_t *battery_bar_1;
+    lv_obj_t *charge_lightning_icon_1;
+    lv_obj_t *bluetooth_icon_1;
+    lv_obj_t *gps_icon_1;
+    lv_obj_t *obj1;
     lv_obj_t *charge_percent_label;
     lv_obj_t *charge_prcentage_arc;
-    lv_obj_t *obj1;
+    lv_obj_t *obj2;
 } objects_t;
 
 extern objects_t objects;
 
 void create_screen_main();
 void tick_screen_main();
+
+void create_screen_watch_face();
+void tick_screen_watch_face();
 
 void create_screen_charging();
 void tick_screen_charging();

@@ -87,18 +87,9 @@ namespace watch::display {
         }
 
         // ------------------------------------------------------------------------
-        // Charging display refresh
+        // Hardware display transitions
         // ------------------------------------------------------------------------
 
-        esp_err_t apply_charging_display(bool charging){
-            esp_err_t err = esp_lv_adapter_lock(1000);
-            if(err != ESP_OK) return err;
-            refresh_flow(charging);
-            lv_obj_invalidate(lv_screen_active());
-            lv_refr_now(lv_display_get_default());
-            esp_lv_adapter_unlock();
-            return ESP_OK;
-        }
 
         // ------------------------------------------------------------------------
         // Panel sleep and wake transitions
@@ -285,7 +276,7 @@ namespace watch::display {
 
         s_ready = true;
         // Failure of CST9217/service must not leave the watch with a black screen.
-        const esp_err_t touch_err = services::display_power::start(apply_panel_awake, 5000, apply_charging_display);
+        const esp_err_t touch_err = services::display_power::start(apply_panel_awake);
         if(touch_err != ESP_OK){
             ESP_LOGW(TAG, "Touch wake service unavailable: %s; keeping panel on", esp_err_to_name(touch_err));
         }
