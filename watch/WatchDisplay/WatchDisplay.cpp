@@ -1,6 +1,7 @@
 #include "WatchDisplay.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -25,6 +26,11 @@ namespace watch::display {
         // No LVGL tick or render task activity while AMOLED is off.
         bool s_adapter_paused = false;
         uint32_t s_flush_events = 0;
+        // Temporary wake profiling; accessed only under the LVGL lock.
+        static constexpr bool kMeasureWake = true;
+        bool s_measure_draw = false;
+        int64_t s_draw_us = 0;
+        unsigned s_draw_count = 0;
 
         // ------------------------------------------------------------------------
         // Touch input adapter
@@ -63,7 +69,12 @@ namespace watch::display {
         // LVGL supplies packed RGB565 in panel byte order. The hardware driver
         // owns DMA staging and returns after every segment has completed.
         esp_err_t staged_draw_bitmap(lv_display_t *disp, esp_lcd_panel_handle_t, int x_start, int y_start, int x_end, int y_end, const void *color_map, void *){
+            const int64_t draw_start = s_measure_draw ? esp_timer_get_time() : 0;
             const esp_err_t err = hardware::co5300::draw_rgb565( x_start, y_start, x_end, y_end, color_map);
+            if(s_measure_draw){
+                s_draw_us += esp_timer_get_time() - draw_start;
+                ++s_draw_count;
+            }
             // On failure the adapter acknowledges the flush itself.
             if(err == ESP_OK) lv_display_flush_ready(disp);
             return err;
@@ -132,9 +143,11 @@ namespace watch::display {
         }
 
         esp_err_t wake_panel(){
+            const int64_t t0 = kMeasureWake ? esp_timer_get_time() : 0;
             // The CO5300 wakes with its output hidden.
             // The DisplayPower NO_LIGHT_SLEEP lock protects all operations here.
             esp_err_t err = hardware::co5300::set_screen_enabled(true, true);
+            const int64_t t_panel = kMeasureWake ? esp_timer_get_time() : 0;
             if(err != ESP_OK){
                 ESP_LOGW(TAG, "AMOLED hidden wake failed: %s", esp_err_to_name(err));
                 return err;
@@ -143,6 +156,7 @@ namespace watch::display {
             // Lock BEFORE unpausing the worker. This prevents an early worker
             // flush from competing with the forced redraw below.
             err = esp_lv_adapter_lock(1000);
+            const int64_t t_lock = kMeasureWake ? esp_timer_get_time() : 0;
             if(err != ESP_OK){
                 ESP_LOGE(TAG, "LVGL wake lock failed: %s", esp_err_to_name(err));
                 (void)hardware::co5300::reveal_after_full_refresh();
@@ -158,6 +172,7 @@ namespace watch::display {
                 }
                 s_adapter_paused = false;
             }
+            const int64_t t_resume = kMeasureWake ? esp_timer_get_time() : 0;
             lv_display_t *disp = lv_display_get_default();
             if(disp == nullptr){
                 esp_lv_adapter_unlock();
@@ -171,12 +186,25 @@ namespace watch::display {
             lv_obj_invalidate(lv_screen_active());
             // LVGL renders ~16 bounded regions, yielding periodically to avoid
             // starving IDLE0. The mutex prevents any concurrent LVGL redraw.
+            const int64_t t_flow = kMeasureWake ? esp_timer_get_time() : 0;
+            s_draw_us = 0;
+            s_draw_count = 0;
+            s_measure_draw = kMeasureWake;
             lv_refr_now(disp);
+            s_measure_draw = false;
+            const int64_t t_render = kMeasureWake ? esp_timer_get_time() : 0;
 
             // IDF 6.1.1 spi_panel_io_tx_param drains queued color DMA before
             // sending DISPON. The full frame is in panel GRAM before showing it.
             err = hardware::co5300::reveal_after_full_refresh();
+            const int64_t t_reveal = kMeasureWake ? esp_timer_get_time() : 0;
+            const int64_t draw_us = s_draw_us;
+            const unsigned draw_count = s_draw_count;
             esp_lv_adapter_unlock();
+            if(kMeasureWake){
+                ESP_LOGI("WakeTiming", "panel=%lld ms lock=%lld ms resume=%lld ms flow=%lld ms render=%lld ms reveal=%lld ms total=%lld ms", (long long)((t_panel - t0) / 1000), (long long)((t_lock - t_panel) / 1000), (long long)((t_resume - t_lock) / 1000), (long long)((t_flow - t_resume) / 1000), (long long)((t_render - t_flow) / 1000), (long long)((t_reveal - t_render) / 1000), (long long)((t_reveal - t0) / 1000));
+                ESP_LOGI("WakeTiming", "render breakdown: draw/DMA=%lld ms other=%lld ms flushes=%u result=%s", (long long)(draw_us / 1000), (long long)((t_render - t_flow - draw_us) / 1000), draw_count, esp_err_to_name(err));
+            }
             if(err != ESP_OK){
                 ESP_LOGE(TAG, "AMOLED DMA-fenced reveal failed: %s", esp_err_to_name(err));
             }

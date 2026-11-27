@@ -22,6 +22,10 @@ namespace services::display_power {
         // sleep until next real display timeout or touch IRQ.
         // recover touch edges that happen during light sleep.
         constexpr uint32_t kScreenOffRecheckMs = 250;
+        // Temporary task-context wake diagnostics (no ISR logging).
+        static constexpr bool kMeasureWake = true;
+        constexpr uint32_t kWristWakeNotification = 1U << 1;
+        static_assert((kWristWakeNotification & hardware::cst9217::kTouchIrqNotification) == 0, "Display task notification bits must not overlap");
 
         constexpr uint32_t kChargerPollMs = 1000;
         ScreenControl s_screen_control = nullptr;
@@ -32,7 +36,7 @@ namespace services::display_power {
         TaskHandle_t s_task = nullptr;
         uint32_t s_timeout_ms = 10000;
         std::atomic<bool> s_screen_awake{true};
-        // Main-task request; consumed by the display policy task, never an ISR.
+        // Main-task request; notification wakes the policy task immediately.
         std::atomic<bool> s_wrist_wake_pending{false};
         std::atomic<uint32_t> s_last_activity_ms{0};
         bool s_started = false;
@@ -75,6 +79,11 @@ namespace services::display_power {
         // Hold a dedicated display PM lock during panel transitions, before the main task can observe a wake.
         // Serialize screen transitions, including external wake calls.
         SemaphoreHandle_t s_transition_mutex = nullptr;
+#if CONFIG_PM_ENABLE
+        // Created lazily under the transition mutex; retained for service lifetime.
+        esp_pm_lock_handle_t s_wake_cpu_lock = nullptr;
+        bool s_wake_cpu_lock_held = false;
+#endif
 #if CONFIG_PM_ENABLE && CONFIG_FREERTOS_USE_TICKLESS_IDLE && CONFIG_MCW_AUTO_LIGHT_SLEEP && CONFIG_PM_LIGHT_SLEEP_CALLBACKS
         esp_pm_lock_handle_t s_display_sleep_lock = nullptr;
         bool s_display_sleep_lock_held = false; // protected by transition mutex
@@ -106,6 +115,38 @@ namespace services::display_power {
 #endif
 
         // ------------------------------------------------------------------------
+        // Wake-only CPU frequency boost
+        // ------------------------------------------------------------------------
+
+        // Called with the transition mutex held. The existing display sleep
+        // lock is acquired first; this optional lock only increases CPU speed.
+        esp_err_t apply_screen_control(bool awake){
+#if CONFIG_PM_ENABLE
+            if(awake && s_wake_cpu_lock == nullptr){
+                const esp_err_t create_err = esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "display-wake", &s_wake_cpu_lock);
+                if(create_err != ESP_OK) ESP_LOGW(TAG, "Display CPU boost unavailable: %s", esp_err_to_name(create_err));
+            }
+            if(awake && s_wake_cpu_lock != nullptr && !s_wake_cpu_lock_held){
+                const esp_err_t lock_err = esp_pm_lock_acquire(s_wake_cpu_lock);
+                if(lock_err == ESP_OK) s_wake_cpu_lock_held = true;
+                else ESP_LOGW(TAG, "Display CPU boost acquire failed: %s", esp_err_to_name(lock_err));
+            }
+#endif
+            // Deep-standby exit, Flow refresh, hidden redraw and DMA-fenced reveal.
+            const esp_err_t err = s_screen_control(awake);
+#if CONFIG_PM_ENABLE
+            // Release even when the panel wake fails. A failed release is
+            // retried on the next serialized transition, without reacquiring.
+            if(s_wake_cpu_lock_held){
+                const esp_err_t release_err = esp_pm_lock_release(s_wake_cpu_lock);
+                if(release_err == ESP_OK) s_wake_cpu_lock_held = false;
+                else ESP_LOGW(TAG, "Display CPU boost release failed: %s", esp_err_to_name(release_err));
+            }
+#endif
+            return err;
+        }
+
+        // ------------------------------------------------------------------------
         // Policy scheduling
         // ------------------------------------------------------------------------
 
@@ -114,8 +155,8 @@ namespace services::display_power {
         uint32_t next_wait_ms(){
             const uint32_t idle_ms = static_cast<uint32_t>(uptime_ms() - s_last_activity_ms.load());
             const uint32_t remaining_ms = idle_ms < s_timeout_ms ? s_timeout_ms - idle_ms : 1;
-            // Screen awake: wake at its timeout. Screen off: touch IRQ wakes
-            // immediately; the long fallback also sees external wake requests.
+            // Screen awake: wake at its timeout. Screen off: touch and wrist
+            // notifications wake immediately; retain a bounded IRQ-level fallback.
             uint32_t wait_ms = s_screen_awake.load() ? ((s_charging.load() || s_keep_awake.load()) ? kChargerPollMs : remaining_ms) : kScreenOffRecheckMs;
             if(s_charging_display && wait_ms > kChargerPollMs) wait_ms = kChargerPollMs;
             // A bounded release watchdog only while tracking a contact. No
@@ -158,11 +199,13 @@ namespace services::display_power {
                 }
                 const uint32_t wait_ms = next_wait_ms();
                 const TickType_t wait_ticks = pdMS_TO_TICKS(wait_ms) > 0 ? pdMS_TO_TICKS(wait_ms) : 1;
-                const uint32_t events = ulTaskNotifyTake(pdTRUE, wait_ticks);
+                uint32_t events = 0;
+                (void)xTaskNotifyWait(0, UINT32_MAX, &events, wait_ticks);
                 // EXT0 can wake before digital IRQ is
                 // restored. A latched active-low GPIO12 still needs an I2C ACK.
                 const bool pending_touch_level = !s_screen_awake.load() && gpio_get_level(hardware::board::pins::TOUCH_IRQ) == 0;
-                if(events > 0 || pending_touch_level){
+                if((events & hardware::cst9217::kTouchIrqNotification) || pending_touch_level){
+                    if(kMeasureWake && !s_screen_awake.load()) ESP_LOGI("WakeTiming", "touch detected by display task");
                     hardware::cst9217::TouchPoint point{};
                     const esp_err_t err = hardware::cst9217::read_interrupt(point);
                     if(err != ESP_OK){
@@ -193,6 +236,7 @@ namespace services::display_power {
                 // Touch retains priority. Do not treat a wrist request as a touch IRQ.
                 // Ignore gestures while awake so they cannot refresh the inactivity timeout.
                 if(s_wrist_wake_pending.exchange(false) && !s_screen_awake.load()){
+                    if(kMeasureWake) ESP_LOGI("WakeTiming", "wrist request consumed by display task");
                     const esp_err_t err = set_screen_awake(true);
                     if(err == ESP_OK) ESP_LOGI(TAG, "Display wake requested by wrist tilt");
                     else ESP_LOGW(TAG, "Wrist wake failed: %s", esp_err_to_name(err));
@@ -273,6 +317,7 @@ namespace services::display_power {
     // ------------------------------------------------------------------------
 
     esp_err_t set_screen_awake(bool awake){
+        const int64_t wake_start = kMeasureWake && awake ? esp_timer_get_time() : 0;
         if(s_screen_control == nullptr || s_transition_mutex == nullptr) return ESP_ERR_INVALID_STATE;
         if(xSemaphoreTake(s_transition_mutex, pdMS_TO_TICKS(3000)) != pdTRUE) return ESP_ERR_TIMEOUT;
 
@@ -290,16 +335,18 @@ namespace services::display_power {
                 notify_activity(); // Restore a fresh normal timeout at charge completion.
             }
         }else if(s_screen_awake.load() != awake){
+            if(kMeasureWake && awake) ESP_LOGI("WakeTiming", "wake transition start (mutex wait=%lld ms)", (long long)((esp_timer_get_time() - wake_start) / 1000));
             if(awake){
                 // Crucial: acquire BEFORE panel reset, SPI writes or LVGL resume.
                 // Even if app_main is still asleep, auto light sleep is inhibited.
                 err = display_lock_acquire();
             }
             if(err == ESP_OK && !awake) touch_set_awake(false);
-            if(err == ESP_OK) err = s_screen_control(awake);
+            if(err == ESP_OK) err = apply_screen_control(awake);
             if(err == ESP_OK){
                 s_wrist_wake_pending.store(false);
                 s_screen_awake.store(awake);
+                if(kMeasureWake && awake) ESP_LOGI("WakeTiming", "service wake total=%lld ms", (long long)((esp_timer_get_time() - wake_start) / 1000));
                 if(awake){
                     touch_set_awake(true);
                     // The wake callback renders the requested mode before revealing.
@@ -333,10 +380,12 @@ namespace services::display_power {
         return input;
     }
 
-    // Queue only while asleep; the existing 250-ms screen-off recheck consumes it.
-    // Do not notify the task: its notification channel belongs to the touch IRQ.
+    // Queue only while asleep. Wake the policy task without generating a touch read.
     void request_wrist_wake(){
-        if(s_started && !s_screen_awake.load()) s_wrist_wake_pending.store(true);
+        if(!s_started || s_screen_awake.load() || s_task == nullptr) return;
+        if(kMeasureWake && !s_wrist_wake_pending.load()) ESP_LOGI("WakeTiming", "wrist wake requested");
+        s_wrist_wake_pending.store(true);
+        (void)xTaskNotify(s_task, kWristWakeNotification, eSetBits);
     }
 
     bool is_screen_awake(){ return s_screen_awake.load(); }

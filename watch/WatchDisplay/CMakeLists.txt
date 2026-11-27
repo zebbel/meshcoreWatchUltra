@@ -31,6 +31,7 @@ idf_component_register(
         DisplayPower
         AXP2101
         esp_lcd
+        esp_timer
         freertos
         espressif__esp_lvgl_adapter
         lvgl__lvgl

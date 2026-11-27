@@ -11,4 +11,5 @@ idf_component_register(
         SX1262
         Bluetooth
         BHI260AP
+        CST9217
 )

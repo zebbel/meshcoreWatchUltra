@@ -17,6 +17,7 @@
 #include "BluetoothTransport.h"
 #include "board_pins.h"
 #include "BHI260AP.h"
+#include "CST9217.h"
 
 namespace services::power_management {
     static const char *TAG = "PowerManagement";
@@ -186,6 +187,7 @@ namespace services::power_management {
             if(err == ESP_OK) err = gpio_intr_enable(hardware::board::pins::SENSOR_IRQ);
         }
         if(err != ESP_OK) disable_light_sleep("GPIO restoration failed", err);
+        else hardware::cst9217::recheck_pending_irq();
     }
 
     // ------------------------------------------------------------------------

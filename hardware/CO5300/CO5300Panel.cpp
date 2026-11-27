@@ -57,13 +57,10 @@ namespace hardware::co5300 {
         {0x2A, kColumns, sizeof(kColumns), 0},             \
         {0x2B, kRows, sizeof(kRows), 0},                   \
         {0x11, nullptr, 0, 120},                          \
-        {0x29, nullptr, 0, 120},                          \
+        {0x29, nullptr, 0, 0},                          \
         {0x51, kBrightness, sizeof(kBrightness), 0}
 
-        static const co5300_lcd_init_cmd_t kInit[] = {
-            WATCH_PANEL_INIT_PASS,
-            WATCH_PANEL_INIT_PASS,
-        };
+        static const co5300_lcd_init_cmd_t kInit[] = {WATCH_PANEL_INIT_PASS};
 #undef WATCH_PANEL_INIT_PASS
 
         // ------------------------------------------------------------------------

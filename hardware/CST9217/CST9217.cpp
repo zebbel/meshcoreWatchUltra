@@ -45,7 +45,7 @@ namespace hardware::cst9217 {
             TaskHandle_t task = s_notification_task;
             if(task == nullptr) return;
             BaseType_t higher_priority_woken = pdFALSE;
-            vTaskNotifyGiveFromISR(task, &higher_priority_woken);
+            xTaskNotifyFromISR(task, kTouchIrqNotification, eSetBits, &higher_priority_woken);
             if(higher_priority_woken == pdTRUE) portYIELD_FROM_ISR();
         }
     } // namespace
@@ -129,6 +129,13 @@ namespace hardware::cst9217 {
     // ------------------------------------------------------------------------
 
     void set_notification_task(TaskHandle_t task){ s_notification_task = task; }
+
+    void recheck_pending_irq(){
+        // Wake the policy task without fabricating a new touch edge. It reads
+        // the live IRQ level again before attempting an off-screen touch ACK.
+        const TaskHandle_t task = s_notification_task;
+        if(task != nullptr && gpio_get_level(hardware::board::pins::TOUCH_IRQ) == 0) (void)xTaskNotify(task, 0, eNoAction);
+    }
 
     esp_err_t read_interrupt(TouchPoint &point){
         point = {};
