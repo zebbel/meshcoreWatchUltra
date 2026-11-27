@@ -8,6 +8,7 @@ idf_component_register(
         XL9555
         MIA_M10Q
         BHI260AP
+        DRV2605
         SD
         Bluetooth
         log

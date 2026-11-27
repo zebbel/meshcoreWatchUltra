@@ -8,4 +8,5 @@ idf_component_register(
         Bluetooth
         DisplayPower
         BHI260AP
+        Notifications
 )

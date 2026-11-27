@@ -148,6 +148,12 @@ namespace meshcore {
 
     bool is_initialized(){ return initialized; }
 
+    bool set_message_callback(MessageCallback callback){
+        if(!initialized || companion == nullptr) return false;
+        companion->set_message_callback(callback);
+        return true;
+    }
+
     // ------------------------------------------------------------------------
     // Application polling
     // ------------------------------------------------------------------------

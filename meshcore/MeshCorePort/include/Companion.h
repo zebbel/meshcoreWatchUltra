@@ -5,6 +5,7 @@
 
 #include "BluetoothTransport.h"
 #include "Node.h"
+#include "MeshCorePort.h"
 #include "Settings.h"
 #include "Contacts.h"
 #include "Telemetry.h"
@@ -18,9 +19,11 @@ namespace meshcore {
         Companion(hardware::bluetooth::Transport &ble, Node &mesh, RadioAdapter &radio, SettingsStore &settings, Contacts &contacts, RTCAdapter &rtc, mesh::MillisecondClock &clock, Telemetry &telemetry);
 
         void loop();
+        void set_message_callback(MessageCallback callback){ message_callback_ = callback; }
         bool storage_ready() const { return storage_ready_; }
 
     private:
+        MessageCallback message_callback_ = nullptr;
         bool storage_ready_ = true;
         hardware::bluetooth::Transport &ble_;
         Node &mesh_;

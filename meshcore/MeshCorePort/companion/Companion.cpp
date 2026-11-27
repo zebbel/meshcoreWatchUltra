@@ -162,6 +162,7 @@ namespace meshcore {
     }
 
     void Companion::on_group_message(const mesh::Packet *pkt, uint8_t ch, uint32_t ts, const uint8_t *text, size_t n){
+        if(message_callback_) message_callback_(true, node_name_, text, n);
 
         uint8_t f[hardware::bluetooth::Transport::MAX_FRAME] = {};
         size_t i = 0;
@@ -191,6 +192,7 @@ namespace meshcore {
     }
 
     void Companion::on_peer_message(const mesh::Packet *pkt, const uint8_t pub[32], uint8_t type, uint32_t ts, const uint8_t *text, size_t n){
+        if(type == 0 && message_callback_) message_callback_(false, node_name_, text, n);
 
         uint8_t f[hardware::bluetooth::Transport::MAX_FRAME] = {};
         size_t i = 0;

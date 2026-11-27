@@ -8,6 +8,7 @@
 #include "GPIO.h"
 #include "GPS.h"
 #include "BHI260AP.h"
+#include "DRV2605.h"
 #include "SDStorage.h"
 #include "BluetoothTransport.h"
 
@@ -39,6 +40,10 @@ namespace hardware {
         err = bhi260ap::init();
         if(err != ESP_OK) ESP_LOGW(TAG, "Motion sensor unavailable: %s", esp_err_to_name(err));
 
+        // Optional haptic controller.
+        err = drv2605::init();
+        if(err != ESP_OK) ESP_LOGW(TAG, "Haptic controller unavailable: %s", esp_err_to_name(err));
+
         // Initialize SD storage subsystem.
         err = sd::init();
         if(err != ESP_OK) ESP_LOGE(TAG, "SD subsystem failed: %s", esp_err_to_name(err));
@@ -60,5 +65,6 @@ namespace hardware {
     void loop(){
         gps::loop();
         bhi260ap::loop();
+        drv2605::loop();
     }
 }

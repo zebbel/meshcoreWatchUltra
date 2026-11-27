@@ -8,6 +8,7 @@
 #include "BluetoothTransport.h"
 #include "DisplayPower.h"
 #include "BHI260AP.h"
+#include "Notifications.h"
 
 namespace services {
     // ------------------------------------------------------------------------
@@ -30,6 +31,7 @@ namespace services {
         (void)wrist;
 #endif
         position_sync::synchronize();
+        notifications::loop();
     }
     // ------------------------------------------------------------------------
     // After component polling
