@@ -12,8 +12,8 @@ namespace services::notifications {
         constexpr const char *TAG = "Notifications";
         constexpr const char *kNamespace = "notifications";
         constexpr int64_t kPendingLifetimeUs = 10000000;
-        constexpr uint8_t kPrivateEffect = 11; // Double click, 60%.
-        constexpr uint8_t kChannelEffect = 5; // Sharp click, 60%.
+        constexpr uint8_t kPrivateEffect = 16; // 1000 ms alert, 100%.
+        constexpr uint8_t kChannelEffect = 14; // Strong buzz, 100%.
         ChannelMode s_channel = ChannelMode::enabled;
         bool s_private = true;
         bool s_loaded = false;

@@ -34,7 +34,7 @@ namespace hardware::drv2605 {
     static constexpr int64_t kPlaybackLimitUs = 10000000;
     // Temporary boot test: ROM effect 2 (strong click, 60%).
     static constexpr bool kStartupTest = true;
-    static constexpr uint8_t kStartupEffect = 2;
+    static constexpr uint8_t kStartupEffect = 15;
 
     static i2c_master_dev_handle_t s_device = nullptr;
     static bool s_ready = false;

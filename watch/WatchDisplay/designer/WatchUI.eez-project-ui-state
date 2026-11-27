@@ -1,6 +1,6 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[WatchUI.eez-project]:/userPages/0",
+    "selectedUserPageObject": "[WatchUI.eez-project]:/userPages/1",
     "subnavigationSelectedItems": {
       "variables-tab/sub-navigation/selected-item": "Global"
     }
@@ -180,8 +180,7 @@
                       "enableClose": false,
                       "icon": "svg:variable"
                     }
-                  ],
-                  "active": true
+                  ]
                 }
               ]
             },
@@ -208,15 +207,16 @@
                 {
                   "type": "tab",
                   "id": "#ffa3d415-60bc-431b-bf9c-8887328ada12",
-                  "name": "Main",
+                  "name": "charging",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[WatchUI.eez-project]:/userPages/0",
+                    "objectPath": "[WatchUI.eez-project]:/userPages/1",
                     "permanent": false
                   },
                   "icon": "svg:page"
                 }
-              ]
+              ],
+              "active": true
             },
             {
               "type": "row",
@@ -1078,8 +1078,8 @@
       },
       "transform": {
         "translate": {
-          "x": -400,
-          "y": -340
+          "x": -405,
+          "y": -351
         },
         "scale": 1
       },
