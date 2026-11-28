@@ -13,7 +13,7 @@
 objects_t objects;
 
 static const char *screen_names[] = { "Main", "WatchFace", "Home", "charging", "pairing" };
-static const char *object_names[] = { "main", "watch_face", "home", "charging", "pairing", "battery_label_1", "time_label_1", "battery_bar", "charge_lightning_icon", "bluetooth_icon", "gps_icon", "obj0", "charge_percent_label", "charge_prcentage_arc", "obj1" };
+static const char *object_names[] = { "main", "watch_face", "home", "charging", "pairing", "battery_label", "time_label", "battery_bar", "charge_lightning_icon", "bluetooth_icon", "gps_icon", "obj0", "charge_percent_label", "charge_prcentage_arc", "pairing_label" };
 
 //
 // Event handlers
@@ -54,9 +54,9 @@ void create_screen_watch_face() {
     {
         lv_obj_t *parent_obj = obj;
         {
-            // battery_label_1
+            // battery_label
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.battery_label_1 = obj;
+            objects.battery_label = obj;
             lv_obj_set_pos(obj, 183, 50);
             lv_obj_set_size(obj, 73, 30);
             lv_obj_set_style_text_font(obj, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -65,9 +65,9 @@ void create_screen_watch_face() {
             lv_label_set_text_static(obj, "45%");
         }
         {
-            // time_label_1
+            // time_label
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.time_label_1 = obj;
+            objects.time_label = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 410, LV_SIZE_CONTENT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -223,8 +223,9 @@ void create_screen_pairing() {
     {
         lv_obj_t *parent_obj = obj;
         {
+            // pairing_label
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj1 = obj;
+            objects.pairing_label = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xebe9e9), LV_PART_MAIN | LV_STATE_DEFAULT);
