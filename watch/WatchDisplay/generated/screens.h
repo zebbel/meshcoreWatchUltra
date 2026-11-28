@@ -33,7 +33,7 @@ typedef struct _objects_t {
     lv_obj_t *gps_icon;
     lv_obj_t *obj0;
     lv_obj_t *charge_percent_label;
-    lv_obj_t *charge_prcentage_arc;
+    lv_obj_t *charge_percentage_arc;
     lv_obj_t *pairing_label;
 } objects_t;
 

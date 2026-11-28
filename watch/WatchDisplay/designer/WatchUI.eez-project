@@ -871,7 +871,7 @@
               },
               "timeline": [],
               "eventHandlers": [],
-              "identifier": "charge_prcentage_arc",
+              "identifier": "charge_percentage_arc",
               "leftUnit": "px",
               "topUnit": "px",
               "widthUnit": "px",

@@ -12,9 +12,6 @@
 
 objects_t objects;
 
-static const char *screen_names[] = { "Main", "WatchFace", "Home", "charging", "pairing" };
-static const char *object_names[] = { "main", "watch_face", "home", "charging", "pairing", "battery_label", "time_label", "battery_bar", "charge_lightning_icon", "bluetooth_icon", "gps_icon", "obj0", "charge_percent_label", "charge_prcentage_arc", "pairing_label" };
-
 //
 // Event handlers
 //
@@ -26,8 +23,6 @@ lv_obj_t *tick_value_change_obj;
 //
 
 void create_screen_main() {
-    void *flowState = getFlowState(0, 0);
-    (void)flowState;
     lv_obj_t *obj = lv_obj_create(0);
     objects.main = obj;
     lv_obj_set_pos(obj, 0, 0);
@@ -39,13 +34,9 @@ void create_screen_main() {
 }
 
 void tick_screen_main() {
-    void *flowState = getFlowState(0, 0);
-    (void)flowState;
 }
 
 void create_screen_watch_face() {
-    void *flowState = getFlowState(0, 1);
-    (void)flowState;
     lv_obj_t *obj = lv_obj_create(0);
     objects.watch_face = obj;
     lv_obj_set_pos(obj, 0, 0);
@@ -137,13 +128,9 @@ void create_screen_watch_face() {
 }
 
 void tick_screen_watch_face() {
-    void *flowState = getFlowState(0, 1);
-    (void)flowState;
 }
 
 void create_screen_home() {
-    void *flowState = getFlowState(0, 2);
-    (void)flowState;
     lv_obj_t *obj = lv_obj_create(0);
     objects.home = obj;
     lv_obj_set_pos(obj, 0, 0);
@@ -154,13 +141,9 @@ void create_screen_home() {
 }
 
 void tick_screen_home() {
-    void *flowState = getFlowState(0, 2);
-    (void)flowState;
 }
 
 void create_screen_charging() {
-    void *flowState = getFlowState(0, 3);
-    (void)flowState;
     lv_obj_t *obj = lv_obj_create(0);
     objects.charging = obj;
     lv_obj_set_pos(obj, 0, 0);
@@ -183,9 +166,9 @@ void create_screen_charging() {
             lv_label_set_text_static(obj, "75%");
         }
         {
-            // charge_prcentage_arc
+            // charge_percentage_arc
             lv_obj_t *obj = lv_arc_create(parent_obj);
-            objects.charge_prcentage_arc = obj;
+            objects.charge_percentage_arc = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 380, 380);
             lv_arc_set_value(obj, 45);
@@ -208,13 +191,9 @@ void create_screen_charging() {
 }
 
 void tick_screen_charging() {
-    void *flowState = getFlowState(0, 3);
-    (void)flowState;
 }
 
 void create_screen_pairing() {
-    void *flowState = getFlowState(0, 4);
-    (void)flowState;
     lv_obj_t *obj = lv_obj_create(0);
     objects.pairing = obj;
     lv_obj_set_pos(obj, 0, 0);
@@ -239,8 +218,6 @@ void create_screen_pairing() {
 }
 
 void tick_screen_pairing() {
-    void *flowState = getFlowState(0, 4);
-    (void)flowState;
 }
 
 typedef void (*tick_screen_func_t)();
@@ -332,12 +309,16 @@ ext_font_desc_t fonts[] = {
 };
 
 //
+// Color themes
+//
+
+uint32_t active_theme_index = 0;
+
+//
 //
 //
 
 void create_screens() {
-    
-    eez_flow_init_fonts(fonts, sizeof(fonts) / sizeof(ext_font_desc_t));
 
 // Set default LVGL theme
     lv_display_t *dispp = lv_display_get_default();
@@ -345,9 +326,6 @@ void create_screens() {
     lv_display_set_theme(dispp, theme);
     
     // Initialize screens
-    eez_flow_init_screen_names(screen_names, sizeof(screen_names) / sizeof(const char *));
-    eez_flow_init_object_names(object_names, sizeof(object_names) / sizeof(const char *));
-    
     // Create screens
     create_screen_main();
     create_screen_watch_face();
