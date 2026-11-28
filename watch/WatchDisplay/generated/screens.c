@@ -12,65 +12,14 @@
 
 objects_t objects;
 
-static const char *screen_names[] = { "Main", "WatchFace", "charging", "pairing" };
-static const char *object_names[] = { "main", "watch_face", "charging", "pairing", "battery_label", "time_label", "battery_bar", "charge_lightning_icon", "bluetooth_icon", "gps_icon", "obj0", "battery_label_1", "time_label_1", "battery_bar_1", "charge_lightning_icon_1", "bluetooth_icon_1", "gps_icon_1", "obj1", "charge_percent_label", "charge_prcentage_arc", "obj2" };
+static const char *screen_names[] = { "Main", "WatchFace", "Home", "charging", "pairing" };
+static const char *object_names[] = { "main", "watch_face", "home", "charging", "pairing", "battery_label_1", "time_label_1", "battery_bar", "charge_lightning_icon", "bluetooth_icon", "gps_icon", "obj0", "charge_percent_label", "charge_prcentage_arc", "obj1" };
 
 //
 // Event handlers
 //
 
 lv_obj_t *tick_value_change_obj;
-
-static void event_handler_cb_main_main(lv_event_t *e) {
-    lv_event_code_t event = lv_event_get_code(e);
-    void *flowState = lv_event_get_user_data(e);
-    (void)flowState;
-    
-    if (event == LV_EVENT_SCREEN_LOADED) {
-        e->user_data = (void *)0;
-        flowPropagateValueLVGLEvent(flowState, 1, 0, e);
-    }
-}
-
-static void event_handler_cb_charging_charging(lv_event_t *e) {
-    lv_event_code_t event = lv_event_get_code(e);
-    void *flowState = lv_event_get_user_data(e);
-    (void)flowState;
-    
-    if (event == LV_EVENT_SCREEN_LOADED) {
-        e->user_data = (void *)0;
-        flowPropagateValueLVGLEvent(flowState, 1, 0, e);
-    }
-    if (event == LV_EVENT_CLICKED) {
-        e->user_data = (void *)0;
-        flowPropagateValueLVGLEvent(flowState, 1, 1, e);
-    }
-}
-
-static void event_handler_cb_charging_charge_prcentage_arc(lv_event_t *e) {
-    lv_event_code_t event = lv_event_get_code(e);
-    void *flowState = lv_event_get_user_data(e);
-    (void)flowState;
-    
-    if (event == LV_EVENT_VALUE_CHANGED) {
-        lv_obj_t *ta = lv_event_get_target_obj(e);
-        if (tick_value_change_obj != ta) {
-            int32_t value = lv_arc_get_value(ta);
-            assignIntegerProperty(flowState, 2, 3, value, "Failed to assign Value in Arc widget");
-        }
-    }
-}
-
-static void event_handler_cb_pairing_pairing(lv_event_t *e) {
-    lv_event_code_t event = lv_event_get_code(e);
-    void *flowState = lv_event_get_user_data(e);
-    (void)flowState;
-    
-    if (event == LV_EVENT_SCREEN_LOADED) {
-        e->user_data = (void *)0;
-        flowPropagateValueLVGLEvent(flowState, 1, 0, e);
-    }
-}
 
 //
 // Screens
@@ -83,89 +32,8 @@ void create_screen_main() {
     objects.main = obj;
     lv_obj_set_pos(obj, 0, 0);
     lv_obj_set_size(obj, 410, 502);
-    lv_obj_add_event_cb(obj, event_handler_cb_main_main, LV_EVENT_ALL, flowState);
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(obj, lv_color_hex(0x525151), LV_PART_MAIN | LV_STATE_DEFAULT);
-    {
-        lv_obj_t *parent_obj = obj;
-        {
-            // battery_label
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.battery_label = obj;
-            lv_obj_set_pos(obj, 183, 50);
-            lv_obj_set_size(obj, 73, 30);
-            lv_obj_set_style_text_font(obj, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(obj, lv_color_hex(0xcdd8df), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
-        }
-        {
-            // time_label
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.time_label = obj;
-            lv_obj_set_pos(obj, 0, 0);
-            lv_obj_set_size(obj, 410, LV_SIZE_CONTENT);
-            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_font(obj, &ui_font_clock96, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(obj, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
-        }
-        {
-            // battery_bar
-            lv_obj_t *obj = lv_bar_create(parent_obj);
-            objects.battery_bar = obj;
-            lv_obj_set_pos(obj, 190, 13);
-            lv_obj_set_size(obj, 60, 30);
-            lv_obj_set_style_line_color(obj, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_radius(obj, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_outline_width(obj, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_outline_color(obj, lv_color_hex(0xf7f7f7), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_bg_color(obj, lv_color_hex(0x00fd41), LV_PART_INDICATOR | LV_STATE_DEFAULT);
-            lv_obj_set_style_radius(obj, 2, LV_PART_INDICATOR | LV_STATE_DEFAULT);
-        }
-        {
-            // charge_lightning_icon
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.charge_lightning_icon = obj;
-            lv_obj_set_pos(obj, 213, 17);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_obj_set_style_text_font(obj, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(obj, lv_color_hex(0xebc36d), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
-        }
-        {
-            // bluetooth_icon
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.bluetooth_icon = obj;
-            lv_obj_set_pos(obj, 120, 13);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_obj_set_style_text_font(obj, &lv_font_montserrat_30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(obj, lv_color_hex(0x3399ff), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "");
-        }
-        {
-            // gps_icon
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.gps_icon = obj;
-            lv_obj_set_pos(obj, 288, 12);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_obj_set_style_text_font(obj, &lv_font_montserrat_30, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_color(obj, lv_color_hex(0x0108ff), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
-        }
-        {
-            lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj0 = obj;
-            lv_obj_set_pos(obj, 295, 50);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-            lv_obj_set_style_text_color(obj, lv_color_hex(0xcdd8df), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_font(obj, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
-        }
-    }
+    lv_obj_set_style_bg_color(obj, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
     
     tick_screen_main();
 }
@@ -173,60 +41,6 @@ void create_screen_main() {
 void tick_screen_main() {
     void *flowState = getFlowState(0, 0);
     (void)flowState;
-    {
-        const char *new_val = evalTextProperty(flowState, 0, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.battery_label);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.battery_label;
-            lv_label_set_text(objects.battery_label, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        const char *new_val = evalTextProperty(flowState, 2, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.time_label);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.time_label;
-            lv_label_set_text(objects.time_label, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        int32_t new_val = evalIntegerProperty(flowState, 3, 3, "Failed to evaluate Value in Bar widget");
-        int32_t cur_val = lv_bar_get_value(objects.battery_bar);
-        if (new_val != cur_val) {
-            tick_value_change_obj = objects.battery_bar;
-            lv_bar_set_value(objects.battery_bar, new_val, LV_ANIM_OFF);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        const char *new_val = evalTextProperty(flowState, 4, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.charge_lightning_icon);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.charge_lightning_icon;
-            lv_label_set_text(objects.charge_lightning_icon, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        const char *new_val = evalTextProperty(flowState, 6, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.gps_icon);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.gps_icon;
-            lv_label_set_text(objects.gps_icon, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        const char *new_val = evalTextProperty(flowState, 7, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.obj0);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.obj0;
-            lv_label_set_text(objects.obj0, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
 }
 
 void create_screen_watch_face() {
@@ -248,7 +62,7 @@ void create_screen_watch_face() {
             lv_obj_set_style_text_font(obj, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xcdd8df), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
+            lv_label_set_text_static(obj, "45%");
         }
         {
             // time_label_1
@@ -260,14 +74,15 @@ void create_screen_watch_face() {
             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_font(obj, &ui_font_clock96, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
+            lv_label_set_text_static(obj, "14:32");
         }
         {
-            // battery_bar_1
+            // battery_bar
             lv_obj_t *obj = lv_bar_create(parent_obj);
-            objects.battery_bar_1 = obj;
+            objects.battery_bar = obj;
             lv_obj_set_pos(obj, 190, 13);
             lv_obj_set_size(obj, 60, 30);
+            lv_bar_set_value(obj, 45, LV_ANIM_OFF);
             lv_obj_set_style_line_color(obj, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_radius(obj, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_outline_width(obj, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -276,20 +91,20 @@ void create_screen_watch_face() {
             lv_obj_set_style_radius(obj, 2, LV_PART_INDICATOR | LV_STATE_DEFAULT);
         }
         {
-            // charge_lightning_icon_1
+            // charge_lightning_icon
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.charge_lightning_icon_1 = obj;
+            objects.charge_lightning_icon = obj;
             lv_obj_set_pos(obj, 213, 17);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &lv_font_montserrat_20, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xebc36d), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
+            lv_label_set_text_static(obj, "");
         }
         {
-            // bluetooth_icon_1
+            // bluetooth_icon
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.bluetooth_icon_1 = obj;
+            objects.bluetooth_icon = obj;
             lv_obj_set_pos(obj, 120, 13);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &lv_font_montserrat_30, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -297,24 +112,24 @@ void create_screen_watch_face() {
             lv_label_set_text_static(obj, "");
         }
         {
-            // gps_icon_1
+            // gps_icon
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.gps_icon_1 = obj;
+            objects.gps_icon = obj;
             lv_obj_set_pos(obj, 288, 12);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_font(obj, &lv_font_montserrat_30, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x0108ff), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
+            lv_label_set_text(obj, "");
         }
         {
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj1 = obj;
+            objects.obj0 = obj;
             lv_obj_set_pos(obj, 295, 50);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xcdd8df), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_font(obj, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
+            lv_label_set_text_static(obj, "5");
         }
     }
     
@@ -324,70 +139,32 @@ void create_screen_watch_face() {
 void tick_screen_watch_face() {
     void *flowState = getFlowState(0, 1);
     (void)flowState;
-    {
-        const char *new_val = evalTextProperty(flowState, 0, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.battery_label_1);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.battery_label_1;
-            lv_label_set_text(objects.battery_label_1, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        const char *new_val = evalTextProperty(flowState, 2, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.time_label_1);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.time_label_1;
-            lv_label_set_text(objects.time_label_1, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        int32_t new_val = evalIntegerProperty(flowState, 3, 3, "Failed to evaluate Value in Bar widget");
-        int32_t cur_val = lv_bar_get_value(objects.battery_bar_1);
-        if (new_val != cur_val) {
-            tick_value_change_obj = objects.battery_bar_1;
-            lv_bar_set_value(objects.battery_bar_1, new_val, LV_ANIM_OFF);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        const char *new_val = evalTextProperty(flowState, 4, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.charge_lightning_icon_1);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.charge_lightning_icon_1;
-            lv_label_set_text(objects.charge_lightning_icon_1, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        const char *new_val = evalTextProperty(flowState, 6, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.gps_icon_1);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.gps_icon_1;
-            lv_label_set_text(objects.gps_icon_1, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        const char *new_val = evalTextProperty(flowState, 7, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.obj1);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.obj1;
-            lv_label_set_text(objects.obj1, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
+}
+
+void create_screen_home() {
+    void *flowState = getFlowState(0, 2);
+    (void)flowState;
+    lv_obj_t *obj = lv_obj_create(0);
+    objects.home = obj;
+    lv_obj_set_pos(obj, 0, 0);
+    lv_obj_set_size(obj, 410, 502);
+    lv_obj_set_style_bg_color(obj, lv_color_hex(0x8b8d8a), LV_PART_MAIN | LV_STATE_DEFAULT);
+    
+    tick_screen_home();
+}
+
+void tick_screen_home() {
+    void *flowState = getFlowState(0, 2);
+    (void)flowState;
 }
 
 void create_screen_charging() {
-    void *flowState = getFlowState(0, 2);
+    void *flowState = getFlowState(0, 3);
     (void)flowState;
     lv_obj_t *obj = lv_obj_create(0);
     objects.charging = obj;
     lv_obj_set_pos(obj, 0, 0);
     lv_obj_set_size(obj, 410, 502);
-    lv_obj_add_event_cb(obj, event_handler_cb_charging_charging, LV_EVENT_ALL, flowState);
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(obj, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(obj, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -403,7 +180,7 @@ void create_screen_charging() {
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xcdd8df), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
+            lv_label_set_text_static(obj, "75%");
         }
         {
             // charge_prcentage_arc
@@ -411,10 +188,10 @@ void create_screen_charging() {
             objects.charge_prcentage_arc = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, 380, 380);
+            lv_arc_set_value(obj, 45);
             lv_arc_set_bg_start_angle(obj, 0);
             lv_arc_set_bg_end_angle(obj, 360);
             lv_arc_set_rotation(obj, 90);
-            lv_obj_add_event_cb(obj, event_handler_cb_charging_charge_prcentage_arc, LV_EVENT_ALL, flowState);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_arc_color(obj, lv_color_hex(0x33383d), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -431,48 +208,29 @@ void create_screen_charging() {
 }
 
 void tick_screen_charging() {
-    void *flowState = getFlowState(0, 2);
+    void *flowState = getFlowState(0, 3);
     (void)flowState;
-    {
-        const char *new_val = evalTextProperty(flowState, 0, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.charge_percent_label);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.charge_percent_label;
-            lv_label_set_text(objects.charge_percent_label, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
-    {
-        int32_t new_val = evalIntegerProperty(flowState, 2, 3, "Failed to evaluate Value in Arc widget");
-        int32_t cur_val = lv_arc_get_value(objects.charge_prcentage_arc);
-        if (new_val != cur_val) {
-            tick_value_change_obj = objects.charge_prcentage_arc;
-            lv_arc_set_value(objects.charge_prcentage_arc, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
 }
 
 void create_screen_pairing() {
-    void *flowState = getFlowState(0, 3);
+    void *flowState = getFlowState(0, 4);
     (void)flowState;
     lv_obj_t *obj = lv_obj_create(0);
     objects.pairing = obj;
     lv_obj_set_pos(obj, 0, 0);
     lv_obj_set_size(obj, 410, 502);
-    lv_obj_add_event_cb(obj, event_handler_cb_pairing_pairing, LV_EVENT_ALL, flowState);
     lv_obj_set_style_bg_color(obj, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
     {
         lv_obj_t *parent_obj = obj;
         {
             lv_obj_t *obj = lv_label_create(parent_obj);
-            objects.obj2 = obj;
+            objects.obj1 = obj;
             lv_obj_set_pos(obj, 0, 0);
             lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xebe9e9), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_font(obj, &ui_font_clock96, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text(obj, "");
+            lv_label_set_text_static(obj, "123456");
         }
     }
     
@@ -480,28 +238,20 @@ void create_screen_pairing() {
 }
 
 void tick_screen_pairing() {
-    void *flowState = getFlowState(0, 3);
+    void *flowState = getFlowState(0, 4);
     (void)flowState;
-    {
-        const char *new_val = evalTextProperty(flowState, 0, 3, "Failed to evaluate Text in Label widget");
-        const char *cur_val = lv_label_get_text(objects.obj2);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.obj2;
-            lv_label_set_text(objects.obj2, new_val);
-            tick_value_change_obj = NULL;
-        }
-    }
 }
 
 typedef void (*tick_screen_func_t)();
 tick_screen_func_t tick_screen_funcs[] = {
     tick_screen_main,
     tick_screen_watch_face,
+    tick_screen_home,
     tick_screen_charging,
     tick_screen_pairing,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 4) {
+    if (screen_index >= 0 && screen_index < 5) {
         tick_screen_funcs[screen_index]();
     }
 }
@@ -600,6 +350,7 @@ void create_screens() {
     // Create screens
     create_screen_main();
     create_screen_watch_face();
+    create_screen_home();
     create_screen_charging();
     create_screen_pairing();
 }

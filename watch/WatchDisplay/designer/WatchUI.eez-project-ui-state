@@ -1,6 +1,9 @@
 {
   "navigation": {
-    "selectedUserPageObject": "[WatchUI.eez-project]:/userPages/1",
+    "selectedUserPageObject": "[WatchUI.eez-project]:/userPages/0",
+    "selectedActionObject": "[WatchUI.eez-project]:/actions/0",
+    "selectedGlobalVariableObject": "[WatchUI.eez-project]:/variables/globalVariables/16",
+    "selectedEnumObject": "[WatchUI.eez-project]:/variables/enums/-1",
     "subnavigationSelectedItems": {
       "variables-tab/sub-navigation/selected-item": "Global"
     }
@@ -187,33 +190,43 @@
             {
               "type": "tabset",
               "id": "EDITORS",
-              "weight": 55.55034396497811,
+              "weight": 62.41235059760956,
               "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
               "children": [
                 {
                   "type": "tab",
-                  "id": "#6eb8e9d9-a22d-4826-bfb7-d5f3fae5a35e",
-                  "name": "Settings",
+                  "id": "#bbf10ecb-94e3-4f4d-b73d-83c007e26c6c",
+                  "name": "WatchFace",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[WatchUI.eez-project]:/settings",
-                    "subObjectPath": "[WatchUI.eez-project]:/settings",
-                    "permanent": false
+                    "objectPath": "[WatchUI.eez-project]:/userPages/1",
+                    "permanent": true
                   },
-                  "icon": "material:settings"
+                  "icon": "svg:page"
                 },
                 {
                   "type": "tab",
                   "id": "#ffa3d415-60bc-431b-bf9c-8887328ada12",
-                  "name": "charging",
+                  "name": "Main",
                   "component": "editor",
                   "config": {
-                    "objectPath": "[WatchUI.eez-project]:/userPages/1",
-                    "permanent": false
+                    "objectPath": "[WatchUI.eez-project]:/userPages/0",
+                    "permanent": true
                   },
                   "icon": "svg:page"
+                },
+                {
+                  "type": "tab",
+                  "id": "#74dac28c-a77a-4872-9d5a-e561faecfed9",
+                  "name": "count_to_boolean",
+                  "component": "editor",
+                  "config": {
+                    "objectPath": "[WatchUI.eez-project]:/actions/0",
+                    "permanent": true
+                  },
+                  "icon": "material:code"
                 }
               ],
               "active": true
@@ -221,12 +234,12 @@
             {
               "type": "row",
               "id": "#c663197b-b588-428a-8ccf-a08b26f0eb90",
-              "weight": 29.44965603502189,
+              "weight": 22.58764940239044,
               "children": [
                 {
                   "type": "tabset",
                   "id": "#edb74d8b-7137-4728-99a9-ff810ca97502",
-                  "weight": 2,
+                  "weight": 1.9661181026137464,
                   "children": [
                     {
                       "type": "tab",
@@ -241,7 +254,7 @@
                 {
                   "type": "tabset",
                   "id": "#21fe714f-e418-47b4-8dbe-339c9ee30225",
-                  "weight": 1,
+                  "weight": 1.0338818973862536,
                   "children": [
                     {
                       "type": "tab",
@@ -463,17 +476,41 @@
             {
               "type": "tabset",
               "id": "RUNTIME-EDITORS",
-              "weight": 1,
-              "selected": -1,
+              "weight": 0.7871621621621622,
+              "selected": 1,
               "enableDeleteWhenEmpty": false,
               "enableClose": false,
-              "children": []
+              "children": [
+                {
+                  "type": "tab",
+                  "id": "#b744b1e0-d049-4bf7-8724-2f1f80380bd9",
+                  "name": "count_to_boolean",
+                  "component": "editor",
+                  "config": {
+                    "objectPath": "[WatchUI.eez-project]:/actions/0",
+                    "permanent": false
+                  },
+                  "icon": "material:code"
+                },
+                {
+                  "type": "tab",
+                  "id": "#b3431944-0dd4-47ae-b81a-8945e0ba27b0",
+                  "name": "Main",
+                  "component": "editor",
+                  "config": {
+                    "objectPath": "[WatchUI.eez-project]:/userPages/0",
+                    "permanent": false
+                  },
+                  "icon": "svg:page"
+                }
+              ],
+              "active": true
             },
             {
               "type": "row",
               "id": "#66f96081-5109-4699-8b7a-ed029678904f",
-              "weight": 0,
-              "width": 320,
+              "weight": 0.21283783783783783,
+              "width": 567,
               "children": [
                 {
                   "type": "tabset",
@@ -1041,7 +1078,8 @@
                       "component": "groups",
                       "enableClose": false
                     }
-                  ]
+                  ],
+                  "active": true
                 },
                 {
                   "type": "tabset",
@@ -1078,8 +1116,8 @@
       },
       "transform": {
         "translate": {
-          "x": -405,
-          "y": -351
+          "x": -1204.1399093610237,
+          "y": -356.5507636404724
         },
         "scale": 1
       },
@@ -1097,10 +1135,10 @@
       },
       "transform": {
         "translate": {
-          "x": -205,
+          "x": -565.0000074635383,
           "y": -251
         },
-        "scale": 1
+        "scale": 0.75
       },
       "timeline": {
         "isEditorActive": false,
@@ -1112,14 +1150,15 @@
     "[WatchUI.eez-project]:/userPages/1[flow-state]": {
       "selectionFront": {},
       "selectionBack": {
-        "5": {
-          "$selected": true
-        }
+        "0": {
+          "6": {}
+        },
+        "1": {}
       },
       "transform": {
         "translate": {
-          "x": -205,
-          "y": -251
+          "x": -564.2916202113939,
+          "y": -183.44056635317583
         },
         "scale": 1
       },
@@ -1129,14 +1168,103 @@
         "secondToPx": 200,
         "scrollLeft": 0
       }
+    },
+    "[WatchUI.eez-project]:/userPages/3[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {
+        "0": {
+          "1": {}
+        },
+        "1": {}
+      },
+      "transform": {
+        "translate": {
+          "x": -205,
+          "y": -251
+        },
+        "scale": 0.75
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[WatchUI.eez-project]:/userPages/4[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {},
+      "transform": {
+        "translate": {
+          "x": -685.0000099513844,
+          "y": -251
+        },
+        "scale": 0.75
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[WatchUI.eez-project]:/userPages/5[flow-state]": {
+      "selectionFront": {},
+      "selectionBack": {
+        "2": {
+          "$selected": true
+        }
+      },
+      "transform": {
+        "translate": {
+          "x": -685.0000099513844,
+          "y": -251
+        },
+        "scale": 0.8
+      },
+      "timeline": {
+        "isEditorActive": false,
+        "position": 0,
+        "secondToPx": 200,
+        "scrollLeft": 0
+      }
+    },
+    "[WatchUI.eez-project]:/actions/0[flow-state]": {
+      "selection": {
+        "0": {
+          "$selected": true
+        },
+        "1": {
+          "$selected": true
+        }
+      },
+      "transform": {
+        "translate": {
+          "x": 0,
+          "y": 0
+        },
+        "scale": 1
+      }
+    },
+    "[WatchUI.eez-project]:/actions/-1[flow-state]": {
+      "selection": {},
+      "transform": {
+        "translate": {
+          "x": 0,
+          "y": 0
+        },
+        "scale": 1
+      }
     }
   },
   "activeOutputSection": 0,
-  "searchPattern": "",
+  "searchPattern": "Create at start",
   "searchMatchCase": false,
   "searchMatchWholeWord": false,
   "replaceEnabled": false,
   "replaceText": "",
+  "pageEditorFrontFace": false,
+  "pageRuntimeFrontFace": false,
   "breakpoints": {},
   "watchExpressions": [],
   "showComponentDescriptions": true,
@@ -1149,7 +1277,7 @@
     "TEXT",
     "POSITION AND SIZE"
   ],
-  "showInactiveFlowsInDebugger": true,
+  "showInactiveFlowsInDebugger": false,
   "globalFlowZoom": true,
   "flowZoom": 1,
   "implementationLanguage": "C"

@@ -3,13 +3,13 @@
 
 #include <lvgl.h>
 
-#include "eez-flow.h"
+#include <eez/flow/lvgl_api.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern const uint8_t assets[6976];
+extern const uint8_t assets[1708];
 
 void ui_init();
 void ui_tick();
